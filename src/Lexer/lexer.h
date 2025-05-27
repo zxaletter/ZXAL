@@ -3,12 +3,29 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+#include <ctype.h>
+
+#define KEYWORDS 14
+extern char* keyword[KEYWORDS];
 
 typedef enum {
-	TOKEN_INTEGER,
 	TOKEN_ID,
-	TOKEN_KEYWORD,
+	TOKEN_FUNCTION_KEYWORD,
+	TOKEN_INT_KEYWORD,
+	TOKEN_CHAR_KEYWORD,
+	TOKEN_BOOL_KEYWORD,
+	TOKEN_VOID_KEYWORD,
+	TOKEN_STRUCT_KEYWORD,
+	TOKEN_ENUM_KEYWORD,
+	TOKEN_FOR_KEYWORD,
+	TOKEN_WHILE_KEYWORD,
+	TOKEN_CONTINUE_KEYWORD,
+	TOKEN_BREAK_KEYWORD,
+	TOKEN_RETURN_KEYWORD,
 
+	TOKEN_INTEGER,
 	TOKEN_LEFT_PARENTHESES,
 	TOKEN_RIGHT_PARENTHESES,
 	TOKEN_LEFT_BRACE,
@@ -24,17 +41,28 @@ typedef enum {
 	TOKEN_SUB_EQUAL,
 	TOKEN_DIV_EQUAL,
 	TOKEN_MUL_EQUAL,
+	
+	TOKEN_LESS,
+	TOKEN_GREATER,
+	TOKEN_LESS_EQUAL,
+	TOKEN_GREATER_EQUAL,
+	TOKEN_NOT,
+	TOKEN_EQUAL,
+	TOKEN_NOT_EQUAL,
+	TOKEN_INCREMENT,
+	TOKEN_DECREMENT,
+	TOKEN_ARROW,
 
+	TOKEN_ASSIGNMENT,
 	TOKEN_COMMA,
+	TOKEN_COLON,
 	TOKEN_SEMICOLON,
 	TOKEN_AMPERSAND,
-	TOKEN_HYPEN,
-	TOKEN_RIGHT_ANGLE_BRACKET,
 	TOKEN_PERIOD,
 
 	TOKEN_UNKNOWN,
 	TOKEN_EOF
-} TokenType;
+} token_t;
 
 typedef union {
 	int val;
@@ -44,7 +72,7 @@ typedef union {
 
 
 typedef struct {
-	TokenType type;
+	token_t type;
 	TokenValue value;
 	int line;
 	int column;
@@ -53,11 +81,64 @@ typedef struct {
 typedef struct Lexer {
 	char* start;
 	char* end;
-
 	int line;
 	int column;
+	Token* tokens;
+	int tokenIdx;
+	int capacity;
+
 } Lexer;
 
-Lexer* initialze_lexer(char* src);
+// Members need to be in corresponding order as elements of keywords
+
+typedef enum {
+	KEYWORD_FUNCTION,
+	KEYWORD_INT,
+	KEYWORD_CHAR,
+	KEYWORD_BOOL,
+	KEYWORD_VOID,
+	KEYWORD_STRUCT,
+	KEYWORD_ENUM,
+	KEYWORD_IF,
+	KEYWORD_ELSE,
+	KEYWORD_FOR,
+	KEYWORD_WHILE,
+	KEYWORD_CONTINUE,
+	KEYWORD_BREAK,
+	KEYWORD_RETURN,
+	KEYWORD_UNKNOWN
+} keyword_t;
+
+typedef struct {
+	keyword_t type;
+	char* str;
+} Keyword;
+
+token_t key_t_to_token_t(keyword_t type);
+keyword_t get_keyword_t(char* identififer);
+
+char peek_lexer(Lexer* lexer);
+char peek_lexer_next(Lexer* lexer);
+char advance_lexer(Lexer* lexer);
+bool lexer_at_end(Lexer* lexer);
+bool skip_lexer_whitespace(Lexer* lexer);
+
+void get_identifier(Lexer* lexer);
+void get_number(Lexer* lexer);
+void get_operator(Lexer* lexer);
+void get_delimeters(Lexer* lexer);
+bool match(Lexer* lexer, char expected);
+
+Token create_token(token_t type, int line, int column);
+Token create_char_token(token_t type, char c, int line, int column);
+Token create_int_token(token_t type, int val, int line, int column);
+Token create_string_token(token_t type, char* str, int line, int column);
+void add_token(Lexer* lexer, Token token);
+
 char* get_file_contents(char* name);
+Lexer* initialze_lexer(char* contents);
+Token* lex(char* contents);
+
+void print_tokens(Token* tokens);
+void free_tokens(Token* tokens);
 #endif

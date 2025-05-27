@@ -1,3 +1,3 @@
-int function(int a, int b) {
+function add(a: int, b: int) -> int {
 	return a + b;
 }
