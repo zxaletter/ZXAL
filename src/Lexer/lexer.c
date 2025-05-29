@@ -1,14 +1,47 @@
 #include "lexer.h"
 
-char* keywords[KEYWORDS] = {"function", "int", "char", "bool",
+char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
 							"else", "for", "while",
 						    "continue", "break", "return"};
 
-char* get_file_contents(char* name) {
-	if (!name) return NULL;
+// char* get_file_contents(char* name) {
+// 	if (!name) return NULL;
 
-	FILE* file = fopen(name, "r");
+// 	FILE* file = fopen(name, "r");
+// 	if (!file) {
+// 		perror("Error in opening file\n");
+// 		return NULL;
+// 	}
+
+// 	fpos_t position;
+// 	fgetpos(file, &position);
+
+// 	fseek(file, 0, SEEK_END);
+// 	long size = ftell(file);
+// 	printf("Size of %s is: %ld\n", name, size);
+
+// 	fsetpos(file, &position);
+// 	char* buffer = malloc(size + 1);
+// 	if (!buffer) {
+// 		perror("Error: Unable to allocate buffer for file contents\n");
+// 		return NULL;
+// 	}
+
+// 	for (long i = 0; i < size; i++) {
+// 		char c = fgetc(file);
+// 		printf("%c", c);
+// 		buffer[i] = c;
+// 		if (feof(file)) { break; }
+// 	}
+
+// 	buffer[size] = '\0';
+
+// 	fclose(file);
+// 	return buffer;
+// }
+
+char* get_file_contents(FILE* file) {
 	if (!file) {
 		perror("Error in opening file\n");
 		return NULL;
@@ -19,7 +52,6 @@ char* get_file_contents(char* name) {
 
 	fseek(file, 0, SEEK_END);
 	long size = ftell(file);
-	printf("Size of %s is: %ld\n", name, size);
 
 	fsetpos(file, &position);
 	char* buffer = malloc(size + 1);
@@ -30,14 +62,11 @@ char* get_file_contents(char* name) {
 
 	for (long i = 0; i < size; i++) {
 		char c = fgetc(file);
-		printf("%c", c);
 		buffer[i] = c;
 		if (feof(file)) { break; }
 	}
 
 	buffer[size] = '\0';
-
-	fclose(file);
 	return buffer;
 }
 
@@ -66,12 +95,15 @@ Lexer* initialize_lexer(char* src) {
 
 char peek_lexer(Lexer* lexer) {
 	if (*lexer->end == '\0') return '\0';
+	printf("Character being returned from 'peek_lexer()' is '%c'\n", *lexer->end);
 	return *lexer->end;
 }
 
 char peek_lexer_next(Lexer* lexer) {
-	if (*lexer->end == '\0' || *(lexer->end + 1) == '\0') return '\0';
-	return *(lexer->end + 1);
+	if (*lexer->end == '\0' || *(lexer->end++) == '\0') return '\0';
+	char c  = *(lexer->end + 1);
+	lexer->end--;
+	return c;
 }
 
 char advance_lexer(Lexer* lexer) {
@@ -103,12 +135,15 @@ bool lexer_at_end(Lexer* lexer) {
 token_t key_t_to_token_t(keyword_t type) {
 	switch (type) {
 		case KEYWORD_FUNCTION: return TOKEN_FUNCTION_KEYWORD;
+		case KEYWORD_LET: return TOKEN_LET_KEYWORD;
 		case KEYWORD_INT: return TOKEN_INT_KEYWORD;
 		case KEYWORD_CHAR: return TOKEN_CHAR_KEYWORD;
 		case KEYWORD_BOOL: return TOKEN_BOOL_KEYWORD;
 		case KEYWORD_VOID: return TOKEN_VOID_KEYWORD;
 		case KEYWORD_STRUCT: return TOKEN_STRUCT_KEYWORD;
 		case KEYWORD_ENUM: return TOKEN_ENUM_KEYWORD;
+		case KEYWORD_IF: return TOKEN_IF_KEYWORD;
+		case KEYWORD_ELSE: return TOKEN_ELSE_KEYWORD;
 		case KEYWORD_FOR: return TOKEN_FOR_KEYWORD;
 		case KEYWORD_WHILE: return TOKEN_WHILE_KEYWORD;
 		case KEYWORD_CONTINUE: return TOKEN_CONTINUE_KEYWORD;
@@ -238,6 +273,7 @@ void get_delimeters(Lexer* lexer) {
 		case ';': type = TOKEN_SEMICOLON; break;
 		case ':': type = TOKEN_COLON; break;
 		case ',': type = TOKEN_COMMA; break;
+		case '\'': type = TOKEN_SINGLE_QUOTE; break;
 	}
 
 	add_token(lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
@@ -250,6 +286,8 @@ bool match(Lexer* lexer, char expected) {
 }
 
 void get_operator(Lexer* lexer) {
+	printf("IN GET OPERATOR\n");
+	printf("CURRENT CHARACTER IS: '%c'\n", *lexer->end);
 	char c = advance_lexer(lexer);
 	bool isCompoundOp = false;
 	token_t type = TOKEN_UNKNOWN;
@@ -276,6 +314,7 @@ void get_operator(Lexer* lexer) {
 				type = TOKEN_DECREMENT;
 				isCompoundOp = true;
 			} else if (match(lexer, '>')) {
+				printf(" we have lexed an arrow\n");
 				type = TOKEN_ARROW;
 				isCompoundOp = true;
 			} else {
@@ -343,6 +382,27 @@ void get_operator(Lexer* lexer) {
 			}
 			break;
 		}
+
+		case '&': {
+			if (match(lexer, '&')) {
+				type = TOKEN_LOGICAL_AND;
+				isCompoundOp = true;
+			} else {
+				type = TOKEN_AMPERSAND;
+			}
+			break;
+		}
+
+		case '|': {
+			if (match(lexer, '|')) {
+				type = TOKEN_LOGICAL_OR;
+				isCompoundOp = true;
+			} else {
+				type = TOKEN_UNKNOWN;
+			}
+			break;
+		}
+
 	}
 
 	if (isCompoundOp) {
@@ -353,7 +413,11 @@ void get_operator(Lexer* lexer) {
 	}
 }
 
-Token* lex(char* contents) {
+Token* lex(FILE* file) {
+	char* contents = get_file_contents(file);
+
+	printf("\n\nHere is the file Contents: \n'%s'\n", contents);
+	
 	Lexer* lexer = initialize_lexer(contents);
 	if (!lexer) return NULL;
 
@@ -368,9 +432,9 @@ Token* lex(char* contents) {
 			get_identifier(lexer);
 		} else if (isdigit(peek_lexer(lexer)) || (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer)))) {
 			get_number(lexer);
-		} else if (strchr("=+-*/!&<>", peek_lexer(lexer))) {
+		} else if (strchr("=+-*/<!&>|", peek_lexer(lexer))) {
 			get_operator(lexer);
-		} else if (strchr(":()[]{},;", peek_lexer(lexer))) {
+		} else if (strchr("':()[]{},;", peek_lexer(lexer))) {
 			get_delimeters(lexer);
 		} else {
 			advance_lexer(lexer);
@@ -407,7 +471,10 @@ void free_token(Token* token) {
 		token->type == TOKEN_CONTINUE_KEYWORD ||
 		token->type == TOKEN_BREAK_KEYWORD ||
 		token->type == TOKEN_FUNCTION_KEYWORD ||
-		token->type == TOKEN_ID
+		token->type == TOKEN_LET_KEYWORD ||
+		token->type == TOKEN_ID ||
+		token->type == TOKEN_LOGICAL_OR ||
+		token->type == TOKEN_LOGICAL_AND
 	) {
 		free(token->value.str);
 	}
@@ -448,6 +515,11 @@ void print_tokens(Token* tokens) {
 			case TOKEN_BREAK_KEYWORD:	
 			case TOKEN_FUNCTION_KEYWORD:
 			case TOKEN_RETURN_KEYWORD:
+			case TOKEN_IF_KEYWORD:
+			case TOKEN_ELSE_KEYWORD:
+			case TOKEN_LET_KEYWORD:
+			case TOKEN_LOGICAL_AND:
+			case TOKEN_LOGICAL_OR:
 			case TOKEN_ID: {
 				printf("TOKEN: %s\n", tokens[i].value.str);
 				break;
@@ -476,6 +548,7 @@ void print_tokens(Token* tokens) {
 			case TOKEN_COLON:
 			case TOKEN_SEMICOLON:
 			case TOKEN_AMPERSAND:
+			case TOKEN_SINGLE_QUOTE:
 			case TOKEN_PERIOD: {
 				printf("TOKEN: %c\n", tokens[i].value.c);
 				break;				
