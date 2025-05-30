@@ -268,14 +268,15 @@ Node* parse_statement(Parser* parser, FILE* file) {
 	switch (peek_token_type(parser)) {
 		case TOKEN_LET_KEYWORD: {
 			advance_parser(parser);
+
 			if (peek_token_type(parser) != TOKEN_ID) {
-				perror("Error: Do not have an identifier after 'let' keyword\n");
+				printf("Error: Do not have an identifier after 'let' keyword\n");
 				return NULL;
 				//handle non token id after let
 			}
 			char* id = strdup((*(parser->end)).value.str);
 			if (!id) {
-				perror("Error: Unable to allocate space for id in 'parse_statement()\n");
+				printf("Error: Unable to allocate space for id in 'parse_statement()\n");
 				return NULL;
 			}
 
@@ -296,22 +297,65 @@ Node* parse_statement(Parser* parser, FILE* file) {
 				return NULL;
 			}
 
-			Token tok = peek_token(parser);
-			data_t type = get_type(&tok);
-			printf("IN PARSE STATEMENT FOR LET KEYWORD CASE -> TOKEN TYPE is: '%d'\n", type);
-			struct type* var_type = create_type(type, NULL);
-
-			advance_parser(parser);
-			if (peek_token_type(parser) == TOKEN_SEMICOLON) {
-				stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, var_type);
-			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
+			{
+				Token tok = peek_token(parser);
+				data_t type = get_type(&tok);
+				struct type* t = create_type(type, NULL);
+				
 				advance_parser(parser);
-				Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, NULL);
-			 	Node* expr_node = parse_logical_or(parser, file);
-				stmt = create_string_node(NODE_ASSIGNMENT, NULL, assignee, expr_node, NULL, NULL, NULL);
-			} 
-			free(id);
-			break;
+				
+				if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
+					advance_parser(parser);
+					struct type* array_type = create_type(TYPE_ARRAY, t);
+					printf(" JUST MOVED PAST TOKEN_LEFT_BRACKET and Current token type is '%d'\n", peek_token_type(parser));
+					Node* expr_node = parse_logical_or(parser, file);
+					if (!expr_node) {
+						printf("Error: Unable to retrieve size of array\n");
+						return NULL;
+					}
+					printf("IN PARSE_STATEMENT JUST GOT ARRAY SIZE-> CURRENT TOKEN TYPE IS '%d'\n", peek_token_type(parser));
+					if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
+						printf("Error: Expected ']' after parsing '%s' size\n", id);
+						return NULL;
+					}
+
+					advance_parser(parser);
+
+					if (peek_token_type(parser) == TOKEN_SEMICOLON) {
+						stmt = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
+
+					} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
+						advance_parser(parser); // move past '='
+						Node* assignee = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
+						Node* elements = parse_array_list(parser, file);
+
+						stmt = create_string_node(NODE_ASSIGNMENT, NULL, assignee, elements, NULL, NULL, NULL);  
+						printf("TOKEN TYPE IS NOW: '%d'\n", peek_token_type(parser)); 
+						advance_parser(parser);
+						printf("NEXT TOKEN TYPE IS NOW: '%d'\n", peek_token_type(parser));
+						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+							printf("Error: Expected ';' after defining '%s' elements\n", id);
+						}
+					} 
+				} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
+					stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
+					advance_parser(parser);
+					Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+					Node* expr_node = parse_logical_or(parser, file);
+					if (!expr_node) {
+						printf("Error: EXPR NODE IN 'parse_let' is null\n");
+						return NULL;
+					}
+					stmt = create_string_node(NODE_ASSIGNMENT, NULL, assignee, expr_node, NULL, NULL, NULL);
+					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+						printf("Error: Expected ';' after assignment for '%s'\n", id);
+						return NULL;
+					}
+				}
+				free(id);
+				break;
+			}
 		}
 
 		case TOKEN_RETURN_KEYWORD: {
@@ -366,9 +410,10 @@ Node* parse_block(Parser* parser, FILE* file) {
 				current = stmt;
 			}
 		}
+
 		printf("Now im here\n");
-		// skip ';'
-		advance_parser(parser);
+
+		if (peek_token_type(parser) == TOKEN_SEMICOLON) { advance_parser(parser); }
 	
 		if (peek_token_type(parser) == TOKEN_RIGHT_BRACE) { break; }
 	}
@@ -570,6 +615,8 @@ Node* parse_array_list(Parser* parser, FILE* file) {
 	Node* current = NULL;
 	Node* array_element = NULL;
 
+	advance_parser(parser);
+
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
 		array_element = parse_logical_or(parser, file);
 
@@ -635,17 +682,18 @@ Node* parse_let(Parser* parser, FILE* file) {
 			struct type* t = create_type(type, NULL);
 			
 			advance_parser(parser);
-			
+
 			if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
 				advance_parser(parser);
 				struct type* array_type = create_type(TYPE_ARRAY, t);
 				printf(" JUST MOVED PAST TOKEN_LEFT_BRACKET and Current token type is '%d'\n", peek_token_type(parser));
+
 				Node* expr_node = parse_logical_or(parser, file);
 				if (!expr_node) {
 					printf("Error: Unable to retrieve size of array\n");
 					return NULL;
 				}
-
+				printf("Got array size and currrent token TYPE is '%d'\n", peek_token_type(parser));
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 					printf("Error: Expected ']' after parsing '%s' size\n", id);
 					return NULL;
@@ -658,7 +706,8 @@ Node* parse_let(Parser* parser, FILE* file) {
 					advance_parser(parser);
 
 				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
-					advance_parser(parser);
+					printf("CURRRENT TOKEN TYPE is '%d'\n", peek_token_type(parser));
+					advance_parser(parser); // move past '='
 					Node* assignee = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
 					Node* elements = parse_array_list(parser, file);
 
