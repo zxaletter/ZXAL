@@ -5,45 +5,9 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"else", "for", "while",
 						    "continue", "break", "return"};
 
-// char* get_file_contents(char* name) {
-// 	if (!name) return NULL;
-
-// 	FILE* file = fopen(name, "r");
-// 	if (!file) {
-// 		perror("Error in opening file\n");
-// 		return NULL;
-// 	}
-
-// 	fpos_t position;
-// 	fgetpos(file, &position);
-
-// 	fseek(file, 0, SEEK_END);
-// 	long size = ftell(file);
-// 	printf("Size of %s is: %ld\n", name, size);
-
-// 	fsetpos(file, &position);
-// 	char* buffer = malloc(size + 1);
-// 	if (!buffer) {
-// 		perror("Error: Unable to allocate buffer for file contents\n");
-// 		return NULL;
-// 	}
-
-// 	for (long i = 0; i < size; i++) {
-// 		char c = fgetc(file);
-// 		printf("%c", c);
-// 		buffer[i] = c;
-// 		if (feof(file)) { break; }
-// 	}
-
-// 	buffer[size] = '\0';
-
-// 	fclose(file);
-// 	return buffer;
-// }
-
 char* get_file_contents(FILE* file) {
 	if (!file) {
-		perror("Error in opening file\n");
+		printf("Error in opening file\n");
 		return NULL;
 	}
 
@@ -56,7 +20,7 @@ char* get_file_contents(FILE* file) {
 	fsetpos(file, &position);
 	char* buffer = malloc(size + 1);
 	if (!buffer) {
-		perror("Error: Unable to allocate buffer for file contents\n");
+		printf("Error: Unable to allocate buffer for file contents\n");
 		return NULL;
 	}
 
@@ -85,7 +49,7 @@ Lexer* initialize_lexer(char* src) {
 	lexer->tokenIdx = 0;
 	lexer->tokens = malloc(sizeof(Token) * lexer->capacity);
 	if (!lexer->tokens) {
-		perror("Error: Unable to allocate space for tokens\n");
+		printf("Error: Unable to allocate space for tokens\n");
 		free(lexer);
 		return NULL;
 	}
@@ -196,7 +160,7 @@ void add_token(Lexer* lexer, Token token) {
 		lexer->capacity *= 2;
 		lexer->tokens = realloc(lexer->tokens, lexer->capacity);
 		if (!lexer->tokens) {
-			perror("Error: Unable to reallocate 'lexer->tokens' in 'add_token'\n");
+			printf("Error: Unable to reallocate 'lexer->tokens' in 'add_token'\n");
 			return;
 		}
 	}
@@ -212,7 +176,7 @@ void get_identifier(Lexer* lexer) {
 	int length = lexer->end - lexer->start;
 	char* identifier = malloc(length + 1);
 	if (!identifier) {
-		perror("Error: identifier is NULL\n");
+		printf("Error: identifier is NULL\n");
 		return;
 	}
 
@@ -244,7 +208,7 @@ void get_number(Lexer* lexer) {
 	int length = lexer->end - lexer->start;
 	char* text = malloc(length + 1);
 	if (!text) {
-		perror("Error: Unable to allocate number text\n");
+		printf("Error: Unable to allocate number text\n");
 		return;
 	}
 

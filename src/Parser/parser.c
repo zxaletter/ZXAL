@@ -3,7 +3,7 @@
 Parser* initialize_parser(Token* tokens) {
 	Parser* parser = malloc(sizeof(Parser));
 	if (!parser) {
-		perror("Error: Unable to allocate space for parser\n");
+		printf("Error: Unable to allocate space for parser\n");
 		return NULL;
 	}
 
@@ -40,7 +40,6 @@ bool at_token_eof(Parser* parser) {
 	return (peek_token_type(parser) == TOKEN_EOF);
 }
 
-
 data_t get_type(Token* token) {
 	data_t kind;
 
@@ -60,7 +59,7 @@ data_t get_type(Token* token) {
 struct type* create_type(data_t main_type, struct type* subtype) {
 	struct type* t = malloc(sizeof(struct type));
 	if (!t) {
-		perror("Error: Unable to allocate space for type\n");
+		printf("Error: Unable to allocate space for type\n");
 		return NULL;
 	}
 	t->kind = main_type;
@@ -80,7 +79,7 @@ Node* create_node(node_t type, Node* left, Node* right,
 
 	Node* node = malloc(sizeof(Node));
 	if (!node) {
-		perror("Error: Unable to allocate space for node\n");
+		printf("Error: Unable to allocate space for node\n");
 		return NULL;
 	}
 	node->type = type;
@@ -100,7 +99,7 @@ Node* create_int_node(node_t type, int val, Node* left, Node* right,
 
 	Node* node = create_node(type, left, right, prev, next, t);
 	if (!node) {
-		perror("Error: In 'create_int_node()': NULL '<-' from 'create_node()'\n");
+		printf("Error: In 'create_int_node()': NULL '<-' from 'create_node()'\n");
 		return NULL;
 	}
 	node->value.val = val;
@@ -113,14 +112,14 @@ Node* create_string_node(node_t type, char* id, Node* left, Node* right,
 	
 	Node* node = create_node(type, left, right, prev, next, t);
 	if (!node) {
-		perror("Error: In 'create_string_node()': NULL '<-' from 'create_node()'\n");
+		printf("Error: In 'create_string_node()': NULL '<-' from 'create_node()'\n");
 		return NULL;
 	}
 
 	if (id) {
 		node->value.name = strdup(id);
 		if (!node->value.name) {
-			perror("Error: Unable to allocate space for string in 'create_string_node()'\n");
+			printf("Error: Unable to allocate space for string in 'create_string_node()'\n");
 			free(node);
 			return NULL;
 		}
@@ -162,7 +161,7 @@ Node* parse_factor(Parser* parser, FILE* file) {
 		case TOKEN_ID: {
 			char* id = strdup((*(parser->end)).value.str);
 			if (!id) {
-				perror("Error: Unable to allocate space for id in 'parse_factor()'\n");
+				printf("Error: Unable to allocate space for id in 'parse_factor()'\n");
 				return NULL;
 			}
 
@@ -181,9 +180,26 @@ Node* parse_factor(Parser* parser, FILE* file) {
 			break;
 		}
 
-		case TOKEN_LEFT_BRACKET: {
+		case TOKEN_LEFT_PARENTHESES: {
 			advance_parser(parser);
+			node = parse_logical_or(parser, file);
+			if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
+				printf("IN PARSE_FACTOR, Expected missing matching ')'\n");
+				return NULL;
+			}
+			advance_parser(parser);
+			break;
+		}
 
+		case TOKEN_SINGLE_QUOTE: {
+			advance_parser(parser);
+			node = parse_logical_or(parser, file);
+			if (peek_token_type(parser) != TOKEN_SINGLE_QUOTE) {
+				printf("Missing SINGLE QUOTE\n");
+				return NULL;
+			}
+			advance_parser(parser);
+			break;
 		}
 	}
 	return node;
@@ -340,14 +356,14 @@ Node* parse_statement(Parser* parser, FILE* file) {
 				} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
 					stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
-					advance_parser(parser);
 					Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+					advance_parser(parser);
 					Node* expr_node = parse_logical_or(parser, file);
 					if (!expr_node) {
 						printf("Error: EXPR NODE IN 'parse_let' is null\n");
 						return NULL;
 					}
-					stmt = create_string_node(NODE_ASSIGNMENT, NULL, assignee, expr_node, NULL, NULL, NULL);
+					stmt = create_node(NODE_ASSIGNMENT, assignee, expr_node, NULL, NULL, NULL);
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 						printf("Error: Expected ';' after assignment for '%s'\n", id);
 						return NULL;
@@ -375,10 +391,12 @@ Node* parse_statement(Parser* parser, FILE* file) {
 			break;
 		}
 
+		// case TOKEN_ID: {}
+
 	}
 
 	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-		perror("Error: Statement should end with a semicolon but it does not\n");
+		printf("Error: Statement should end with a semicolon but it does not\n");
 		printf("Statement ends with token type: %d\n", peek_token_type(parser));
 		return NULL;
 	}
@@ -449,7 +467,7 @@ Node* parse_parameters(Parser* parser, FILE* file) {
 			peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
 			peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
 			// deal with not having any data type
-			perror("Error: expected data type after colon\n");
+			printf("Error: expected data type after colon\n");
 			return NULL;
 		}
 
@@ -522,7 +540,7 @@ void emit_err_msg(Parser* parser, FILE* file, Error* err) {
 
 	char* buffer = malloc(line_size + 1);
 	if (!buffer) {
-		perror("Error: Unable to allocate space for buffer in 'emit_err_msg()'\n");
+		printf("Error: Unable to allocate space for buffer in 'emit_err_msg()'\n");
 		return;
 	}
 
@@ -545,7 +563,7 @@ Node* parse_function(Parser* parser, FILE* file) {
 	if (peek_token_type(parser) == TOKEN_ID) {
 		char* id = strdup((*(parser->end)).value.str);
 		if (!id) {
-			perror("Error: Unable to allocate space for function identifier\n");
+			printf("Error: Unable to allocate space for function identifier\n");
 			return NULL;
 		}
 		printf("Current function: '%s'\n", id);
@@ -751,7 +769,7 @@ Node* parse(Token* tokens, FILE* file) {
 	printf("In parser\n");
 	Parser* parser = initialize_parser(tokens);
 	if (!parser) {
-		perror("In 'build_AST', parser is NULL\n");
+		printf("In 'build_AST', parser is NULL\n");
 		return NULL;
 	}
 
@@ -792,6 +810,14 @@ Node* parse(Token* tokens, FILE* file) {
 	free(parser);
 	printf("About to return nodes\n");
 	return head;
+
+}
+
+#define BRANCH "├"
+#define LAST_BRANCH "└"
+#define CONTINUATION "│"
+
+void print_ast(Node* root) {
 
 }
 
@@ -903,35 +929,6 @@ void free_node(Node* node) {
 	if (!node || node->node_free) return;
 
 	node->node_free = true;
-
-	// if (node->t) {
-	// 	switch (node->t->kind) {
-	// 		case TYPE_FUNCTION: {
-	// 			if (node->value.name) {
-	// 				free(node->value.name);
-	// 				node->value.name = NULL;
-	// 			}
-
-	// 			if (node->left) {
-	// 				free_parameter_list(node->left);
-	// 				node->left = NULL;
-	// 			}
-
-	// 			if (node->right) {
-	// 				free_statement_list(node->right);
-	// 				node->right = NULL;
-	// 			}
-
-	// 			if (node->t) {
-	// 				free_type(node->t);
-	// 				node->t = NULL;
-	// 			}
-
-	// 			break;
-	// 		}
-
-	// 	}
-	// }
 
 	switch (node->type) {
 		case NODE_NAME: {

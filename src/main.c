@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
 
 	Node* root = parse(tokens, file);
 	if (root) {
-		// print_ast(root);
+		print_ast(root);
 	}
 
 	free_ast(root);

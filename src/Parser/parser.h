@@ -25,6 +25,7 @@ typedef enum {
 	NODE_INTEGER,
 	NODE_RETURN,
 	NODE_CALL,
+	NODE_SUBSCRIPT,
 	NODE_ARG,
 	NODE_ASSIGNMENT,
 	NODE_ADDR,
@@ -136,6 +137,8 @@ Node* parse_array_list(Parser* parser, FILE* file);
 Node* parse_let(Parser* parser, FILE* file);
 Parser* initialize_parser(Token* tokens);
 Node* parse(Token* tokens, FILE* file);
+
+void print_ast(Node* root);
 
 
 void free_type(struct type* t);
