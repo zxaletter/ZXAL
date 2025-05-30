@@ -4,6 +4,7 @@
 #include "Lexer/lexer.h"
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #define NUM_NODES 1000
 
@@ -28,7 +29,6 @@ typedef enum {
 	NODE_ASSIGNMENT,
 	NODE_ADDR,
 	NODE_NAME,
-
 
 	NODE_ADD,
 	NODE_SUB,
@@ -68,6 +68,7 @@ typedef struct {
 	struct Node* prev;
 	struct Node* next;
 	struct type* t;
+	bool node_free;
 } Node;
 
 typedef enum {
@@ -75,15 +76,19 @@ typedef enum {
 	TYPE_CHAR,
 	TYPE_BOOL,
 	TYPE_VOID,
+	TYPE_ARRAY,
 	TYPE_POINTER,
 	TYPE_FUNCTION,
+	TYPE_STRUCT,
+	TYPE_ENUM,
 	TYPE_UNKNOWN
 } data_t;
 
 
 struct type {
 	data_t kind;
-	struct type* subtype;	
+	struct type* subtype;
+	bool type_free;	
 };
 
 typedef struct {
@@ -117,9 +122,6 @@ Node* create_int_node(node_t type, int val, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
 Node* parse_factor(Parser* parser, FILE* file);
-// Node* parse_term(Parser* parser, FILE* file);
-// Node* parse_expression(Parser* parser, FILE* file);
-
 Node* parse_multiplicative(Parser* parser, FILE* file);
 Node* parse_additive(Parser* parser, FILE* file);
 Node* parse_relational(Parser* parser, FILE* file);
@@ -130,10 +132,16 @@ Node* parse_statement(Parser* parser, FILE* file);
 Node* parse_block(Parser* parser, FILE* file);
 Node* parse_parameters(Parser* parser, FILE* file);
 Node* parse_function(Parser* parser, FILE* file);
+Node* parse_array_list(Parser* parser, FILE* file);
+Node* parse_let(Parser* parser, FILE* file);
 Parser* initialize_parser(Token* tokens);
 Node* parse(Token* tokens, FILE* file);
 
+
 void free_type(struct type* t);
+void free_expression(Node* node);
+void free_parameter_list(Node* head);
+void free_statement_list(Node* head);
 void free_node(Node* node);
 void free_ast(Node* root);
 #endif

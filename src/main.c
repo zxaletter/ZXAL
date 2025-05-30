@@ -15,11 +15,10 @@ int main(int argc, char** argv) {
 
 	Node* root = parse(tokens, file);
 	if (root) {
-		printf("Got nodes\n");
+		// print_ast(root);
 	}
 
 	free_ast(root);
-	printf("FREED ROOT\n");
 	free_tokens(tokens);
 	fclose(file);
 	

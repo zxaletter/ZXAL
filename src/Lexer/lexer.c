@@ -100,8 +100,9 @@ char peek_lexer(Lexer* lexer) {
 }
 
 char peek_lexer_next(Lexer* lexer) {
-	if (*lexer->end == '\0' || *(lexer->end++) == '\0') return '\0';
-	char c  = *(lexer->end + 1);
+	if (*lexer->end == '\0' || *(lexer->end + 1) == '\0') return '\0';
+	lexer->end++;
+	char c = *lexer->end;
 	lexer->end--;
 	return c;
 }
