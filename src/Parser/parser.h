@@ -23,10 +23,15 @@ typedef struct {
 
 typedef enum {
 	NODE_INTEGER,
+	NODE_IF,
+	NODE_ELSE_IF,
+	NODE_ELSE,
+	NODE_FOR,
+	NODE_WHILE,
 	NODE_RETURN,
 	NODE_CALL,
 	NODE_SUBSCRIPT,
-	NODE_ARG,
+	NODE_ARG, 
 	NODE_ASSIGNMENT,
 	NODE_ADDR,
 	NODE_NAME,
@@ -133,6 +138,7 @@ Node* parse_statement(Parser* parser, FILE* file);
 Node* parse_block(Parser* parser, FILE* file);
 Node* parse_parameters(Parser* parser, FILE* file);
 Node* parse_function(Parser* parser, FILE* file);
+Node* parse_args(Parser* parser, FILE* file);
 Node* parse_array_list(Parser* parser, FILE* file);
 Node* parse_let(Parser* parser, FILE* file);
 Parser* initialize_parser(Token* tokens);

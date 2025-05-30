@@ -14,9 +14,9 @@ int main(int argc, char** argv) {
 	print_tokens(tokens);
 
 	Node* root = parse(tokens, file);
-	if (root) {
-		print_ast(root);
-	}
+	// if (root) {
+	// 	print_ast(root);
+	// }
 
 	free_ast(root);
 	free_tokens(tokens);

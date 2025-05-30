@@ -251,8 +251,6 @@ bool match(Lexer* lexer, char expected) {
 }
 
 void get_operator(Lexer* lexer) {
-	printf("IN GET OPERATOR\n");
-	printf("CURRENT CHARACTER IS: '%c'\n", *lexer->end);
 	char c = advance_lexer(lexer);
 	bool isCompoundOp = false;
 	token_t type = TOKEN_UNKNOWN;
@@ -368,6 +366,11 @@ void get_operator(Lexer* lexer) {
 			break;
 		}
 
+		case '%': {
+			type = TOKEN_MODULO;
+			break;
+		}
+
 	}
 
 	if (isCompoundOp) {
@@ -397,7 +400,7 @@ Token* lex(FILE* file) {
 			get_identifier(lexer);
 		} else if (isdigit(peek_lexer(lexer)) || (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer)))) {
 			get_number(lexer);
-		} else if (strchr("=+-*/<!&>|", peek_lexer(lexer))) {
+		} else if (strchr("=+-*/<!&>|%", peek_lexer(lexer))) {
 			get_operator(lexer);
 		} else if (strchr("':()[]{},;", peek_lexer(lexer))) {
 			get_delimeters(lexer);
@@ -505,6 +508,7 @@ void print_tokens(Token* tokens) {
 			case TOKEN_SUB:
 			case TOKEN_DIV:
 			case TOKEN_MUL:
+			case TOKEN_MODULO:
 			case TOKEN_LESS:
 			case TOKEN_GREATER:
 			case TOKEN_NOT:

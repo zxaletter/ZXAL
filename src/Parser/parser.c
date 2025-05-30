@@ -159,7 +159,8 @@ Node* parse_factor(Parser* parser, FILE* file) {
 
 	switch (peek_token_type(parser)) {
 		case TOKEN_ID: {
-			char* id = strdup((*(parser->end)).value.str);
+			Token tok = peek_token(parser);
+			char* id = strdup(tok.value.str);
 			if (!id) {
 				printf("Error: Unable to allocate space for id in 'parse_factor()'\n");
 				return NULL;
@@ -167,6 +168,27 @@ Node* parse_factor(Parser* parser, FILE* file) {
 
 			node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, NULL);
 			advance_parser(parser);
+
+			if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
+				advance_parser(parser);
+				Node* args = parse_args(parser, file);
+				node = create_node(NODE_CALL, node, args, NULL, NULL, NULL);
+				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
+					printf("Error: Expected ')' for node call\n");
+					return NULL;
+				}
+				advance_parser(parser);
+
+			} else if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
+				advance_parser(parser);
+				Node* expr_node = parse_logical_or(parser, file);
+				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
+					printf("Error: Expected ']' in parse_factor\n");
+					return NULL;
+				}
+				advance_parser(parser);
+			}
+
 			break;
 		}
 
@@ -280,6 +302,7 @@ Node* parse_logical_or(Parser* parser, FILE* file) {
 
 Node* parse_statement(Parser* parser, FILE* file) {
 	Node* stmt = NULL;
+	bool special_statement = false;
 
 	switch (peek_token_type(parser)) {
 		case TOKEN_LET_KEYWORD: {
@@ -375,30 +398,109 @@ Node* parse_statement(Parser* parser, FILE* file) {
 		}
 
 		case TOKEN_RETURN_KEYWORD: {
-			printf("IN PARSE STATEMENT WITH RETURN CASE\n");
 			advance_parser(parser);
-			printf("About to check token type\n");
 			if (peek_token_type(parser) == TOKEN_SEMICOLON) {
 				stmt = create_string_node(NODE_RETURN, NULL, NULL, NULL, NULL, NULL, NULL);
-			} else {
-				printf("We know we have expression after return\n");
-				printf("IN RETURN KEYWORD CASE: Current token type is: '%d'\n", peek_token_type(parser));
+			} else {				
 				Node* node = parse_logical_or(parser, file);
-				printf("Got expression\n");
 				stmt = create_string_node(NODE_RETURN, NULL, NULL, node, NULL, NULL, NULL);
-				printf("Got statement\n");
 			}
 			break;
 		}
 
-		// case TOKEN_ID: {}
+		case TOKEN_IF_KEYWORD: {
+			special_statement = true;
+			advance_parser(parser);
+			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
+				printf("Error: Expected '(' after 'IF STATEMENT'\n");
+				return NULL;
+			} 
+			Node* condition_node = parse_logical_or(parser, file);
+			if (!condition_node) {
+				printf("Error: received null condition node in if statement\n");
+				return NULL;
+			}
 
+			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+				printf("Error: Expected '{' after condition for IF statement\n");
+				return NULL;
+			}
+
+			advance_parser(parser);
+			Node* if_body = parse_block(parser, file);
+			if (!if_body) {
+				printf("Error: received NULL if body\n");
+				return NULL;
+			}
+
+			stmt = create_node(NODE_IF, condition_node, if_body, NULL, NULL, NULL);
+			if (!stmt) {
+				printf("Error: Unable to create if statement in PARSE_STATEMENT\n");
+				return NULL;
+			}
+			return stmt;
+		} 
+
+		case TOKEN_ELSE_KEYWORD: {
+			special_statement = true;
+			advance_parser(parser);
+			if (peek_token_type(parser) == TOKEN_IF_KEYWORD) {
+				advance_parser(parser);
+				
+				if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
+					printf("Error: Expected '(' after else if keyword\n");
+					return NULL;
+				}			
+				Node* condition_node = parse_logical_or(parser, file);
+
+				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+					printf("Error: Expected '{' after else if keyword\n");
+					return NULL;
+				}		
+				advance_parser(parser);
+				Node* body = parse_block(parser, file);
+				if (!body) {
+					printf("Error: body is NULL\n");
+					return NULL;
+				}
+
+				stmt = create_node(NODE_ELSE_IF, condition_node, body, NULL, NULL, NULL);
+				if (!stmt) {
+					printf("Error: Unable to create if statement in PARSE_STATEMENT\n");
+					return NULL;
+				}
+				return stmt;
+
+			} else if (peek_token_type(parser) == TOKEN_LEFT_BRACE) {
+				special_statement = true;
+				advance_parser(parser);
+
+				Node* body = parse_block(parser, file);
+				if (!body) {
+					printf("Error: recived NULL body in else TOKEN_ELSE_KEYWORD case\n");
+					return NULL;
+				} 
+
+				stmt = create_node(NODE_ELSE, NULL, body, NULL, NULL, NULL);
+				if (!stmt) {
+					printf("Error: Could not create statement NODE_ELSE type in TOKEN_ELSE_KEYWORD case\n");
+					return NULL;
+				}
+
+				return stmt;
+			} else {
+				printf("Error: missing '{' after else keyword\n");
+				return NULL;
+			}
+		}
 	}
 
-	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-		printf("Error: Statement should end with a semicolon but it does not\n");
-		printf("Statement ends with token type: %d\n", peek_token_type(parser));
-		return NULL;
+	if (!special_statement) {
+		if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+			printf("Error: Statement should end with a semicolon but it does not\n");
+			printf("Statement ends with token type: %d\n", peek_token_type(parser));
+			return NULL;
+		}		
 	}
 	printf("Returning the statement\n");
 	return stmt;
@@ -426,8 +528,16 @@ Node* parse_block(Parser* parser, FILE* file) {
 				current->next = stmt;
 				stmt->prev = current;
 				current = stmt;
+				
+				if (current->type == NODE_ELSE || current->type == NODE_ELSE_IF) {
+					printf("We have else or else if\n");					
+				}
 			}
+		} else {
+			printf("Error: Received NULL statement from 'parse_statement()'\n");
+			return NULL;
 		}
+
 
 		printf("Now im here\n");
 
@@ -590,11 +700,15 @@ Node* parse_function(Parser* parser, FILE* file) {
 		}
 
 		advance_parser(parser);
-		// if (peek_token_type(parser) != TOKEN_INT_KEYWORD && 
-		// 	peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
-		// 	peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
-		// 	// deal with not having any return data type
-		// }
+		if (peek_token_type(parser) != TOKEN_INT_KEYWORD && 
+			peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
+			peek_token_type(parser) != TOKEN_BOOL_KEYWORD &&
+			peek_token_type(parser) != TOKEN_VOID_KEYWORD) {
+			
+			printf("Errror: You have not specified return type for '%s'\n", id);
+			return NULL;
+			// deal with not having any return data type
+		}
 		Token tok = peek_token(parser);
 		data_t return_type = get_type(&tok);
 		struct type* subtype = create_type(return_type, NULL);
@@ -626,6 +740,43 @@ Node* parse_function(Parser* parser, FILE* file) {
 	// advance_parser(parser);
 
 	return function_node;
+}
+
+Node* parse_args(Parser* parser, FILE* file) {
+	Node* head = NULL;
+	Node* current = NULL;
+	Node* arg = NULL;
+
+	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
+		arg = parse_logical_or(parser, file);
+		if (!arg) {
+			printf("Received NULL arg in 'parse_args()'\n");
+			return NULL;
+		}
+
+		Node* wrapped_arg = create_node(NODE_ARG, NULL, arg, NULL, NULL, NULL);
+
+		if (wrapped_arg) {
+			if (!head) {
+				head = wrapped_arg;
+				current = wrapped_arg;
+			} else {
+				current->next = wrapped_arg;
+				wrapped_arg->prev = current;
+				current = wrapped_arg;
+			}
+		} else {
+			printf("Error: Wrapped arg is NULL\n");
+		}
+
+		if (peek_token_type(parser) == TOKEN_COMMA) {
+			advance_parser(parser);
+		} else if (peek_token_type(parser) == TOKEN_RIGHT_PARENTHESES) {
+			break;
+		}
+	}
+
+	return head;
 }
 
 Node* parse_array_list(Parser* parser, FILE* file) {
@@ -817,9 +968,9 @@ Node* parse(Token* tokens, FILE* file) {
 #define LAST_BRANCH "└"
 #define CONTINUATION "│"
 
-void print_ast(Node* root) {
+// void print_ast(Node* root) {
 
-}
+// }
 
 void free_type(struct type* t) {
 	if (!t || t->type_free) return;

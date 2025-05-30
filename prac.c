@@ -12,7 +12,22 @@ function add(a: int, b: int) -> int {
 	let t: bool = true;
 	let arrr: bool[x] = {true, true, true};
 	let char_array: char[x] = {'c', 'a', 't'};
+	let x: int = mul(w, y);
 
+	if (x < y) {
+		let t: int = 3;
+		let w: int[t] = {1, 2, 3,};
+	} else if (x > y) {
+		let y: int = 6;
+		let w: char = 't';
+		let pwd: bool = true;
+		let p: char = 'c';
+		let t: bool = true;
+		let arrr: bool[x] = {true, true, true};
+		let char_array: char[x] = {'c', 'a', 't'};
+		let x: int = mul(w, y);
 
+	}
+	
 	return w + x;
 }
