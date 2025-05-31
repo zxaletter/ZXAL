@@ -92,6 +92,7 @@ Node* create_node(node_t type, Node* left, Node* right,
 	node->next = next;
 	node->t = t;
 	node->node_free = false;
+	printf("About to return node\n");
 
 	return node;
 
@@ -597,17 +598,24 @@ Node* parse_statement(Parser* parser, FILE* file) {
 						data_t kind = get_type(&tok);
 						struct type* type = create_type(kind, NULL);
 
+						printf("About to create string node\n");
 						Node* initializer = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, type);
+						if (initializer) {
+							printf("Created string node\n");
+						}
 						advance_parser(parser);
 
 						if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 							printf("Error: need to assign loop variable to value\n");
 							return NULL;
 						}
-						advance_parser(parser);
-						Node* expr_node = parse_logical_or(parse, file);
-						Node* assignment = create_node(NODE_ASSIGNMENT, initializer, expr_node, NULL, NULL, NULL);
 
+						advance_parser(parser);
+						Node* expr_node = parse_logical_or(parser, file);
+						Node* assignment = create_node(NODE_ASSIGNMENT, initializer, expr_node, NULL, NULL, NULL);
+						if (assignment) {
+							printf("Made assignment node\n");
+						}
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 							printf("Error: Missing ';' after initializer in for loop\n");
 							return NULL;
