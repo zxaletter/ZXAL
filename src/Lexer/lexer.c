@@ -59,7 +59,6 @@ Lexer* initialize_lexer(char* src) {
 
 char peek_lexer(Lexer* lexer) {
 	if (*lexer->end == '\0') return '\0';
-	printf("Character being returned from 'peek_lexer()' is '%c'\n", *lexer->end);
 	return *lexer->end;
 }
 

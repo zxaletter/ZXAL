@@ -66,16 +66,17 @@ typedef union {
 	char* name;
 } NodeValue;
 
-typedef struct {
+typedef struct Node Node;
+struct Node {
 	node_t type;
 	NodeValue value;
-	struct Node* left;
-	struct Node* right;
-	struct Node* prev;
-	struct Node* next;
+	Node* left;
+	Node* right;
+	Node* prev;
+	Node* next;
 	struct type* t;
 	bool node_free;
-} Node;
+};
 
 typedef enum {
 	TYPE_INTEGER,
