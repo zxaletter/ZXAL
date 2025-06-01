@@ -5,44 +5,16 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"else", "for", "while",
 						    "continue", "break", "return"};
 
-char* get_file_contents(FILE* file) {
-	if (!file) {
-		printf("Error in opening file\n");
-		return NULL;
-	}
 
-	fpos_t position;
-	fgetpos(file, &position);
-
-	fseek(file, 0, SEEK_END);
-	long size = ftell(file);
-
-	fsetpos(file, &position);
-	char* buffer = malloc(size + 1);
-	if (!buffer) {
-		printf("Error: Unable to allocate buffer for file contents\n");
-		return NULL;
-	}
-
-	for (long i = 0; i < size; i++) {
-		char c = fgetc(file);
-		buffer[i] = c;
-		if (feof(file)) { break; }
-	}
-
-	buffer[size] = '\0';
-	return buffer;
-}
-
-Lexer* initialize_lexer(char* src) {
+Lexer* initialize_lexer(FileInfo* info) {
 	struct Lexer* lexer = malloc(sizeof(struct Lexer));
 	if (!lexer) {
 		fprintf(stderr, "Error: Failed to allocate space for lexer\n");
 		return NULL;
 	}
 
-	lexer->start = src;
-	lexer->end = src;
+	lexer->start = info->contents;
+	lexer->end = info->contents;
 	lexer->line = 1;
 	lexer->column = 1;
 	lexer->capacity = 250;
@@ -53,7 +25,8 @@ Lexer* initialize_lexer(char* src) {
 		free(lexer);
 		return NULL;
 	}
-
+	lexer->info = info;
+	
 	return lexer;
 }
 
@@ -380,12 +353,143 @@ void get_operator(Lexer* lexer) {
 	}
 }
 
-Token* lex(FILE* file) {
-	char* contents = get_file_contents(file);
+FileInfo* create_info(char* filename, int line_count, char* contents) {
+	FileInfo* info = malloc(sizeof(FileInfo));
+	if (!info) {
+		perror("Failed to create file info\n");
+		return NULL;
+	}
 
-	printf("\n\nHere is the file Contents: \n'%s'\n", contents);
+	info->filename = filename;
+	info->line_count = line_count;
+	info->contents = contents;
+	info->lines = NULL;
+
+	return info;
+}
+
+FileInfo* retrieve_file_contents(char* filename) {
+	FILE* file = fopen(filename, "r");
+	if (!file) {
+		printf("Could not open file\n");
+		return NULL;
+	}
+	printf("here\n");
+	fpos_t position;
+	fgetpos(file, &position);
 	
-	Lexer* lexer = initialize_lexer(contents);
+	fseek(file, 0, SEEK_END);
+	long file_size = ftell(file);
+	
+	fsetpos(file, &position);
+
+	char* buffer = malloc(file_size + 1);
+	if (!buffer) {
+		printf("Could not allocate buffer\n");
+		fclose(file);
+		exit(EXIT_FAILURE);
+	}
+	printf("Got here\n");
+
+	int line_count = 0;
+	for (long i = 0; i < file_size; i++) {
+		char c = fgetc(file);
+		if (c == '\n') {
+			line_count++;
+		}
+		if (feof(file)) { break; }
+		buffer[i] = c;
+	}
+	buffer[file_size] = '\0';
+	
+	if (file_size > 0 && buffer[file_size - 1] != '\n') {
+	    line_count++;
+	}
+	fsetpos(file, &position);
+
+	FileInfo* info = create_info(filename, line_count, buffer);
+	if (!info) {
+		free(buffer);
+		fclose(file);
+		return NULL;
+	}
+
+	if (line_count > 0) {
+		info->lines = malloc(sizeof(char*) * line_count);
+		if (!info->lines) {
+			perror("Failed to allocate space for info->lines\n");
+			free(buffer);
+			free(info);
+			fclose(file);
+			return NULL;
+		}
+	} else {
+		info->lines = NULL;
+	}
+
+	int current_line_index = 0;
+	char* line_start = buffer;
+	for (long i = 0; i < file_size; i++) {
+		if (buffer[i] == '\n') {
+			if (current_line_index < line_count) {
+				int length = &buffer[i] - line_start;
+				info->lines[current_line_index] = malloc(length + 1);
+				if (!info->lines[current_line_index]) {
+					for (int j = 0; j < current_line_index; j++) {
+						free(info->lines[j]);
+					}
+					free(info->lines);
+					free(info->contents);
+					free(info);
+					fclose(file);
+					return NULL;
+				}
+				strncpy(info->lines[current_line_index], line_start, length);	
+				info->lines[current_line_index][length] =  '\0';
+				current_line_index++;
+
+			}
+			line_start = &buffer[i + 1];
+		}
+	}
+
+
+	if (line_start < (buffer + file_size) && current_line_index < line_count) {
+		long line_length = (buffer + file_size) - line_start;
+		info->lines[current_line_index] = malloc(line_length + 1);
+		if (!info->lines[current_line_index]) {
+			perror("Failed to allocate memory for the last line\n");
+			for (int j = 0; j < current_line_index; j++) {
+				free(info->lines[j]);
+			}
+			free(info->lines);
+			free(info->contents);
+			free(info);
+			fclose(file);
+			return NULL;
+		}
+		strncpy(info->lines[current_line_index], line_start, line_length);
+		info->lines[current_line_index][line_length] = '\0';
+		current_line_index++;
+	}
+
+	for (int i = 0; i < info->line_count; i++) {
+		printf("Line %d: '%s'\n", i + 1, info->lines[i]);
+	}
+
+	fclose(file);
+	return info;
+}
+
+Lexer* lex(char* filename) {
+	printf("in lex\n");
+	FileInfo* info = retrieve_file_contents(filename);
+	printf("info\n");
+	if (info) {
+		printf("got info\n");
+	}
+	
+	Lexer* lexer = initialize_lexer(info);
 	if (!lexer) return NULL;
 
 	while (!lexer_at_end(lexer)) {
@@ -410,9 +514,22 @@ Token* lex(FILE* file) {
 	}
 
 	add_token(lexer, create_token(TOKEN_EOF, lexer->line, lexer->column));
-	Token* tokens = lexer->tokens;
-	free(lexer);
-	return tokens;
+	return lexer;
+}
+
+void free_file_info(FileInfo* info) {
+	if (info->contents) {
+		free(info->contents);
+	}
+
+	if (info->lines) {
+		for (int i = 0; i < info->line_count; i++) {
+			free(info->lines[i]);
+		}
+		free(info->lines);
+	}
+
+	free(info);
 }
 
 void free_token(Token* token) {
@@ -448,12 +565,13 @@ void free_token(Token* token) {
 
 }
 
-void free_tokens(Token* tokens) {
-	for (int i = 0; tokens[i].type != TOKEN_EOF; i++) {
-		free_token(&tokens[i]);
+void free_lexer(Lexer* lexer) {
+	for (int i = 0; lexer->tokens[i].type != TOKEN_EOF; i++) {
+		free_token(&lexer->tokens[i]);
 	}
 
-	free(tokens);
+	free_file_info(lexer->info);
+	free(lexer);
 }
 
 void print_tokens(Token* tokens) {
@@ -524,4 +642,3 @@ void print_tokens(Token* tokens) {
 		}
 	}
 }
-

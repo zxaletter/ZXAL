@@ -9,18 +9,21 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	FILE* file = fopen(argv[1], "r");
-	Token* tokens = lex(file);
-	print_tokens(tokens);
+	printf("here in main\n");
+	char* filename = argv[1];
+	printf("filename\n");
+	Lexer* lexer = lex(filename);
+	if (lexer) {
+		print_tokens(lexer->tokens);
+	}
 
-	Node* root = parse(tokens, file);
+	Node* root = parse(lexer->tokens, lexer->info);
 	// if (root) {
 	// 	print_ast(root);
 	// }
 
-	free_ast(root);
-	free_tokens(tokens);
-	fclose(file);
+	// free_ast(root);
+	free_lexer(lexer);
 	
 	return 0;
 }

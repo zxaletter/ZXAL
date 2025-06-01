@@ -14,6 +14,116 @@ Parser* initialize_parser(Token* tokens) {
 
 }
 
+char* get_token_string(token_t type) {
+	switch (type) {
+		case TOKEN_LET_KEYWORD: return "let";
+		case TOKEN_INT_KEYWORD: return "int";
+		case TOKEN_CHAR_KEYWORD: return "char";
+		case TOKEN_BOOL_KEYWORD: return "bool";
+		case TOKEN_VOID_KEYWORD: return "void";
+		case TOKEN_STRUCT_KEYWORD: return "struct";
+		case TOKEN_ENUM_KEYWORD: return "enum";
+		case TOKEN_IF_KEYWORD: return "if";
+		case TOKEN_ELSE_KEYWORD: return "else";
+		case TOKEN_FOR_KEYWORD: return "for";
+		case TOKEN_WHILE_KEYWORD: return "while";
+		case TOKEN_CONTINUE_KEYWORD: return "continue";
+		case TOKEN_BREAK_KEYWORD: return "break";
+		case TOKEN_RETURN_KEYWORD: return "return";
+		case TOKEN_LEFT_PARENTHESES: return '(';
+		case TOKEN_RIGHT_PARENTHESES: return ')';
+		case TOKEN_LEFT_BRACE: return '{';
+		case TOKEN_RIGHT_BRACE: return '}';
+		case TOKEN_LEFT_BRACKET: return '[';
+		case TOKEN_RIGHT_BRACKET: return ']';
+		case TOKEN_ARROW: return '->';
+		case TOKEN_COMMA: return ',';
+		case TOKEN_COLON: return ':';
+		case TOKEN_SEMICOLON: return ';';
+		case TOKEN_SINGLE_QUOTE: return '\'';
+	}
+}
+
+void report_error(Token* tok, FileInfo* info, error_t error) {
+	int token_length = 1;
+	switch (tok->type) {
+		case TOKEN_FUNCTION_KEYWORD:
+		case TOKEN_LET_KEYWORD:
+		case TOKEN_INT_KEYWORD:
+		case TOKEN_CHAR_KEYWORD:
+		case TOKEN_BOOL_KEYWORD:
+		case TOKEN_VOID_KEYWORD:
+		case TOKEN_STRUCT_KEYWORD:
+		case TOKEN_ENUM_KEYWORD:
+		case TOKEN_IF_KEYWORD:
+		case TOKEN_ELSE_KEYWORD:
+		case TOKEN_FOR_KEYWORD:
+		case TOKEN_WHILE_KEYWORD:
+		case TOKEN_CONTINUE_KEYWORD:
+		case TOKEN_BREAK_KEYWORD:
+		case TOKEN_RETURN_KEYWORD:
+		case TOKEN_ID: {
+			token_length = sizeof(tok->value.str);
+			break;
+		}
+
+		case TOKEN_INTEGER: {
+			int length = snprintf(NULL, 0, "%d", tok->value.val);
+			char* buffer = malloc(length + 1);
+			if (!buffer) return;
+			snprintf(buffer, sizeof(buffer), "%d", tok->value.val);
+			token_length = sizeof(buffer);
+			break;
+		}
+
+	}
+
+	printf("\033[31mError\033[0m in file '%s' at line %d, column %d:\n", info->filename, tok->line, tok->column);
+	
+
+	switch (error) {
+		case EXPECTED_IDENTIFIER: {
+			printf("%s\n", info->lines[tok->line - 1]);
+			for (int i = 1; i < tok->column - 1; i++) {
+				printf(" ");
+			}
+
+			printf("\033[31m^\033[0m");
+
+			for (int i = 0; i < token_length; i++) {
+				printf("\033[31m~\033[0m");
+			}
+
+			break;
+		}
+
+		case EXPECTED_LEFT_BRACKET:
+		case EXPECTED_RIGHT_BRACKET:
+		case EXPECTED_LEFT_BRACE:
+		case EXPECTED_RIGHT_BRACE:
+		case EXPECTED_RIGHT_PARENTHESES:
+		case EXPECTED_LEFT_PARENTHESES: {
+			printf("%s\n", info->lines[tok->line - 1]);
+			for (int i = 0; i < tok->column; i++) {
+				printf(" ");
+			}
+
+			printf("\033[31m^\033[0m");
+			break;
+		}
+
+
+	}
+
+	printf("%s\n", info->lines[tok->line - 1]);
+	for (int i = 1; i < tok->column - 1; i++) {
+		printf(" ");
+	}
+
+	printf("\n");
+
+}
+
 token_t peek_token_type(Parser* parser) {
 	Token tok = peek_token(parser);
 	return tok.type;
@@ -84,7 +194,6 @@ Node* create_node(node_t type, Node* left, Node* right,
 		return NULL;
 	}
 
-	printf("About to create node\n");
 	node->type = type;
 	node->left = left;
 	node->right = right;
@@ -92,10 +201,8 @@ Node* create_node(node_t type, Node* left, Node* right,
 	node->next = next;
 	node->t = t;
 	node->node_free = false;
-	printf("About to return node\n");
 
 	return node;
-
 }
 
 Node* create_int_node(node_t type, int val, Node* left, Node* right,
@@ -158,17 +265,19 @@ node_t get_op_kind(Token* token) {
 	}
 }
 
-Node* parse_factor(Parser* parser, FILE* file) {
+Node* parse_factor(Parser* parser, FileInfo* info) {
 	Node* node = NULL;
 
 	switch (peek_token_type(parser)) {
 		case TOKEN_ID: {
-			printf("IN token id\n");
-			Token tok = peek_token(parser);
-			char* id = strdup(tok.value.str);
-			if (!id) {
-				printf("Error: Unable to allocate space for id in 'parse_factor()'\n");
-				return NULL;
+			char* id = NULL;
+			{
+				Token tok = peek_token(parser);
+				id = strdup(tok.value.str);
+				if (!id) {
+					printf("Error: Unable to allocate space for id in 'parse_factor()'\n");
+					return NULL;
+				}
 			}
 
 			node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, NULL);
@@ -176,22 +285,28 @@ Node* parse_factor(Parser* parser, FILE* file) {
 
 			if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
 				advance_parser(parser);
-				Node* args = parse_args(parser, file);
+				
+				Node* args = parse_args(parser, info);
 				node = create_node(NODE_CALL, node, args, NULL, NULL, NULL);
+				
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-					printf("Error: Expected ')' for node call\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
 					return NULL;
 				}
 				advance_parser(parser);
 
 			} else if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
 				advance_parser(parser);
-				Node* expr_node = parse_logical_or(parser, file);
+				
+				Node* expr_node = parse_logical_or(parser, info);
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
-					printf("Error: Expected ']' in parse_factor\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_RIGHT_BRACKET);
 					return NULL;
 				}
 				advance_parser(parser);
+
 			} else if (peek_token_type(parser) == TOKEN_INCREMENT) {
 				Node* increment_node = create_node(NODE_INCREMENT, node, NULL, NULL, NULL, NULL);
 				advance_parser(parser);
@@ -204,10 +319,8 @@ Node* parse_factor(Parser* parser, FILE* file) {
 		}
 
 		case TOKEN_INTEGER: {
-			printf("We have an integer\n");
 			Token tok = peek_token(parser);
 			int val = tok.value.val;
-			printf("int value is: %d\n", val);
 			node = create_int_node(NODE_INTEGER, val, NULL, NULL, NULL, NULL, NULL);
 			advance_parser(parser);
 			break;
@@ -215,9 +328,10 @@ Node* parse_factor(Parser* parser, FILE* file) {
 
 		case TOKEN_LEFT_PARENTHESES: {
 			advance_parser(parser);
-			node = parse_logical_or(parser, file);
+			node = parse_logical_or(parser, info);
 			if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-				printf("IN PARSE_FACTOR, Expected matching ')'\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
 				return NULL;
 			}
 			advance_parser(parser);
@@ -226,9 +340,10 @@ Node* parse_factor(Parser* parser, FILE* file) {
 
 		case TOKEN_LEFT_BRACKET: {
 			advance_parser(parser);
-			node = parse_logical_or(parser, file);
+			node = parse_logical_or(parser, info);
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
-				printf("IN PARSE_FACTOR, Expected matching ']'\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_RIGHT_BRACKET);
 				return NULL;
 			}
 			advance_parser(parser);
@@ -237,9 +352,10 @@ Node* parse_factor(Parser* parser, FILE* file) {
 
 		case TOKEN_SINGLE_QUOTE: {
 			advance_parser(parser);
-			node = parse_logical_or(parser, file);
+			node = parse_logical_or(parser, info);
 			if (peek_token_type(parser) != TOKEN_SINGLE_QUOTE) {
-				printf("Missing SINGLE QUOTE\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_SINGLE_QUOTE);
 				return NULL;
 			}
 			advance_parser(parser);
@@ -249,8 +365,9 @@ Node* parse_factor(Parser* parser, FILE* file) {
 	return node;
 }
 
-Node* parse_multiplicative(Parser* parser, FILE* file) {
-	Node* node = parse_factor(parser, file);
+Node* parse_multiplicative(Parser* parser, FileInfo* info) {
+	Node* node = parse_factor(parser, info);
+	
 	while (peek_token_type(parser) == TOKEN_MUL || peek_token_type(parser) == TOKEN_DIV ||
 		   peek_token_type(parser) == TOKEN_MUL_EQUAL || peek_token_type(parser) == TOKEN_DIV_EQUAL ||
 		   peek_token_type(parser) == TOKEN_MODULO) {
@@ -258,14 +375,14 @@ Node* parse_multiplicative(Parser* parser, FILE* file) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_factor(parser, file);
+		Node* right_child = parse_factor(parser, info);
 		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
 	}
 	return node;
 }
 
-Node* parse_additive(Parser* parser, FILE* file) {
-	Node* node = parse_multiplicative(parser, file);
+Node* parse_additive(Parser* parser, FileInfo* info) {
+	Node* node = parse_multiplicative(parser, info);
 
 	while (peek_token_type(parser) == TOKEN_ADD || peek_token_type(parser) == TOKEN_SUB ||
 		   peek_token_type(parser) == TOKEN_ADD_EQUAL || peek_token_type(parser) == TOKEN_SUB_EQUAL) {
@@ -273,14 +390,14 @@ Node* parse_additive(Parser* parser, FILE* file) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_multiplicative(parser, file);
+		Node* right_child = parse_multiplicative(parser, info);
 		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
 	}
 	return node;
 }
 
-Node* parse_relational(Parser* parser, FILE* file) {
-	Node* node = parse_additive(parser, file);
+Node* parse_relational(Parser* parser, FileInfo* info) {
+	Node* node = parse_additive(parser, info);
 
 	while (peek_token_type(parser) == TOKEN_LESS || peek_token_type(parser) == TOKEN_GREATER ||
 		   peek_token_type(parser) == TOKEN_LESS_EQUAL || peek_token_type(parser) == TOKEN_GREATER_EQUAL ||
@@ -289,40 +406,40 @@ Node* parse_relational(Parser* parser, FILE* file) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_additive(parser, file);
+		Node* right_child = parse_additive(parser, info);
 		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
 	}
 	return node;
 }
 
-Node* parse_logical_and(Parser* parser, FILE* file) {
-	Node* node = parse_relational(parser, file);
+Node* parse_logical_and(Parser* parser, FileInfo* info) {
+	Node* node = parse_relational(parser, info);
 
 	while (peek_token_type(parser) == TOKEN_LOGICAL_AND) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_relational(parser, file);
+		Node* right_child = parse_relational(parser, info);
 		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
 	}
 
 	return node;
 }
 
-Node* parse_logical_or(Parser* parser, FILE* file) {
-	Node* node = parse_logical_and(parser, file);
+Node* parse_logical_or(Parser* parser, FileInfo* info) {
+	Node* node = parse_logical_and(parser, info);
 
 	while (peek_token_type(parser) == TOKEN_LOGICAL_OR) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_logical_and(parser, file);
+		Node* right_child = parse_logical_and(parser, info);
 		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
 	}
 	return node;
 }
 
-Node* parse_statement(Parser* parser, FILE* file) {
+Node* parse_statement(Parser* parser, FileInfo* info) {
 	Node* stmt = NULL;
 	bool special_statement = false;
 
@@ -331,32 +448,35 @@ Node* parse_statement(Parser* parser, FILE* file) {
 			advance_parser(parser);
 
 			if (peek_token_type(parser) != TOKEN_ID) {
-				printf("Error: Do not have an identifier after 'let' keyword\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_IDENTIFIER);
 				return NULL;
-				//handle non token id after let
 			}
 
-			Token tok = peek_token(parser);
-			char* id = strdup(tok.value.str);
-			if (!id) {
-				printf("Error: Unable to allocate space for id in 'parse_statement()\n");
-				return NULL;
+			char* id = NULL;
+			{
+				Token tok = peek_token(parser);
+				id = strdup(tok.value.str);
+				if (!id) {
+					printf("Error: Unable to allocate space for id in 'parse_statement()\n");
+					return NULL;
+				}
 			}
 
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_COLON) {
-				printf("Error: Unable to find ':' after '%s'\n", id);
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_COLON);
 				return NULL;
-				// handle non token colon after variable name
 			}
 
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_INT_KEYWORD &&
 				peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
 				peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
-				// handle no appropriate type for variable
-			
-				printf("Error: Unable to find data type after '%s'\n", id);
+				
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_DATATYPE);			
 				return NULL;
 			}
 
@@ -369,16 +489,17 @@ Node* parse_statement(Parser* parser, FILE* file) {
 				
 				if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
 					advance_parser(parser);
+
 					struct type* array_type = create_type(TYPE_ARRAY, t);
-					printf(" JUST MOVED PAST TOKEN_LEFT_BRACKET and Current token type is '%d'\n", peek_token_type(parser));
-					Node* expr_node = parse_logical_or(parser, file);
+					Node* expr_node = parse_logical_or(parser, info);
 					if (!expr_node) {
 						printf("Error: Unable to retrieve size of array\n");
 						return NULL;
 					}
-					printf("IN PARSE_STATEMENT JUST GOT ARRAY SIZE-> CURRENT TOKEN TYPE IS '%d'\n", peek_token_type(parser));
+
 					if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
-						printf("Error: Expected ']' after parsing '%s' size\n", id);
+						Token token = peek_token(parser);
+						report_error(&token, info, EXPECTED_RIGHT_BRACKET);
 						return NULL;
 					}
 
@@ -389,15 +510,18 @@ Node* parse_statement(Parser* parser, FILE* file) {
 
 					} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 						advance_parser(parser); // move past '='
+						
 						Node* assignee = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
-						Node* elements = parse_array_list(parser, file);
+						Node* elements = parse_array_list(parser, info);
 
 						stmt = create_string_node(NODE_ASSIGNMENT, NULL, assignee, elements, NULL, NULL, NULL);  
-						printf("TOKEN TYPE IS NOW: '%d'\n", peek_token_type(parser)); 
+
 						advance_parser(parser);
-						printf("NEXT TOKEN TYPE IS NOW: '%d'\n", peek_token_type(parser));
+
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-							printf("Error: Expected ';' after defining '%s' elements\n", id);
+							Token token = peek_token(parser);
+							report_error(&token, info, EXPECTED_SEMICOLON);
+							return NULL;
 						}
 					} 
 				} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
@@ -405,14 +529,15 @@ Node* parse_statement(Parser* parser, FILE* file) {
 				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 					Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 					advance_parser(parser);
-					Node* expr_node = parse_logical_or(parser, file);
+					Node* expr_node = parse_logical_or(parser, info);
 					if (!expr_node) {
 						printf("Error: EXPR NODE IN 'parse_let' is null\n");
 						return NULL;
 					}
 					stmt = create_node(NODE_ASSIGNMENT, assignee, expr_node, NULL, NULL, NULL);
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-						printf("Error: Expected ';' after assignment for '%s'\n", id);
+						Token token = peek_token(parser);
+						report_error(&token, info, EXPECTED_SEMICOLON);
 						return NULL;
 					}
 				}
@@ -426,7 +551,7 @@ Node* parse_statement(Parser* parser, FILE* file) {
 			if (peek_token_type(parser) == TOKEN_SEMICOLON) {
 				stmt = create_string_node(NODE_RETURN, NULL, NULL, NULL, NULL, NULL, NULL);
 			} else {				
-				Node* node = parse_logical_or(parser, file);
+				Node* node = parse_logical_or(parser, info);
 				stmt = create_string_node(NODE_RETURN, NULL, NULL, node, NULL, NULL, NULL);
 			}
 			break;
@@ -435,23 +560,27 @@ Node* parse_statement(Parser* parser, FILE* file) {
 		case TOKEN_IF_KEYWORD: {
 			special_statement = true;
 			advance_parser(parser);
+
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
-				printf("Error: Expected '(' after 'IF STATEMENT'\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
 				return NULL;
 			} 
-			Node* condition_node = parse_logical_or(parser, file);
+
+			Node* condition_node = parse_logical_or(parser, info);
 			if (!condition_node) {
 				printf("Error: received null condition node in if statement\n");
 				return NULL;
 			}
 
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
-				printf("Error: Expected '{' after condition for IF statement\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_LEFT_BRACE);
 				return NULL;
 			}
 
 			advance_parser(parser);
-			Node* if_body = parse_block(parser, file);
+			Node* if_body = parse_block(parser, info);
 			if (!if_body) {
 				printf("Error: received NULL if body\n");
 				return NULL;
@@ -462,28 +591,33 @@ Node* parse_statement(Parser* parser, FILE* file) {
 				printf("Error: Unable to create if statement in PARSE_STATEMENT\n");
 				return NULL;
 			}
-			printf("\033[1;31mCREATED IF STATEMENT with node type: '%d'\033[0m\n", stmt->type);
 			return stmt;
 		} 
 
 		case TOKEN_ELSE_KEYWORD: {
 			special_statement = true;
 			advance_parser(parser);
+
 			if (peek_token_type(parser) == TOKEN_IF_KEYWORD) {
 				advance_parser(parser);
 				
 				if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
-					printf("Error: Expected '(' after else if keyword\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
 					return NULL;
 				}			
-				Node* condition_node = parse_logical_or(parser, file);
+
+				Node* condition_node = parse_logical_or(parser, info);
 
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
-					printf("Error: Expected '{' after else if keyword\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_LEFT_BRACE);
 					return NULL;
 				}		
+
 				advance_parser(parser);
-				Node* body = parse_block(parser, file);
+				
+				Node* body = parse_block(parser, info);
 				if (!body) {
 					printf("Error: body is NULL\n");
 					return NULL;
@@ -494,14 +628,13 @@ Node* parse_statement(Parser* parser, FILE* file) {
 					printf("Error: Unable to create if statement in PARSE_STATEMENT\n");
 					return NULL;
 				}
-				printf("\033[1;31mCreated ELSE IF STATEMENT with node type: '%d'\033[0m\n", stmt->type);
 				return stmt;
 
 			} else if (peek_token_type(parser) == TOKEN_LEFT_BRACE) {
 				special_statement = true;
 				advance_parser(parser);
 
-				Node* body = parse_block(parser, file);
+				Node* body = parse_block(parser, info);
 				if (!body) {
 					printf("Error: recived NULL body in else TOKEN_ELSE_KEYWORD case\n");
 					return NULL;
@@ -512,11 +645,10 @@ Node* parse_statement(Parser* parser, FILE* file) {
 					printf("Error: Could not create statement NODE_ELSE type in TOKEN_ELSE_KEYWORD case\n");
 					return NULL;
 				}
-				printf("\033[1;31mCREATED ELSE STATEMENT with node type: '%d'\033[0m\n", stmt->type);
-
 				return stmt;
 			} else {
-				printf("Error: missing '{' after else keyword\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_LEFT_BRACE);
 				return NULL;
 			}
 		}
@@ -524,52 +656,64 @@ Node* parse_statement(Parser* parser, FILE* file) {
 		case TOKEN_FOR_KEYWORD: {
 			special_statement = true;
 			advance_parser(parser);
+
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
-				printf("Error: Expected '(' after for keyword\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
 				return NULL;
 			}
+
 			advance_parser(parser);
 
 			if (peek_token_type(parser) == TOKEN_LET_KEYWORD) {
-				Node* initializer = parse_statement(parser, file);
+				Node* initializer = parse_statement(parser, info);
 				if (!initializer) {
 					printf("Error: Initializer is NULL is for loop\n");
 					return NULL;
 				}
+
 				advance_parser(parser); // skipping ';'
-				Node* condition = parse_logical_or(parser, file);
+				
+				Node* condition = parse_logical_or(parser, info);
 				if (!condition) {
 					printf("Error: Condition in for loop is NULL\n");
 					return NULL;
 				}
 
-				initializer->next = condition;
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-					printf("Expected ';' after for loop condition\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_SEMICOLON);
 					return NULL;
 				}
 
 				advance_parser(parser);
-				Node* update = parse_logical_or(parser, file);
+
+				Node* update = parse_logical_or(parser, info);
 				if (!update) {
 					printf("Error: Update expression in for loop is NULL\n");
 					return NULL;
 				}
-				condition->next = update;
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-					printf("Error: Expected ')' to complete for loop expressions\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
 					return NULL;
 				}
 
 				advance_parser(parser);
+
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
-					printf("\032[1;32mError: Expected '{' after for loop expression\032[0m\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_LEFT_BRACE);
 					return NULL;
 				}
-				advance_parser(parser);
-				Node* loop_body = parse_block(parser, file);
 
+				advance_parser(parser);
+				Node* loop_body = parse_block(parser, info);
+				
+				initializer->next = condition;
+				condition->next = update;
+				
 				stmt = create_node(NODE_FOR, initializer, loop_body, NULL, NULL, NULL);
 				return stmt;
 
@@ -590,7 +734,8 @@ Node* parse_statement(Parser* parser, FILE* file) {
 					advance_parser(parser); // skip ':' since we already know it exists
 					{
 						if (peek_token_type(parser) != TOKEN_INT_KEYWORD) {
-							printf("Error: for loop variable may only be an int\n");
+							Token tok = peek_token(parser);
+							report_error(&tok, info, EXPECTED_INT_KEYWORD);
 							return NULL;
 						}
 
@@ -598,68 +743,80 @@ Node* parse_statement(Parser* parser, FILE* file) {
 						data_t kind = get_type(&tok);
 						struct type* type = create_type(kind, NULL);
 
-						printf("About to create string node\n");
 						Node* initializer = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, type);
 						if (initializer) {
 							printf("Created string node\n");
 						}
+
 						advance_parser(parser);
 
 						if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
-							printf("Error: need to assign loop variable to value\n");
+							Token tok = peek_token(parser);
+							report_error(&tok, info, EXPECTED_ASSIGNMENT);
 							return NULL;
 						}
 
 						advance_parser(parser);
-						Node* expr_node = parse_logical_or(parser, file);
+						
+						Node* expr_node = parse_logical_or(parser, info);
 						Node* assignment = create_node(NODE_ASSIGNMENT, initializer, expr_node, NULL, NULL, NULL);
 						if (assignment) {
 							printf("Made assignment node\n");
 						}
+
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-							printf("Error: Missing ';' after initializer in for loop\n");
+							Token tok = peek_token(parser);
+							report_error(&tok, info, EXPECTED_SEMICOLON);
 							return NULL;
 						}
 
 						advance_parser(parser);
-						Node* condition = parse_logical_or(parser, file);
+						
+						Node* condition = parse_logical_or(parser, info);
 						if (condition) {
 							assignment->next = condition;
 						}
+
 						advance_parser(parser); // skip ';'
 					
-						Node* update = parse_logical_or(parser, file);
+						Node* update = parse_logical_or(parser, info);
 						if (update) {
 							condition->next = update;
 						}
 
 						if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-							printf("Error: Expected ')' after for loop expressions\n");
+							Token tok = peek_token(parser);
+							report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
 							return NULL;
 						}
 
 						advance_parser(parser);
 						if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
-							printf("Error: Expected '{' after before for loop body\n");
+							Token tok = peek_token(parser);
+							report_error(&tok, info, EXPECTED_LEFT_BRACE);
 							return NULL;
 						}
+
 						advance_parser(parser);
-						Node* loop_body = parse_block(parser, file);
-						if (loop_body) {
-							stmt = create_node(NODE_FOR, assignment, loop_body, NULL, NULL, NULL);
+						Node* loop_body = parse_block(parser, info);
+						if (!loop_body) {
+							free(id);
+							return NULL;
 						}
+
+						stmt = create_node(NODE_FOR, assignment, loop_body, NULL, NULL, NULL);
 					}
 					free(id);
 					return stmt;
 
 				} else {
-					Node* initializer = parse_statement(parser, file);
+					Node* initializer = parse_statement(parser, info);
 					if (initializer) {
 						printf("\033[1;31mAFTER initializer -> Current token type is: '%d'\033[0m\n", peek_token_type(parser));
 					}
 					advance_parser(parser); // ';'
 
-					Node* condition = parse_logical_or(parser, file);
+					Node* condition = parse_logical_or(parser, info);
 					if (condition) {
 						printf("\033[1;31mAFTER condition -> Current token type is: '%d'\033[0m\n", peek_token_type(parser));
 					}
@@ -668,7 +825,7 @@ Node* parse_statement(Parser* parser, FILE* file) {
 						return NULL;
 					}
 					advance_parser(parser);
-					Node* update = parse_logical_or(parser, file);
+					Node* update = parse_logical_or(parser, info);
 					if (update) {
 						printf("\033[1;31mAFTER update -> Current token type is: '%d'\033[0m\n", peek_token_type(parser));
 
@@ -688,7 +845,7 @@ Node* parse_statement(Parser* parser, FILE* file) {
 						return NULL;
 					}
 					advance_parser(parser);
-					Node* loop_body = parse_block(parser, file);
+					Node* loop_body = parse_block(parser, info);
 					stmt = create_node(NODE_FOR, initializer, loop_body, NULL, NULL, NULL);
 					return stmt;
 
@@ -697,67 +854,79 @@ Node* parse_statement(Parser* parser, FILE* file) {
 		}
 		case TOKEN_WHILE_KEYWORD: {
 			advance_parser(parser);
+
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
-				printf("Error: Expected '(' after while keyword\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
 				return NULL;
 			}
 
-			Node* condition_node = parse_logical_or(parser, file);
+			Node* condition_node = parse_logical_or(parser, info);
 			if (!condition_node) {
 				printf("Error: Received null condition in while \n");
 				return NULL;
 			}
 
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
-				printf("Error: Expected '{' after condition\n");
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_LEFT_BRACE);
 				return NULL;
 			}
 
 			advance_parser(parser);
-			Node* while_body = parse_block(parser, file);
+			Node* while_body = parse_block(parser, info);
 
 			stmt = create_node(NODE_WHILE, condition_node, while_body, NULL, NULL, NULL);
 			return stmt;
 		}
 
 		case TOKEN_ID: {
-			Token tok = peek_token(parser);
-			char* id = strdup(tok.value.str);
-			if (!id) {
-				printf("Error: Unable to aalocate space for id\n");
-				return NULL;
+			char* id = NULL;
+			{
+				Token tok = peek_token(parser);
+				id = strdup(tok.value.str);
+				if (!id) {
+					printf("Error: Unable to aalocate space for id\n");
+					return NULL;
+				}
 			}
+
 			Node* node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, NULL);
 
 			advance_parser(parser);
 
 			if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
-				printf("We have subscript\n");
-				Node* index_node = parse_logical_or(parser, file);
+				Node* index_node = parse_logical_or(parser, info);
 				if (index_node) {
 					printf("got index node\n");
 				}
+
 				node = create_node(NODE_SUBSCRIPT, node, index_node, NULL, NULL, NULL);
 				if (node) {
 					printf("created subscript node\n");
 				}
+
 				if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
-					printf("Error: Expected '=' in for array statement\n");
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_ASSIGNMENT);
 					return NULL;
 				}
+
 				advance_parser(parser);
-				Node* expr_node = parse_logical_or(parser, file);
+				
+				Node* expr_node = parse_logical_or(parser, info);
 				stmt = create_node(NODE_ASSIGNMENT, node, expr_node, NULL, NULL, NULL);
 
 			} else if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
-				printf("We have func call\n");
 				advance_parser(parser);
-				Node* args = parse_args(parser, file);
+				
+				Node* args = parse_args(parser, info);
 				stmt =  create_node(NODE_CALL, node, args, NULL, NULL, NULL);
 				advance_parser(parser);
+			
 			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 				advance_parser(parser);
-				Node* expr = parse_logical_or(parser, file);
+				Node* expr = parse_logical_or(parser, info);
 				if (!expr) {
 					printf("Received null expr\n");
 					return NULL;
@@ -771,28 +940,21 @@ Node* parse_statement(Parser* parser, FILE* file) {
 
 	if (!special_statement) {
 		if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-			printf("Error: Statement should end with a semicolon but it does not\n");
-			printf("Statement ends with token type: %d\n", peek_token_type(parser));
+			Token tok = peek_token(parser);
+			report_error(&tok, info, EXPECTED_SEMICOLON);
 			return NULL;
 		}		
 	}
-	printf("Returning the statement\n");
 	return stmt;
 }
 
-Node* parse_block(Parser* parser, FILE* file) {
-	printf("IN PARSE_BLOCK\n");
-
+Node* parse_block(Parser* parser, FileInfo* info) {
 	Node* head = NULL;
 	Node* current = NULL;
 	Node* stmt = NULL; 
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
-		printf("About to invoke 'parse_statement()'\n");
-		stmt = parse_statement(parser, file);
-		if (stmt) {
-			printf("Got statement\n");
-		}
+		stmt = parse_statement(parser, info);
 
 		if (stmt) {
 			if (!head) {
@@ -815,22 +977,16 @@ Node* parse_block(Parser* parser, FILE* file) {
 			return NULL;
 		}
 
-
-		printf("Now im here\n");
-
 		if (peek_token_type(parser) == TOKEN_SEMICOLON) { advance_parser(parser); }
 	
 		if (peek_token_type(parser) == TOKEN_RIGHT_BRACE) { break; }
 	}
 
-	// skip '}'
-	printf("About to reutrn block, current token type is: '%d'\n", peek_token_type(parser));
-	advance_parser(parser);
-	printf("About to return block\n");
+	advance_parser(parser); // skip ';'
 	return head;
 }
 
-Node* parse_parameters(Parser* parser, FILE* file) {
+Node* parse_parameters(Parser* parser, FileInfo* info) {
 	Node* head = NULL;
 	Node* current= NULL;
 	Node* node = NULL;
@@ -853,17 +1009,16 @@ Node* parse_parameters(Parser* parser, FILE* file) {
 		if (peek_token_type(parser) != TOKEN_INT_KEYWORD && 
 			peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
 			peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
-			// deal with not having any data type
-			printf("Error: expected data type after colon\n");
+
+			Token tok = peek_token(parser);
+			report_error(&tok, info, EXPECTED_DATATYPE);
 			return NULL;
 		}
 
 		Token tok = peek_token(parser);
 		data_t param_type = get_type(&tok);
-		printf("IN PARSE PARAMETERS -> TOKEN TYPE for '%s' is '%d'\n", id, param_type);
 		struct type* t = create_type(param_type, NULL);
 		advance_parser(parser);
-
 
 		node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 		if (node) {
@@ -892,140 +1047,95 @@ Node* parse_parameters(Parser* parser, FILE* file) {
 		}
 
 	}
-	printf("Returning PARAMETERS\n");
 
 	return head;
 }
 
-Error create_error(error_t type) {
-	Error err = {
-		.type = type,
-		.msg = NULL,
-		.line = NULL
-	};
-	return err;
-}
-
-void emit_err_msg(Parser* parser, FILE* file, Error* err) {
-	Token tok = peek_token(parser);
-	int target_line = tok.line;
-
-	fseek(file, 0, SEEK_SET);
-
-	int current_line = 1;
-	char ch;
-	while (current_line < target_line && (ch = fgetc(file)) != EOF) {
-		if (ch == '\n') {
-			current_line++;
-		}
-	}
-
-	int line_size = 0;
-	while ((ch = fgetc(file)) != '\n') {
-		line_size++;
-	}
-
-	char* buffer = malloc(line_size + 1);
-	if (!buffer) {
-		printf("Error: Unable to allocate space for buffer in 'emit_err_msg()'\n");
-		return;
-	}
-
-	fgets(buffer, line_size, file);
-	buffer[line_size] = '\0';
-
-	printf("Line Where the error occurred is '%s'\n", buffer);
-
-
-	fseek(file, 0, SEEK_SET);
-
-	free(buffer);
-}
-
-Node* parse_function(Parser* parser, FILE* file) {
+Node* parse_function(Parser* parser, FileInfo* info) {
 	Node* function_node = NULL;
 	advance_parser(parser);
+	if (peek_token_type(parser) != TOKEN_ID) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_IDENTIFIER);
+		return NULL;
+	}
 
-	printf("CURRENT token type is: %d\n", peek_token_type(parser));
-	if (peek_token_type(parser) == TOKEN_ID) {
-		char* id = strdup((*(parser->end)).value.str);
+	char* id = NULL;
+	{
+		Token tok = peek_token(parser);
+		id = strdup(tok.value.str);
 		if (!id) {
 			printf("Error: Unable to allocate space for function identifier\n");
 			return NULL;
 		}
-		printf("Current function: '%s'\n", id);
-
-		advance_parser(parser);
-		printf("After current function we have token type: %d\n\n", peek_token_type(parser));
-		if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
-			Error err = create_error(SYNTAX_ERROR);
-			emit_err_msg(parser, file, &err);	
-		}
-
-		advance_parser(parser);
-		printf("Before parsing parameters next token type is: %d\n\n", peek_token_type(parser));
-		Node* params = parse_parameters(parser, file);
-		
-		printf("After returning parameters, current token type is: %d\n", peek_token_type(parser));
-		advance_parser(parser);
-
-		if (peek_token_type(parser) != TOKEN_ARROW) {
-			printf("Error: Missing '->' after parameters for '%s'\n", id);
-			return NULL;
-		} else {
-			printf("You correctly have '->' after parameters for '%s'\n", id);
-		}
-
-		advance_parser(parser);
-		if (peek_token_type(parser) != TOKEN_INT_KEYWORD && 
-			peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
-			peek_token_type(parser) != TOKEN_BOOL_KEYWORD &&
-			peek_token_type(parser) != TOKEN_VOID_KEYWORD) {
-			
-			printf("Errror: You have not specified return type for '%s'\n", id);
-			return NULL;
-			// deal with not having any return data type
-		}
-		Token tok = peek_token(parser);
-		data_t return_type = get_type(&tok);
-		struct type* subtype = create_type(return_type, NULL);
-		struct type* t = create_type(TYPE_FUNCTION, subtype);
-		printf("IN FUNCTION '%s' -> '%s' has return type: '%d'\n", id, id, return_type);
-		advance_parser(parser);
-
-		if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
-			printf("Error: missing '{' after return type for '%s'\n", id);
-			return NULL;
-			// deal with missing '{'
-		}
-
-		advance_parser(parser);
-		Node* body = parse_block(parser, file);
-		if (body) {
-			printf("Got block\n");
-		}
-		function_node = create_string_node(NODE_NAME, id, params, body, NULL, NULL, t);
-
-		if (!function_node) {
-			printf("Error: Unable to create function node\n");
-		}
-		free(id);
-		printf("About to return function node\n");
-		return function_node;
-
 	}
-	// advance_parser(parser);
 
+	advance_parser(parser);
+	if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);	
+		return NULL;
+	}
+
+	advance_parser(parser);
+	Node* params = parse_parameters(parser, info);
+		
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_ARROW) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_ARROW);
+		return NULL;
+	}
+
+	advance_parser(parser);
+	if (peek_token_type(parser) != TOKEN_INT_KEYWORD && 
+		peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
+		peek_token_type(parser) != TOKEN_BOOL_KEYWORD &&
+		peek_token_type(parser) != TOKEN_VOID_KEYWORD) {
+			
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_DATATYPE);
+		return NULL;
+	}
+
+	Token tok = peek_token(parser);
+	data_t return_type = get_type(&tok);
+	struct type* subtype = create_type(return_type, NULL);
+	struct type* t = create_type(TYPE_FUNCTION, subtype);
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+		Token token = peek_token(parser);
+		report_error(&tok, info, EXPECTED_LEFT_BRACE);
+		return NULL;
+	}
+
+	advance_parser(parser);
+	Node* body = parse_block(parser, info);
+	if (!body) {
+		free(id);
+		return NULL;
+	}
+
+	function_node = create_string_node(NODE_NAME, id, params, body, NULL, NULL, t);
+	if (!function_node) {
+		free(id);
+		printf("Error: Unable to create function node\n");
+		return NULL;
+	}
+
+	free(id);
 	return function_node;
 }
 
-Node* parse_args(Parser* parser, FILE* file) {
+Node* parse_args(Parser* parser, FileInfo* info) {
 	Node* head = NULL;
 	Node* current = NULL;
 	Node* arg = NULL;
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-		arg = parse_logical_or(parser, file);
+		arg = parse_logical_or(parser, info);
 		if (!arg) {
 			printf("Received NULL arg in 'parse_args()'\n");
 			return NULL;
@@ -1056,7 +1166,7 @@ Node* parse_args(Parser* parser, FILE* file) {
 	return head;
 }
 
-Node* parse_array_list(Parser* parser, FILE* file) {
+Node* parse_array_list(Parser* parser, FileInfo* info) {
 	Node* head = NULL;
 	Node* current = NULL;
 	Node* array_element = NULL;
@@ -1064,7 +1174,7 @@ Node* parse_array_list(Parser* parser, FILE* file) {
 	advance_parser(parser);
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
-		array_element = parse_logical_or(parser, file);
+		array_element = parse_logical_or(parser, info);
 
 		if (array_element) {
 			if (!head) {
@@ -1091,108 +1201,121 @@ Node* parse_array_list(Parser* parser, FILE* file) {
 	return head;
 }
 
-Node* parse_let(Parser* parser, FILE* file) {
+Node* parse_let(Parser* parser, FileInfo* info) {
 	Node* let_node = NULL;
 	advance_parser(parser);
 
-	if (peek_token_type(parser) == TOKEN_ID) {
-		char* id = NULL;
-		{
-			Token tok = peek_token(parser);
-		 	id = strdup(tok.value.str);
-			if (!id) {
-				printf("Error: Unable to allocate space for id in 'parse_let()'\n");
+	if (peek_token_type(parser) != TOKEN_ID) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_IDENTIFIER);
+		return NULL;
+	}
+
+	char* id = NULL;
+	{
+		Token tok = peek_token(parser);
+		id = strdup(tok.value.str);
+		if (!id) {
+			printf("Error: Unable to allocate space for id in 'parse_let()'\n");
+			return NULL;
+		}
+	}
+
+	advance_parser(parser);
+	
+	if (peek_token_type(parser) != TOKEN_COLON) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_COLON);
+		return NULL;
+	}
+
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_INT_KEYWORD && peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
+		peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
+			
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_DATATYPE);
+		return NULL;
+	}
+
+
+	{
+		Token tok = peek_token(parser);
+		data_t type = get_type(&tok);
+		struct type* t = create_type(type, NULL);
+			
+		advance_parser(parser);
+
+		if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
+			advance_parser(parser);
+			struct type* array_type = create_type(TYPE_ARRAY, t);
+			printf(" JUST MOVED PAST TOKEN_LEFT_BRACKET and Current token type is '%d'\n", peek_token_type(parser));
+
+			Node* expr_node = parse_logical_or(parser, info);
+			if (!expr_node) {
+				printf("Error: Unable to retrieve size of array\n");
 				return NULL;
 			}
-			printf("In 'parse_let()', ID -> '%s'\n", id);
-		}
 
-		advance_parser(parser);
-		if (peek_token_type(parser) != TOKEN_COLON) {
-			printf("Error: Expected ':' after '%s'\n", id);
-			return NULL;
-		}
+			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
+				Token token = peek_token(parser);
+				report_error(&token, info, EXPECTED_RIGHT_BRACKET);
+				return NULL;
+			}
 
-		advance_parser(parser);
-		if (peek_token_type(parser) != TOKEN_INT_KEYWORD && peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
-			peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
-			
-			printf("Error: Expected data type after ':' for '%s'\n", id);
-			return NULL;
-		}
-
-
-		{
-			Token tok = peek_token(parser);
-			data_t type = get_type(&tok);
-			struct type* t = create_type(type, NULL);
-			
 			advance_parser(parser);
 
-			if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
-				advance_parser(parser);
-				struct type* array_type = create_type(TYPE_ARRAY, t);
-				printf(" JUST MOVED PAST TOKEN_LEFT_BRACKET and Current token type is '%d'\n", peek_token_type(parser));
-
-				Node* expr_node = parse_logical_or(parser, file);
-				if (!expr_node) {
-					printf("Error: Unable to retrieve size of array\n");
-					return NULL;
-				}
-				printf("Got array size and currrent token TYPE is '%d'\n", peek_token_type(parser));
-				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
-					printf("Error: Expected ']' after parsing '%s' size\n", id);
-					return NULL;
-				}
-
+			if (peek_token_type(parser) == TOKEN_SEMICOLON) {
+				let_node = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
 				advance_parser(parser);
 
-				if (peek_token_type(parser) == TOKEN_SEMICOLON) {
-					let_node = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
-					advance_parser(parser);
-
-				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
-					printf("CURRRENT TOKEN TYPE is '%d'\n", peek_token_type(parser));
-					advance_parser(parser); // move past '='
-					Node* assignee = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
-					Node* elements = parse_array_list(parser, file);
-
-					let_node = create_string_node(NODE_ASSIGNMENT, NULL, assignee, elements, NULL, NULL, NULL);   
-					advance_parser(parser);
-					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-						printf("Error: Expected ';' after defininng '%s' elements\n", id);
-					}
-					advance_parser(parser);
-				} 
-			} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
-				let_node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
-				advance_parser(parser);
 			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
-				advance_parser(parser);
-				Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
-				Node* expr_node = parse_logical_or(parser, file);
-				if (!expr_node) {
-					printf("Error: EXPR NODE IN 'parse_let' is null\n");
-					return NULL;
-				}
-				let_node = create_string_node(NODE_ASSIGNMENT, NULL, assignee, expr_node, NULL, NULL, NULL);
-				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
-					printf("Error: Expected ';' after assignment for '%s'\n", id);
-					return NULL;
-				}
-				advance_parser(parser);
-			}
-			free(id);
-		}
-		
+				advance_parser(parser); 
+				
+				Node* assignee = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
+				Node* elements = parse_array_list(parser, info);
 
-		return let_node;
+				let_node = create_string_node(NODE_ASSIGNMENT, NULL, assignee, elements, NULL, NULL, NULL);   
+				
+				advance_parser(parser);
+
+				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+					Token token = peek_token(parser);
+					report_error(&tok, info, EXPECTED_SEMICOLON);
+					return NULL;
+				}
+				advance_parser(parser);
+			} 
+		} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
+			let_node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+			advance_parser(parser);
+		} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
+			advance_parser(parser);
+
+			Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+			Node* expr_node = parse_logical_or(parser, info);
+			
+			if (!expr_node) {
+				printf("Error: EXPR NODE IN 'parse_let' is null\n");
+				return NULL;
+			}
+			
+			let_node = create_string_node(NODE_ASSIGNMENT, NULL, assignee, expr_node, NULL, NULL, NULL);
+			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+				Token token = peek_token(parser);
+				report_error(&tok, info, EXPECTED_SEMICOLON);
+				return NULL;
+			}
+			advance_parser(parser);
+		}
+		free(id);
 	}
-	
+		
+	return let_node;
 }
 
-Node* parse(Token* tokens, FILE* file) {
-	printf("In parser\n");
+Node* parse(Token* tokens, FileInfo* info) {
 	Parser* parser = initialize_parser(tokens);
 	if (!parser) {
 		printf("In 'build_AST', parser is NULL\n");
@@ -1208,10 +1331,10 @@ Node* parse(Token* tokens, FILE* file) {
 		if (at_token_eof(parser)) { break; }
 
 		if (peek_token_type(parser) == TOKEN_FUNCTION_KEYWORD) {
-			node = parse_function(parser, file);
+			node = parse_function(parser, info);
 			
 		}  else if (peek_token_type(parser) == TOKEN_LET_KEYWORD) {
-			node = parse_let(parser, file);
+			node = parse_let(parser, info);
 		} else {
 			printf("Unexpected token type: %d\n", peek_token_type(parser));
 			advance_parser(parser);
@@ -1234,19 +1357,135 @@ Node* parse(Token* tokens, FILE* file) {
 	}
 
 	free(parser);
-	printf("About to return nodes\n");
 	return head;
 
 }
 
 #define BRANCH "├"
 #define LAST_BRANCH "└"
-#define CONTINUATION "│"
+#define CONTINUATION "│    "
 
-// void print_ast(Node* root) {
+char* get_type_name(data_t type) {
+	switch (type) {
+		case TYPE_INTEGER: return "int";
+		case TYPE_CHAR: return "char";
+		case TYPE_BOOL: return "bool";
+		case TYPE_VOID: return "void";
+	}
+}
 
-// }
+void print_statement_recursive(Node* stmt, char* child_prefix, char* stmt_connector, bool* is_last_stmt) {
+	
+	switch (stmt->type) {
+		case NODE_ASSIGNMENT: {
+			printf("Assignment\n");
+			if (stmt->left) {
+				print_statement_recursive(stmt->left, child_prefix, stmt_connector, is_last_stmt);
+			}
 
+			if (stmt->right) {
+				print_statement_recursive(stmt->right, child_prefix, stmt_connector, is_last_stmt);
+			}
+			break;
+		}
+		case NODE_NAME: {
+			printf("Identifier\n");
+			break;
+		}
+		case NODE_INTEGER: {
+			printf("Integer\n");
+			break;
+		}
+	}
+}
+
+void print_ast(Node* root) {
+	printf("\033[31mProgram\033[0m\n");
+
+	int total_nodes = 0;
+	Node* node = root;
+	while (node) {
+		Node* next = node->next;
+		total_nodes++;
+		node = next;
+	}
+
+	int index = 0;
+	node = root;
+	while (node) {
+		Node* next = node->next;
+		bool is_last = (index == total_nodes - 1);
+		
+		char* prefix = is_last ? LAST_BRANCH : BRANCH;
+
+		if (node->t && node->t->kind == TYPE_FUNCTION) {
+			printf("%sIdentifier: '%s'", prefix, node->value.name);
+			printf(" [ function -> ");
+			if (node->t->subtype) {
+				printf("%s ]\n", get_type_name(node->t->subtype->kind));
+			}
+			
+			char* child_prefix = is_last ? "    " : CONTINUATION;
+
+			if (node->left) {
+				int total_params = 0;
+				Node* param = node->left;
+				while (param) {
+					Node* next = param->next;
+					total_params++;
+					param = next;
+				}
+
+				int param_index = 0;
+				param = node->left;
+				printf("%sParameters\n", child_prefix);
+				while (param) {
+					Node* next = param->next;
+					bool is_last_param = (param_index == total_params - 1);
+					char* param_connector = is_last_param ? LAST_BRANCH : BRANCH;
+
+					printf("%s%sIdentifier: \"%s\"", child_prefix, param_connector, param->value.name);
+					if (param->t) {
+						printf(" [%s]\n", get_type_name(param->t->kind));
+					}
+
+					param_index++;
+					param = next;
+				}
+			}
+
+			if (node->right) {
+				int total_stmts = 0;
+				Node* stmt_node = node->right;
+				while (stmt_node) {
+					Node* next = stmt_node->next;
+					total_stmts++;
+					stmt_node = next;
+				
+				}
+
+				int stmt_index = 0;
+				stmt_node = node->right;
+				
+				printf("%sBody\n", child_prefix);
+				while (node) {
+					Node* next = node->next;
+					bool is_last_stmt = (stmt_index == total_stmts - 1);
+					char* stmt_connector = is_last_stmt ? LAST_BRANCH : BRANCH;
+					print_statement_recursive(node, child_prefix, stmt_connector, &is_last_stmt);
+					stmt_index++;
+					node = next;
+				}
+			}
+		} 
+
+
+		index++;
+		node = next;
+	}
+	
+}
+	
 void free_type(struct type* t) {
 	if (!t || t->type_free) return;
 

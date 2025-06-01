@@ -85,6 +85,13 @@ typedef struct {
 	int column;
 } Token;
 
+typedef struct FileInfo {
+	char* filename;
+	int line_count;
+	char* contents;
+	char** lines;
+} FileInfo;
+
 typedef struct Lexer {
 	char* start;
 	char* end;
@@ -93,8 +100,9 @@ typedef struct Lexer {
 	Token* tokens;
 	int tokenIdx;
 	int capacity;
-
+	FileInfo* info;
 } Lexer;
+
 
 // Members need to be in corresponding order as elements of keywords
 
@@ -143,9 +151,11 @@ Token create_int_token(token_t type, int val, int line, int column);
 Token create_string_token(token_t type, char* str, int line, int column);
 void add_token(Lexer* lexer, Token token);
 
+FileInfo* create_info(char* filename, int line_count, char* contents);
+FileInfo* retrieve_file_contents(char* filename);
 char* get_file_contents(FILE* file);
-Lexer* initialze_lexer(char* contents);
-Token* lex(FILE* file);
+Lexer* initialze_lexer(FileInfo* info);
+Lexer* lex(char* filename);
 
 void print_tokens(Token* tokens);
 void free_tokens(Token* tokens);

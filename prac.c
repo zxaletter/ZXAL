@@ -1,8 +1,7 @@
 function add(a: int, b: int) -> int {
 
-	for (x: int = 0; x < size; x++) {
-		let w: int = 4;
-	}
+	let x: int = 3;
+	let z: int = 4;
+	let y: int = x;
 	
-	return w + x;
 }

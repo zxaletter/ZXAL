@@ -9,17 +9,32 @@
 #define NUM_NODES 1000
 
 typedef enum {
-	LOGIC_ERROR,
-	SYNTAX_ERROR,
-	SEMANTICS_ERROR,
-	TYPE_ERROR,
-} error_t;
+	EXPECTED_LEFT_PARENTHESES,
+	EXPECTED_RIGHT_PARENTHESES,
+	EXPECTED_LEFT_BRACE,
+	EXPECTED_RIGHT_BRACE,
+	EXPECTED_LEFT_BRACKET,
+	EXPECTED_RIGHT_BRACKET,
+	EXPECTED_ARROW,
+	EXPECTED_COMMA,
+	EXPECTED_COLON,
+	EXPECTED_SEMICOLON,
+	EXPECTED_SINGLE_QUOTE,
+	EXPECTED_ELSE_KEYWORD,
+	EXPECTED_RETURN_KEYWORD,
+	EXPECTED_LET_KEYWORD,
+	EXPECTED_INT_KEYWORD,
+	EXPECTED_CHAR_KEYWORD,
+	EXPECTED_BOOL_KEYWORD,
+	EXPECTED_VOID_KEYWORD,
+	EXPECTED_STRUCT_KEYWORD,
+	EXPECTED_ENUM_KEYWORD,
+	EXPECTED_IDENTIFIER,
+	EXPECTED_ASSIGNMENT,
+	EXPECTED_SINGLE_QUOTE,
+	EXPECTED_DATATYPE,
 
-typedef struct {
-	error_t type;
-	char* line;
-	char* msg;
-} Error;
+} error_t;
 
 typedef enum {
 	NODE_INTEGER,
@@ -116,8 +131,8 @@ node_t get_op_kind(Token* token);
 data_t get_type(Token* token);
 struct type* create_type(data_t main_type, struct type* subtype);
 
-Error create_error(error_t type);
-void emit_error_msg(Parser* parser, FILE* file, Error* err);
+char* get_token_string(token_t type);
+void repor_error(Token* tok, FileInfo* info, error_t error);
 
 Node* create_node(node_t type, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
@@ -128,25 +143,26 @@ Node* create_string_node(node_t type, char* id, Node* left, Node* right,
 Node* create_int_node(node_t type, int val, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
-Node* parse_factor(Parser* parser, FILE* file);
-Node* parse_multiplicative(Parser* parser, FILE* file);
-Node* parse_additive(Parser* parser, FILE* file);
-Node* parse_relational(Parser* parser, FILE* file);
-Node* parse_logical_and(Parser* parser, FILE* file);
-Node* parse_logical_or(Parser* parser, FILE* file);
+Node* parse_factor(Parser* parser, FileInfo* info);
+Node* parse_multiplicative(Parser* parser, FileInfo* info);
+Node* parse_additive(Parser* parser, FileInfo* info);
+Node* parse_relational(Parser* parser, FileInfo* info);
+Node* parse_logical_and(Parser* parser, FileInfo* info);
+Node* parse_logical_or(Parser* parser, FileInfo* info);
 
-Node* parse_statement(Parser* parser, FILE* file);
-Node* parse_block(Parser* parser, FILE* file);
-Node* parse_parameters(Parser* parser, FILE* file);
-Node* parse_function(Parser* parser, FILE* file);
-Node* parse_args(Parser* parser, FILE* file);
-Node* parse_array_list(Parser* parser, FILE* file);
-Node* parse_let(Parser* parser, FILE* file);
+Node* parse_statement(Parser* parser, FileInfo* info);
+Node* parse_block(Parser* parser, FileInfo* info);
+Node* parse_parameters(Parser* parser, FileInfo* info);
+Node* parse_function(Parser* parser, FileInfo* info);
+Node* parse_args(Parser* parser, FileInfo* info);
+Node* parse_array_list(Parser* parser, FileInfo* info);
+Node* parse_let(Parser* parser, FileInfo* info);
 Parser* initialize_parser(Token* tokens);
-Node* parse(Token* tokens, FILE* file);
+Node* parse(Token* tokens, FileInfo* info);
 
+char* get_type_name(data_t type);
+void print_statement_recursive(Node* stmt, char* child_prefix, char* stmt_connector, bool* is_last_stmt);
 void print_ast(Node* root);
-
 
 void free_type(struct type* t);
 void free_expression(Node* node);
