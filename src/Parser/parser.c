@@ -82,6 +82,7 @@ void report_error(Token* tok, FileInfo* info, error_t error) {
 	
 
 	switch (error) {
+		case EXPECTED_STRUCT_KEYWORD:
 		case EXPECTED_IDENTIFIER: {
 			printf("%s\n", info->lines[tok->line - 1]);
 			for (int i = 1; i < tok->column - 1; i++) {
@@ -97,6 +98,12 @@ void report_error(Token* tok, FileInfo* info, error_t error) {
 			break;
 		}
 
+		case EXPECTED_ARROW:
+		case EXPECTED_COMMA:
+		case EXPECTED_SEMICOLON:
+		case EXPECTED_COLON:
+		case EXPECTED_SINGLE_QUOTE:
+		case EXPECTED_ASSIGNMENT:
 		case EXPECTED_LEFT_BRACKET:
 		case EXPECTED_RIGHT_BRACKET:
 		case EXPECTED_LEFT_BRACE:
@@ -929,9 +936,35 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				Node* expr = parse_logical_or(parser, info);
 				if (!expr) {
 					printf("Received null expr\n");
+					free(id);
 					return NULL;
 				}
 				stmt = create_node(NODE_ASSIGNMENT, node, expr, NULL, NULL, NULL);
+			} else if (peek_token_type(parser) == TOKEN_COLON) {
+				advance_parser(parser);
+
+				if (peek_token_type(parser) != TOKEN_INT_KEYWORD && peek_token_type(parser) != TOKEN_BOOL_KEYWORD &&
+					peek_token_type(parser) != TOKEN_CHAR_KEYWORD) {
+
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_DATATYPE);
+					free(id);
+					return NULL;
+				}
+
+				Token token = peek_token(parser);
+				data_t type = get_type(&token);
+				struct type* t = create_type(type, NULL);
+
+				advance_parser(parser);
+				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+					Token tok = peek_token(parser);
+					report_error(&tok, info, EXPECTED_SEMICOLON);
+					free(id);
+					return NULL;
+				}
+
+				stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 			}
 			free(id);
 			break;
@@ -982,7 +1015,7 @@ Node* parse_block(Parser* parser, FileInfo* info) {
 		if (peek_token_type(parser) == TOKEN_RIGHT_BRACE) { break; }
 	}
 
-	advance_parser(parser); // skip ';'
+	advance_parser(parser); // go over '}'
 	return head;
 }
 
@@ -992,18 +1025,30 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 	Node* node = NULL;
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-		char* id = strdup((*(parser->end)).value.str);
-		if (!id) {
-			printf("Error: Unable to allocate space for parameter id\n");
+		if (peek_token_type(parser) != TOKEN_ID) {
+			Token tok = peek_token(parser);
+			report_error(&tok, info, EXPECTED_IDENTIFIER);
 			return NULL;
-		}
+		} 
 
+		char* id = NULL;
+		{
+			Token tok = peek_token(parser);
+			id = strdup(tok.value.str);
+			if (!id) {
+				printf("Error: Unable to allocate space for parameter id\n");
+				return NULL;
+			}			
+		}
+		
 		advance_parser(parser);
 
 		if (peek_token_type(parser) != TOKEN_COLON) {
-			printf("Error: Missing ':' for '%s'\n", id);
+			Token tok = peek_token(parser);
+			report_error(&tok, info, EXPECTED_COLON);
 			return NULL;
 		}
+
 		advance_parser(parser);
 
 		if (peek_token_type(parser) != TOKEN_INT_KEYWORD && 
@@ -1021,9 +1066,6 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 		advance_parser(parser);
 
 		node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
-		if (node) {
-			printf("Created node with node type: '%d'-> name: '%s'\n\n", NODE_NAME, id);
-		}
 		free(id);
 
 		if (node) {
@@ -1315,6 +1357,149 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 	return let_node;
 }
 
+Node* parse_enum_body(Parser* parser, FileInfo* info) {
+	Node* head = NULL;
+	Node* current = NULL;
+	Node* stmt = NULL;
+
+	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
+		if (peek_token_type(parser) != TOKEN_ID) {
+			Token tok = peek_token(parser);
+			report_error(&tok, info, EXPECTED_IDENTIFIER);
+			return NULL;
+		}
+
+		char* id = NULL;
+		{
+			Token tok = peek_token(parser);
+			id = strdup(tok.value.str);
+			if (!id) return NULL;
+		}
+
+		stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, NULL);
+		if (stmt) {
+			if (!head) {
+				head = stmt;
+				current = stmt;
+			} else {
+				current->next = stmt;
+				stmt->prev = current;
+				current = stmt;
+			}
+
+		} else {
+			printf("Empty statement in enum'\n");
+			return NULL;
+		}
+
+		advance_parser(parser);
+
+		if (peek_token_type(parser) == TOKEN_COMMA) { advance_parser(parser); }
+
+		if (peek_token_type(parser) == TOKEN_RIGHT_BRACE) { break; }
+	}
+
+	advance_parser(parser); // go over '}'
+	return head;
+}
+
+Node* parse_enum(Parser* parser, FileInfo* info) {
+	Node* enum_node = NULL;
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_ID) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_IDENTIFIER);
+		return NULL;
+	}
+
+	char* id = NULL;
+	{
+		Token tok = peek_token(parser);
+		id = strdup(tok.value.str);
+		if (!id) return NULL;
+	}
+
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_LEFT_BRACE);
+		free(id);
+		return NULL;
+	}
+
+	advance_parser(parser);
+
+	Node* enum_body = parse_enum_body(parser, info);
+	if (!enum_body) {
+		printf("Error: body for enum '%s' is NULL\n", id);
+		free(id);
+		return NULL;
+	}
+
+	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_SEMICOLON);
+		free(id);
+		return NULL;
+	}
+
+	advance_parser(parser);
+
+	enum_node = create_string_node(NODE_ENUM, id, NULL, enum_body, NULL, NULL, NULL);
+	free(id);
+	return enum_node;
+}
+
+Node* parse_struct(Parser* parser, FileInfo* info) {
+	Node* struct_node = NULL;
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_ID) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_IDENTIFIER);
+		return NULL;
+	}
+
+	char* id = NULL;
+	{
+		Token tok = peek_token(parser);
+		id = strdup(tok.value.str);
+		if (!id) return NULL;
+	}
+
+	advance_parser(parser);
+
+	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_LEFT_BRACE);
+		free(id);
+		return NULL;
+	}
+
+	advance_parser(parser);
+
+	Node* struct_body = parse_block(parser, info);
+	if (!struct_body) {
+		printf("Error: body for Struct '%s' is NULL\n", id);
+		free(id);
+		return NULL;
+	}
+
+	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+		Token tok = peek_token(parser);
+		report_error(&tok, info, EXPECTED_SEMICOLON);
+		free(id);
+		return NULL;
+	}
+
+	advance_parser(parser); // skip ';'
+
+	struct_node = create_string_node(NODE_STRUCT, id, NULL, struct_body, NULL, NULL, NULL);
+	return struct_node;
+}
+
 Node* parse(Token* tokens, FileInfo* info) {
 	Parser* parser = initialize_parser(tokens);
 	if (!parser) {
@@ -1335,6 +1520,10 @@ Node* parse(Token* tokens, FileInfo* info) {
 			
 		}  else if (peek_token_type(parser) == TOKEN_LET_KEYWORD) {
 			node = parse_let(parser, info);
+		} else if (peek_token_type(parser) == TOKEN_STRUCT_KEYWORD) {
+			node = parse_struct(parser, info);
+		} else if (peek_token_type(parser) == TOKEN_ENUM_KEYWORD) {
+			node = parse_enum(parser, info);
 		} else {
 			printf("Unexpected token type: %d\n", peek_token_type(parser));
 			advance_parser(parser);

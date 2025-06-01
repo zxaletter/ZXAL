@@ -9,9 +9,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	printf("here in main\n");
 	char* filename = argv[1];
-	printf("filename\n");
 	Lexer* lexer = lex(filename);
 	if (lexer) {
 		print_tokens(lexer->tokens);
@@ -22,7 +20,7 @@ int main(int argc, char** argv) {
 	// 	print_ast(root);
 	// }
 
-	// free_ast(root);
+	free_ast(root);
 	free_lexer(lexer);
 	
 	return 0;

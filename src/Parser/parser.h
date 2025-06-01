@@ -15,11 +15,13 @@ typedef enum {
 	EXPECTED_RIGHT_BRACE,
 	EXPECTED_LEFT_BRACKET,
 	EXPECTED_RIGHT_BRACKET,
+
 	EXPECTED_ARROW,
 	EXPECTED_COMMA,
 	EXPECTED_COLON,
 	EXPECTED_SEMICOLON,
 	EXPECTED_SINGLE_QUOTE,
+
 	EXPECTED_ELSE_KEYWORD,
 	EXPECTED_RETURN_KEYWORD,
 	EXPECTED_LET_KEYWORD,
@@ -31,7 +33,6 @@ typedef enum {
 	EXPECTED_ENUM_KEYWORD,
 	EXPECTED_IDENTIFIER,
 	EXPECTED_ASSIGNMENT,
-	EXPECTED_SINGLE_QUOTE,
 	EXPECTED_DATATYPE,
 
 } error_t;
@@ -43,6 +44,8 @@ typedef enum {
 	NODE_ELSE,
 	NODE_FOR,
 	NODE_WHILE,
+	NODE_STRUCT,
+	NODE_ENUM,
 	NODE_RETURN,
 	NODE_CALL,
 	NODE_SUBSCRIPT,
@@ -154,6 +157,9 @@ Node* parse_statement(Parser* parser, FileInfo* info);
 Node* parse_block(Parser* parser, FileInfo* info);
 Node* parse_parameters(Parser* parser, FileInfo* info);
 Node* parse_function(Parser* parser, FileInfo* info);
+Node* parse_enum_body(Parser* parser, FileInfo* info);
+Node* parse_enum(Parser* parser, FileInfo* info);
+Node* parse_struct(Parser* parser, FileInfo* info);
 Node* parse_args(Parser* parser, FileInfo* info);
 Node* parse_array_list(Parser* parser, FileInfo* info);
 Node* parse_let(Parser* parser, FileInfo* info);
