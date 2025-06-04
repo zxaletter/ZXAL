@@ -208,6 +208,7 @@ Node* create_node(node_t type, Node* left, Node* right,
 	node->next = next;
 	node->t = t;
 	node->node_free = false;
+	node->symbol = NULL;
 
 	return node;
 }
@@ -368,12 +369,36 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 			advance_parser(parser);
 			break;
 		}
+
+		case TOKEN_DOUBLE_QUOTE: {
+			advance_parser(parser);
+			node = parse_logical_or(parser, info);
+			if (peek_token_type(parser) != TOKEN_DOUBLE_QUOTE) {
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_DOUBLE_QUOTE);
+				return NULL;
+			}
+			advance_parser(parser);
+			break;
+		}
 	}
 	return node;
 }
 
-Node* parse_multiplicative(Parser* parser, FileInfo* info) {
+Node* parse_unary(Parser* parser, FileInfo* info) {
 	Node* node = parse_factor(parser, info);
+
+	while (peek_token_type(parser) == TOKEN_NOT) {
+		Token tok = peek_token(parser);
+		node_t op_kind = get_op_kind(&tok);
+		advance_parser(parser);
+		Node* right_child = parse_factor(parser, info);
+		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
+	}
+	return node;
+}
+Node* parse_multiplicative(Parser* parser, FileInfo* info) {
+	Node* node = parse_unary(parser, info);
 	
 	while (peek_token_type(parser) == TOKEN_MUL || peek_token_type(parser) == TOKEN_DIV ||
 		   peek_token_type(parser) == TOKEN_MUL_EQUAL || peek_token_type(parser) == TOKEN_DIV_EQUAL ||
@@ -382,7 +407,7 @@ Node* parse_multiplicative(Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_factor(parser, info);
+		Node* right_child = parse_unary(parser, info);
 		node = create_node(op_kind, node, right_child, NULL, NULL, NULL);
 	}
 	return node;
@@ -445,6 +470,7 @@ Node* parse_logical_or(Parser* parser, FileInfo* info) {
 	}
 	return node;
 }
+
 
 Node* parse_statement(Parser* parser, FileInfo* info) {
 	Node* stmt = NULL;
@@ -561,6 +587,29 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				Node* node = parse_logical_or(parser, info);
 				stmt = create_string_node(NODE_RETURN, NULL, NULL, node, NULL, NULL, NULL);
 			}
+			break;
+		}
+
+		case TOKEN_CONTINUE_KEYWORD: {
+			advance_parser(parser);
+			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_SEMICOLON);
+				return NULL;
+			}
+
+			stmt = create_node(NODE_CONTINUE, NULL, NULL, NULL, NULL, NULL);
+			break;
+		}
+
+		case TOKEN_BREAK_KEYWORD: {
+			advance_parser(parser);
+			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
+				Token tok = peek_token(parser);
+				report_error(&tok, info, EXPECTED_SEMICOLON);
+				return NULL;
+			}
+			stmt = create_node(NODE_BREAK, NULL, NULL, NULL, NULL, NULL);
 			break;
 		}
 
@@ -859,6 +908,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				}
 			}
 		}
+
 		case TOKEN_WHILE_KEYWORD: {
 			advance_parser(parser);
 
@@ -969,6 +1019,73 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			free(id);
 			break;
 		}
+		
+		// case TOKEN_SWITCH: {
+		// 	special_statement = true;
+		// 	advance_parser(parser);
+			
+		// 	if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
+		// 		Token tok = peek_token(parser);
+		// 		report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
+		// 		return NULL;
+		// 	}
+
+		// 	Node* condition = parse_logical_or(parser, info);
+
+		// 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+		// 		Token tok = peek_token(parser);
+		// 		report_error(&tok, info, EXPECTED_LEFT_BRACE);
+		// 		return NULL;
+		// 	}
+
+		// 	advance_parser(parser);
+		// 	Node* switch_body = parse_switch(parser, info);
+		// }
+
+		// case TOKEN_CASE: {
+		// 	advance_parser(parser);
+		// 	Node* node = NULL;
+		// 	char* id = NULL;
+		// 	if (peek_token_type(parser) == TOKEN_SINGLE_QUOTE) {
+		// 		node = parse_logical_or(parer, info);
+		// 		if (!node) return NULL;
+		// 	} else if (peek_token_type(parser) == TOKEN_NAME) {
+				
+		// 		Token token = peek_token(parser);
+		// 		id = strdup(token.value.str);
+		// 		if (!id) {
+		// 			perror("Unable to allocate space for id\n");
+		// 			return NULL;
+		// 		}
+				
+		// 		node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, NULL);
+		// 		if (!node) {
+		// 			perror("Unable to create node in TOKEN_CASE\n");
+		// 			free(id);
+		// 			return NULL;
+		// 		}
+		// 		advance_parser(parser);
+		// 	}
+
+		// 	if (peek_token_type(parser) != TOKEN_COLON) {
+		// 		Token tok = peek_token(parser);
+		// 		report_error(&tok, info, EXPECTED_COLON);
+		// 		free(id);
+		// 		return NULL;
+		// 	}
+
+		// 	advance_parser(parser);
+		// 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
+		// 		Token tok = peek_token(parser);
+		// 		report_error(&tok info, EXPECTED_LEFT_BRACE);
+		// 		free(id);
+		// 		return NULL;
+		// 	} 
+
+		// 	advance_parser(parser);
+		// 	Node* case_body = parse_block(parser, info);
+
+		// }
 	}
 
 	if (!special_statement) {
@@ -1066,16 +1183,17 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 		advance_parser(parser);
 
 		node = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+		Node* wrapped_param = create_node(NODE_PARAM, NULL, node, NULL, NULL, NULL);
 		free(id);
 
-		if (node) {
+		if (wrapped_param) {
 			if (!head) {
-				head = node;
-				current = node;
+				head = wrapped_param;
+				current = wrapped_param;
 			} else {
-				current->next = node;
-				node->prev = current;
-				current = node;
+				current->next = wrapped_param;
+				wrapped_param->prev = current;
+				current = wrapped_param;
 			}
 		}
 

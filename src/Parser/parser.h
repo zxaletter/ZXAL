@@ -21,6 +21,7 @@ typedef enum {
 	EXPECTED_COLON,
 	EXPECTED_SEMICOLON,
 	EXPECTED_SINGLE_QUOTE,
+	EXPECTED_DOUBLE_QUOTE,
 
 	EXPECTED_ELSE_KEYWORD,
 	EXPECTED_RETURN_KEYWORD,
@@ -44,11 +45,14 @@ typedef enum {
 	NODE_ELSE,
 	NODE_FOR,
 	NODE_WHILE,
+	NODE_BREAK,
+	NODE_CONTINUE,
 	NODE_STRUCT,
 	NODE_ENUM,
 	NODE_RETURN,
 	NODE_CALL,
 	NODE_SUBSCRIPT,
+	NODE_PARAM,
 	NODE_ARG, 
 	NODE_ASSIGNMENT,
 	NODE_ADDR,
@@ -94,6 +98,8 @@ struct Node {
 	Node* next;
 	struct type* t;
 	bool node_free;
+	struct Symbol* symbol;
+
 };
 
 typedef enum {
@@ -108,7 +114,6 @@ typedef enum {
 	TYPE_ENUM,
 	TYPE_UNKNOWN
 } data_t;
-
 
 struct type {
 	data_t kind;
@@ -147,6 +152,7 @@ Node* create_int_node(node_t type, int val, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
 Node* parse_factor(Parser* parser, FileInfo* info);
+Node* parse_unary(Parser* parser, FileInfo* info);
 Node* parse_multiplicative(Parser* parser, FileInfo* info);
 Node* parse_additive(Parser* parser, FileInfo* info);
 Node* parse_relational(Parser* parser, FileInfo* info);
@@ -160,6 +166,7 @@ Node* parse_function(Parser* parser, FileInfo* info);
 Node* parse_enum_body(Parser* parser, FileInfo* info);
 Node* parse_enum(Parser* parser, FileInfo* info);
 Node* parse_struct(Parser* parser, FileInfo* info);
+Node* parse_switch(Parser* parser, FileInfo* info);
 Node* parse_args(Parser* parser, FileInfo* info);
 Node* parse_array_list(Parser* parser, FileInfo* info);
 Node* parse_let(Parser* parser, FileInfo* info);

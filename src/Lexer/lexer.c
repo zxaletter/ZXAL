@@ -3,7 +3,8 @@
 char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
 							"else", "for", "while",
-						    "continue", "break", "return"};
+						    "continue", "break", "return",
+							"switch", "case"};
 
 
 Lexer* initialize_lexer(FileInfo* info) {
@@ -343,6 +344,11 @@ void get_operator(Lexer* lexer) {
 			break;
 		}
 
+		case '"': {
+			type = TOKEN_DOUBLE_QUOTE;
+			break;
+		}
+
 	}
 
 	if (isCompoundOp) {
@@ -505,7 +511,7 @@ Lexer* lex(char* filename) {
 			get_number(lexer);
 		} else if (strchr("=+-*/<!&>|%", peek_lexer(lexer))) {
 			get_operator(lexer);
-		} else if (strchr("':()[]{},;", peek_lexer(lexer))) {
+		} else if (strchr("':()[]{},\";", peek_lexer(lexer))) {
 			get_delimeters(lexer);
 		} else {
 			advance_lexer(lexer);
