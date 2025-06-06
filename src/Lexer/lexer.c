@@ -250,7 +250,6 @@ void get_operator(Lexer* lexer) {
 				type = TOKEN_DECREMENT;
 				isCompoundOp = true;
 			} else if (match(lexer, '>')) {
-				printf(" we have lexed an arrow\n");
 				type = TOKEN_ARROW;
 				isCompoundOp = true;
 			} else {
@@ -380,7 +379,6 @@ FileInfo* retrieve_file_contents(char* filename) {
 		printf("Could not open file\n");
 		return NULL;
 	}
-	printf("here\n");
 	fpos_t position;
 	fgetpos(file, &position);
 	
@@ -395,7 +393,6 @@ FileInfo* retrieve_file_contents(char* filename) {
 		fclose(file);
 		exit(EXIT_FAILURE);
 	}
-	printf("Got here\n");
 
 	int line_count = 0;
 	for (long i = 0; i < file_size; i++) {
@@ -479,22 +476,17 @@ FileInfo* retrieve_file_contents(char* filename) {
 		current_line_index++;
 	}
 
-	for (int i = 0; i < info->line_count; i++) {
-		printf("Line %d: '%s'\n", i + 1, info->lines[i]);
-	}
+	// for (int i = 0; i < info->line_count; i++) {
+	// 	printf("Line %d: '%s'\n", i + 1, info->lines[i]);
+	// }
 
 	fclose(file);
 	return info;
 }
 
 Lexer* lex(char* filename) {
-	printf("in lex\n");
 	FileInfo* info = retrieve_file_contents(filename);
-	printf("info\n");
-	if (info) {
-		printf("got info\n");
-	}
-	
+
 	Lexer* lexer = initialize_lexer(info);
 	if (!lexer) return NULL;
 

@@ -1,5 +1,8 @@
 #include "parser.h"
 
+static bool has_errors = false;
+ErrorList* errors;
+
 Parser* initialize_parser(Token* tokens) {
 	Parser* parser = malloc(sizeof(Parser));
 	if (!parser) {
@@ -30,23 +33,151 @@ char* get_token_string(token_t type) {
 		case TOKEN_CONTINUE_KEYWORD: return "continue";
 		case TOKEN_BREAK_KEYWORD: return "break";
 		case TOKEN_RETURN_KEYWORD: return "return";
-		case TOKEN_LEFT_PARENTHESES: return '(';
-		case TOKEN_RIGHT_PARENTHESES: return ')';
-		case TOKEN_LEFT_BRACE: return '{';
-		case TOKEN_RIGHT_BRACE: return '}';
-		case TOKEN_LEFT_BRACKET: return '[';
-		case TOKEN_RIGHT_BRACKET: return ']';
-		case TOKEN_ARROW: return '->';
-		case TOKEN_COMMA: return ',';
-		case TOKEN_COLON: return ':';
-		case TOKEN_SEMICOLON: return ';';
-		case TOKEN_SINGLE_QUOTE: return '\'';
+		case TOKEN_LEFT_PARENTHESES: return "(";
+		case TOKEN_RIGHT_PARENTHESES: return ")";
+		case TOKEN_LEFT_BRACE: return "{";
+		case TOKEN_RIGHT_BRACE: return "}";
+		case TOKEN_LEFT_BRACKET: return "[";
+		case TOKEN_RIGHT_BRACKET: return "]";
+		case TOKEN_ARROW: return "->";
+		case TOKEN_COMMA: return ",";
+		case TOKEN_COLON: return ":";
+		case TOKEN_SEMICOLON: return ";";
+		case TOKEN_SINGLE_QUOTE: return "'";
+	}
+
+}
+
+ErrorList* create_error_list() {
+	ErrorList* errors = malloc(sizeof(ErrorList));
+	if (!errors) {
+		perror("Unable to allocate space for error list\n");
+		return NULL;
+	}
+
+	errors->size = 0;
+	errors->current_error = 0;
+	errors->capacity = ERROR_CAPACITY;
+	errors->list = calloc(errors->capacity, sizeof(Error*));
+
+	return errors;
+}
+
+void init_error_list() {
+	errors = create_error_list();
+	if (!errors) {
+		perror("Failed to initialize global error list\n");
+		exit(EXIT_FAILURE);
 	}
 }
 
-void report_error(Token* tok, FileInfo* info, error_t error) {
+bool add_error(Error* err) {
+	if (!err) return false;
+
+	if (errors->size >= errors->capacity) {
+		errors->capacity *= 2;
+		errors->list = realloc(errors->list, errors->capacity);
+		if (!errors->list) {
+			perror("Failed to reallocate errors list\n");
+			return false;
+		}
+	}
+
+	errors->list[errors->current_error++] = err;
+	errors->size++;
+	return true;
+}
+
+Token* copy_token(Token* original_token) {
+	Token* copy_token = malloc(sizeof(Token));
+	if (!copy_token) {
+		perror("Unable to allocate space for copy token\n");
+		return NULL;
+	}
+
+	copy_token->type = original_token->type;
+	copy_token->line = original_token->line;
+	copy_token->column = original_token->column;
+	if (original_token->type == TOKEN_ARROW ||
+		original_token->type == TOKEN_ADD_EQUAL ||
+		original_token->type == TOKEN_SUB_EQUAL || 
+		original_token->type == TOKEN_DIV_EQUAL ||
+		original_token->type == TOKEN_MUL_EQUAL ||
+		original_token->type == TOKEN_LESS_EQUAL ||
+		original_token->type == TOKEN_GREATER_EQUAL ||
+		original_token->type == TOKEN_NOT_EQUAL ||
+		original_token->type == TOKEN_EQUAL ||
+		original_token->type == TOKEN_INCREMENT ||
+		original_token->type == TOKEN_DECREMENT ||
+		original_token->type == TOKEN_INT_KEYWORD ||
+		original_token->type == TOKEN_CHAR_KEYWORD ||
+		original_token->type == TOKEN_BOOL_KEYWORD ||
+		original_token->type == TOKEN_VOID_KEYWORD || 
+		original_token->type == TOKEN_STRUCT_KEYWORD || 
+		original_token->type == TOKEN_ENUM_KEYWORD ||
+		original_token->type == TOKEN_FOR_KEYWORD ||
+		original_token->type == TOKEN_WHILE_KEYWORD ||
+		original_token->type == TOKEN_CONTINUE_KEYWORD ||
+		original_token->type == TOKEN_BREAK_KEYWORD ||
+		original_token->type == TOKEN_FUNCTION_KEYWORD ||
+		original_token->type == TOKEN_LET_KEYWORD || 
+		original_token->type == TOKEN_ID ||
+		original_token->type == TOKEN_LOGICAL_OR ||
+		original_token->type == TOKEN_LOGICAL_AND) {
+
+		copy_token->value.str = original_token->value.str;
+		if (!copy_token->value.str) {
+			perror("Unable to copy original token string\n");
+			free(copy_token);
+			return NULL;
+		}
+	} else if (original_token->type == TOKEN_INTEGER) {
+		copy_token->value.val = original_token->value.val;
+	} else {
+		copy_token->value.c = original_token->value.c;
+	}
+
+	return copy_token;
+
+}
+
+void create_error(error_t type, char* message, Token* token, FileInfo* info) {
+	Error* error = malloc(sizeof(Error));
+	if (!error) {
+		perror("Unable to allocate space for error\n");
+		return;
+	}
+
+	error->type = type;
+	error->token = copy_token(token);
+	if (!error->token) {
+		perror("Unable to copy token\n");
+		free(error);
+		return NULL;
+	}
+	error->info = info;
+	error->message = strdup(message);
+	if (!error->message) {
+		perror("Unable to duplicate error message\n");
+		free(error->token);
+		free(error);
+		return;
+	} 
+
+	has_errors = true;
+	add_error(error);
+	// if (add_error(error)) {
+	// 	printf("Added error with line %d and column %d\n", error->token->line, error->token->column);
+	// 	printf("With message: '%s'\n", error->message);
+	// }
+}
+
+void display_error(Error* error) {
+	if (!error) return;
+
 	int token_length = 1;
-	switch (tok->type) {
+
+	switch (error->token->type) {
 		case TOKEN_FUNCTION_KEYWORD:
 		case TOKEN_LET_KEYWORD:
 		case TOKEN_INT_KEYWORD:
@@ -63,37 +194,42 @@ void report_error(Token* tok, FileInfo* info, error_t error) {
 		case TOKEN_BREAK_KEYWORD:
 		case TOKEN_RETURN_KEYWORD:
 		case TOKEN_ID: {
-			token_length = sizeof(tok->value.str);
+			if (error->token->value.str) {
+				token_length = strlen(error->token->value.str);
+			} else {
+				token_length = 1;
+			}
 			break;
 		}
 
 		case TOKEN_INTEGER: {
-			int length = snprintf(NULL, 0, "%d", tok->value.val);
+			int length = snprintf(NULL, 0, "%d", error->token->value.val);
 			char* buffer = malloc(length + 1);
 			if (!buffer) return;
-			snprintf(buffer, sizeof(buffer), "%d", tok->value.val);
-			token_length = sizeof(buffer);
+			snprintf(buffer, length + 1, "%d", error->token->value.val);
+			token_length = length;
+			free(buffer);
 			break;
 		}
-
 	}
 
-	printf("\033[31mError\033[0m in file '%s' at line %d, column %d:\n", info->filename, tok->line, tok->column);
-	
 
-	switch (error) {
+	switch (error->type) {
 		case EXPECTED_STRUCT_KEYWORD:
 		case EXPECTED_IDENTIFIER: {
-			printf("%s\n", info->lines[tok->line - 1]);
-			for (int i = 1; i < tok->column - 1; i++) {
+
+			printf("%s\n", error->info->lines[error->token->line - 1]);
+			for (int i = 1; i < error->token->column - 1; i++) {
 				printf(" ");
 			}
-
+			
 			printf("\033[31m^\033[0m");
-
+			
 			for (int i = 0; i < token_length; i++) {
 				printf("\033[31m~\033[0m");
 			}
+			printf("\n");
+			printf("Missing identifier\n");
 
 			break;
 		}
@@ -110,25 +246,88 @@ void report_error(Token* tok, FileInfo* info, error_t error) {
 		case EXPECTED_RIGHT_BRACE:
 		case EXPECTED_RIGHT_PARENTHESES:
 		case EXPECTED_LEFT_PARENTHESES: {
-			printf("%s\n", info->lines[tok->line - 1]);
-			for (int i = 0; i < tok->column; i++) {
+			printf("%s\n", error->info->lines[error->token->line - 1]);
+
+			for (int i = 0; i < error->token->column; i++) {
 				printf(" ");
 			}
 
-			printf("\033[31m^\033[0m");
+			printf("\033[31m^\033[0m\n");
 			break;
 		}
+	}
+}
 
+void emit_errors() {
+	for (int i = 0; i < errors->size; i++) {
+		Error* err = errors->list[i];
+		display_error(err);
+	}
+}
 
+void free_error(Error* error) {
+	if (!error) return;
+
+	if (error->message) {
+		free(error->message);
 	}
 
-	printf("%s\n", info->lines[tok->line - 1]);
-	for (int i = 1; i < tok->column - 1; i++) {
-		printf(" ");
+	if (error->token) {
+		if (error->type == TOKEN_ARROW || 
+			error->type == TOKEN_ADD_EQUAL ||
+			error->type == TOKEN_SUB_EQUAL ||
+			error->type == TOKEN_DIV_EQUAL ||
+			error->type == TOKEN_MUL_EQUAL ||
+			error->type == TOKEN_LESS_EQUAL ||
+			error->type == TOKEN_GREATER_EQUAL ||
+			error->type == TOKEN_NOT_EQUAL ||
+			error->type == TOKEN_EQUAL ||
+			error->type == TOKEN_INCREMENT ||
+			error->type == TOKEN_DECREMENT ||
+			error->type == TOKEN_INT_KEYWORD ||
+			error->type == TOKEN_CHAR_KEYWORD ||
+			error->type == TOKEN_BOOL_KEYWORD ||
+			error->type == TOKEN_VOID_KEYWORD ||
+			error->type == TOKEN_STRUCT_KEYWORD ||
+			error->type == TOKEN_ENUM_KEYWORD ||
+			error->type == TOKEN_FOR_KEYWORD ||
+			error->type == TOKEN_WHILE_KEYWORD ||
+			error->type == TOKEN_CONTINUE_KEYWORD ||
+			error->type == TOKEN_BREAK_KEYWORD ||
+			error->type == TOKEN_FUNCTION_KEYWORD ||
+			error->type == TOKEN_LET_KEYWORD ||
+			error->type == TOKEN_ID ||
+			error->type == TOKEN_LOGICAL_OR ||
+			error->type == TOKEN_LOGICAL_AND) {
+
+			free(error->token->value.str);
+		}	
+		free(error->token);
 	}
 
-	printf("\n");
+	free(error);
+}
 
+void free_error_list() {
+	for (int i = 0; i < errors->size; i++) {
+		Error* error = errors->list[i];
+		free_error(error);
+	}
+
+	free(errors);
+}
+
+void report_error(Token* tok, FileInfo* info, error_t type) {
+	printf("Report error has been called.\nToken line number is %d and column number is %d\n", tok->line, tok->column);
+	printf("Info at %d is '%s'\n", tok->line, info->lines[tok->line - 1]);
+	
+	char* message = malloc(1024);
+	if (!message) return;
+
+	snprintf(message, 1024, "\033[31mError\033[0m in file '%s' at line %d, column %d:\n", info->filename, tok->line, tok->column);
+	create_error(type, message, tok, info);
+	free(message);
+	
 }
 
 token_t peek_token_type(Parser* parser) {
@@ -255,6 +454,7 @@ node_t get_op_kind(Token* token) {
 		case TOKEN_SUB: op = NODE_SUB; return op;
 		case TOKEN_MUL: op = NODE_MUL; return op;
 		case TOKEN_DIV: op = NODE_DIV; return op;
+		case TOKEN_MODULO: op = NODE_MODULO; return op;
 		case TOKEN_ADD_EQUAL: op = NODE_ADD_EQUAL; return op;
 		case TOKEN_SUB_EQUAL: op = NODE_SUB_EQUAL; return op;
 		case TOKEN_MUL_EQUAL: op = NODE_MUL_EQUAL; return op;
@@ -300,7 +500,6 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
-					return NULL;
 				}
 				advance_parser(parser);
 
@@ -311,7 +510,6 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_RIGHT_BRACKET);
-					return NULL;
 				}
 				advance_parser(parser);
 
@@ -340,7 +538,6 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
-				return NULL;
 			}
 			advance_parser(parser);
 			break;
@@ -352,7 +549,6 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_RIGHT_BRACKET);
-				return NULL;
 			}
 			advance_parser(parser);
 			break;
@@ -364,7 +560,6 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_SINGLE_QUOTE) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_SINGLE_QUOTE);
-				return NULL;
 			}
 			advance_parser(parser);
 			break;
@@ -376,7 +571,6 @@ Node* parse_factor(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_DOUBLE_QUOTE) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_DOUBLE_QUOTE);
-				return NULL;
 			}
 			advance_parser(parser);
 			break;
@@ -471,7 +665,6 @@ Node* parse_logical_or(Parser* parser, FileInfo* info) {
 	return node;
 }
 
-
 Node* parse_statement(Parser* parser, FileInfo* info) {
 	Node* stmt = NULL;
 	bool special_statement = false;
@@ -483,7 +676,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_ID) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_IDENTIFIER);
-				return NULL;
+				// return NULL;
 			}
 
 			char* id = NULL;
@@ -500,7 +693,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_COLON) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_COLON);
-				return NULL;
+				// return NULL;
 			}
 
 			advance_parser(parser);
@@ -510,7 +703,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_DATATYPE);			
-				return NULL;
+				// return NULL;
 			}
 
 			{
@@ -533,7 +726,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 						Token token = peek_token(parser);
 						report_error(&token, info, EXPECTED_RIGHT_BRACKET);
-						return NULL;
+						// return NULL;
 					}
 
 					advance_parser(parser);
@@ -554,11 +747,13 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 							Token token = peek_token(parser);
 							report_error(&token, info, EXPECTED_SEMICOLON);
-							return NULL;
+							// return NULL;
 						}
 					} 
+				
 				} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
 					stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+
 				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 					Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 					advance_parser(parser);
@@ -571,7 +766,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 						Token token = peek_token(parser);
 						report_error(&token, info, EXPECTED_SEMICOLON);
-						return NULL;
+						// return NULL;
 					}
 				}
 			}
@@ -620,7 +815,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
-				return NULL;
+				// return NULL;
 			} 
 
 			Node* condition_node = parse_logical_or(parser, info);
@@ -632,7 +827,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_LEFT_BRACE);
-				return NULL;
+				// return NULL;
 			}
 
 			advance_parser(parser);
@@ -660,7 +855,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
-					return NULL;
+					// return NULL;
 				}			
 
 				Node* condition_node = parse_logical_or(parser, info);
@@ -668,7 +863,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_LEFT_BRACE);
-					return NULL;
+					// return NULL;
 				}		
 
 				advance_parser(parser);
@@ -705,7 +900,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			} else {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_LEFT_BRACE);
-				return NULL;
+				// return NULL;
 			}
 		}
 
@@ -716,7 +911,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
-				return NULL;
+				// return NULL;
 			}
 
 			advance_parser(parser);
@@ -739,7 +934,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_SEMICOLON);
-					return NULL;
+					// return NULL;
 				}
 
 				advance_parser(parser);
@@ -753,7 +948,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
-					return NULL;
+					// return NULL;
 				}
 
 				advance_parser(parser);
@@ -761,7 +956,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_LEFT_BRACE);
-					return NULL;
+					// return NULL;
 				}
 
 				advance_parser(parser);
@@ -792,7 +987,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						if (peek_token_type(parser) != TOKEN_INT_KEYWORD) {
 							Token tok = peek_token(parser);
 							report_error(&tok, info, EXPECTED_INT_KEYWORD);
-							return NULL;
+							// return NULL;
 						}
 
 						Token tok = peek_token(parser);
@@ -809,7 +1004,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 							Token tok = peek_token(parser);
 							report_error(&tok, info, EXPECTED_ASSIGNMENT);
-							return NULL;
+							// return NULL;
 						}
 
 						advance_parser(parser);
@@ -823,7 +1018,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 							Token tok = peek_token(parser);
 							report_error(&tok, info, EXPECTED_SEMICOLON);
-							return NULL;
+							// return NULL;
 						}
 
 						advance_parser(parser);
@@ -843,14 +1038,14 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 							Token tok = peek_token(parser);
 							report_error(&tok, info, EXPECTED_RIGHT_PARENTHESES);
-							return NULL;
+							// return NULL;
 						}
 
 						advance_parser(parser);
 						if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 							Token tok = peek_token(parser);
 							report_error(&tok, info, EXPECTED_LEFT_BRACE);
-							return NULL;
+							// return NULL;
 						}
 
 						advance_parser(parser);
@@ -915,7 +1110,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);
-				return NULL;
+				// return NULL;
 			}
 
 			Node* condition_node = parse_logical_or(parser, info);
@@ -927,7 +1122,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_LEFT_BRACE);
-				return NULL;
+				// return NULL;
 			}
 
 			advance_parser(parser);
@@ -966,7 +1161,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_ASSIGNMENT);
-					return NULL;
+					// return NULL;
 				}
 
 				advance_parser(parser);
@@ -999,7 +1194,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_DATATYPE);
 					free(id);
-					return NULL;
+					// return NULL;
 				}
 
 				Token token = peek_token(parser);
@@ -1011,7 +1206,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					Token tok = peek_token(parser);
 					report_error(&tok, info, EXPECTED_SEMICOLON);
 					free(id);
-					return NULL;
+					// return NULL;
 				}
 
 				stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
@@ -1092,7 +1287,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 		if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 			Token tok = peek_token(parser);
 			report_error(&tok, info, EXPECTED_SEMICOLON);
-			return NULL;
+			// return NULL;
 		}		
 	}
 	return stmt;
@@ -1145,7 +1340,7 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 		if (peek_token_type(parser) != TOKEN_ID) {
 			Token tok = peek_token(parser);
 			report_error(&tok, info, EXPECTED_IDENTIFIER);
-			return NULL;
+			// return NULL;
 		} 
 
 		char* id = NULL;
@@ -1163,7 +1358,7 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 		if (peek_token_type(parser) != TOKEN_COLON) {
 			Token tok = peek_token(parser);
 			report_error(&tok, info, EXPECTED_COLON);
-			return NULL;
+			// return NULL;
 		}
 
 		advance_parser(parser);
@@ -1174,7 +1369,7 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 
 			Token tok = peek_token(parser);
 			report_error(&tok, info, EXPECTED_DATATYPE);
-			return NULL;
+			// return NULL;
 		}
 
 		Token tok = peek_token(parser);
@@ -1213,20 +1408,65 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 
 Node* parse_function(Parser* parser, FileInfo* info) {
 	Node* function_node = NULL;
+	printf("Calling parse_function\n");
+
 	advance_parser(parser);
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_IDENTIFIER);
+
+		if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
+			int parentheses_count = 1;
+			advance_parser(parser);
+			while (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
+				if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
+					parentheses_count++;
+				} else if (peek_token_type(parser) == TOKEN_RIGHT_PARENTHESES) {
+					parentheses_count--;
+				}
+				advance_parser(parser);
+			}
+			parentheses_count--;
+
+			if (parentheses_count != 0) {
+				printf("P count: %d\n", parentheses_count);
+				printf("Mismatched parentheses\n");
+				return NULL;
+			}
+
+			while (peek_token_type(parser) != TOKEN_LEFT_BRACE) { advance_parser(parser); }
+			int brace_count = 1;
+			advance_parser(parser);
+			while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
+				if (peek_token_type(parser) == TOKEN_LEFT_BRACE) {
+					brace_count++;
+				} else if (peek_token_type(parser) == TOKEN_RIGHT_BRACE) {
+					brace_count--;
+				}
+				advance_parser(parser);
+			}
+			brace_count--;
+
+			if (brace_count != 0) {
+				printf("Mismatched braces\n");
+				return NULL;
+			}
+		}
+		advance_parser(parser); // consume '}'
 		return NULL;
 	}
 
 	char* id = NULL;
 	{
 		Token tok = peek_token(parser);
-		id = strdup(tok.value.str);
-		if (!id) {
-			printf("Error: Unable to allocate space for function identifier\n");
-			return NULL;
+		if (tok.value.str) {
+			id = strdup(tok.value.str);
+			if (!id) {
+				printf("Error: Unable to allocate space for function identifier\n");
+				return NULL;
+			}
+		} else {
+			printf("Token does not have string\n");
 		}
 	}
 
@@ -1234,7 +1474,7 @@ Node* parse_function(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_LEFT_PARENTHESES);	
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1245,7 +1485,7 @@ Node* parse_function(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_ARROW) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_ARROW);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1256,7 +1496,7 @@ Node* parse_function(Parser* parser, FileInfo* info) {
 			
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_DATATYPE);
-		return NULL;
+		// return NULL;
 	}
 
 	Token tok = peek_token(parser);
@@ -1268,7 +1508,7 @@ Node* parse_function(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token token = peek_token(parser);
 		report_error(&tok, info, EXPECTED_LEFT_BRACE);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1286,6 +1526,7 @@ Node* parse_function(Parser* parser, FileInfo* info) {
 	}
 
 	free(id);
+	printf("About to return function node\n");
 	return function_node;
 }
 
@@ -1368,7 +1609,7 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_IDENTIFIER);
-		return NULL;
+		// return NULL;
 	}
 
 	char* id = NULL;
@@ -1386,7 +1627,7 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_COLON) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_COLON);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1396,7 +1637,7 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 			
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_DATATYPE);
-		return NULL;
+		// return NULL;
 	}
 
 
@@ -1421,7 +1662,7 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 				Token token = peek_token(parser);
 				report_error(&token, info, EXPECTED_RIGHT_BRACKET);
-				return NULL;
+				// return NULL;
 			}
 
 			advance_parser(parser);
@@ -1443,7 +1684,7 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token token = peek_token(parser);
 					report_error(&tok, info, EXPECTED_SEMICOLON);
-					return NULL;
+					// return NULL;
 				}
 				advance_parser(parser);
 			} 
@@ -1465,7 +1706,7 @@ Node* parse_let(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token token = peek_token(parser);
 				report_error(&tok, info, EXPECTED_SEMICOLON);
-				return NULL;
+				// return NULL;
 			}
 			advance_parser(parser);
 		}
@@ -1484,7 +1725,7 @@ Node* parse_enum_body(Parser* parser, FileInfo* info) {
 		if (peek_token_type(parser) != TOKEN_ID) {
 			Token tok = peek_token(parser);
 			report_error(&tok, info, EXPECTED_IDENTIFIER);
-			return NULL;
+			// return NULL;
 		}
 
 		char* id = NULL;
@@ -1528,7 +1769,7 @@ Node* parse_enum(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_IDENTIFIER);
-		return NULL;
+		// return NULL;
 	}
 
 	char* id = NULL;
@@ -1544,7 +1785,7 @@ Node* parse_enum(Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_LEFT_BRACE);
 		free(id);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1560,7 +1801,7 @@ Node* parse_enum(Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_SEMICOLON);
 		free(id);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1577,7 +1818,7 @@ Node* parse_struct(Parser* parser, FileInfo* info) {
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_IDENTIFIER);
-		return NULL;
+		// return NULL;
 	}
 
 	char* id = NULL;
@@ -1593,7 +1834,7 @@ Node* parse_struct(Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_LEFT_BRACE);
 		free(id);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser);
@@ -1609,7 +1850,7 @@ Node* parse_struct(Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		report_error(&tok, info, EXPECTED_SEMICOLON);
 		free(id);
-		return NULL;
+		// return NULL;
 	}
 
 	advance_parser(parser); // skip ';'
@@ -1618,7 +1859,24 @@ Node* parse_struct(Parser* parser, FileInfo* info) {
 	return struct_node;
 }
 
+void synchronize(Parser* parser, token_t* synchronizations) {
+	size_t length = sizeof(synchronizations) / sizeof(synchronizations[0]);
+
+	while (!at_token_eof(parser)) {
+		token_t current_type = peek_token_type(parser);
+		for (size_t i = 0; i < length; i++) {
+			if (current_type == synchronizations[i]) {
+				printf("Found synchronization type: %d\n", current_type);
+				return;
+			}
+		}
+		advance_parser(parser);
+	}
+}
+
 Node* parse(Token* tokens, FileInfo* info) {
+	init_error_list();
+
 	Parser* parser = initialize_parser(tokens);
 	if (!parser) {
 		printf("In 'build_AST', parser is NULL\n");
@@ -1633,14 +1891,15 @@ Node* parse(Token* tokens, FileInfo* info) {
 
 		if (at_token_eof(parser)) { break; }
 
-		if (peek_token_type(parser) == TOKEN_FUNCTION_KEYWORD) {
+		token_t current_type = peek_token_type(parser);
+
+		if (current_type == TOKEN_FUNCTION_KEYWORD) {
 			node = parse_function(parser, info);
-			
-		}  else if (peek_token_type(parser) == TOKEN_LET_KEYWORD) {
+		}  else if (current_type == TOKEN_LET_KEYWORD) {
 			node = parse_let(parser, info);
-		} else if (peek_token_type(parser) == TOKEN_STRUCT_KEYWORD) {
+		} else if (current_type == TOKEN_STRUCT_KEYWORD) {
 			node = parse_struct(parser, info);
-		} else if (peek_token_type(parser) == TOKEN_ENUM_KEYWORD) {
+		} else if (current_type == TOKEN_ENUM_KEYWORD) {
 			node = parse_enum(parser, info);
 		} else {
 			printf("Unexpected token type: %d\n", peek_token_type(parser));
@@ -1658,9 +1917,16 @@ Node* parse(Token* tokens, FileInfo* info) {
 				current = node;
 			}
 		} else {
-			exit(EXIT_FAILURE);
+			
+			token_t synchronizations[4] = {TOKEN_FUNCTION_KEYWORD, TOKEN_LET_KEYWORD, TOKEN_STRUCT_KEYWORD, TOKEN_ENUM_KEYWORD};
+			synchronize(parser, synchronizations);
 		}
+	}
 
+	if (has_errors) {
+		emit_errors(errors);
+		free_error_list();
+		exit(EXIT_FAILURE);
 	}
 
 	free(parser);
@@ -1681,13 +1947,93 @@ char* get_type_name(data_t type) {
 	}
 }
 
+void print_expression_recursive(Node* expr, char* child_prefix, char* stmt_connector, bool* is_last_stmt) {
+	if (!expr) return;
+
+	switch (expr->type) {
+		case NODE_NAME: {
+			printf("Identifier");
+			break;
+		}
+
+		case NODE_CALL: { break; }
+
+		case NODE_ARG: { break; }
+
+		case NODE_PARAM: { break; }
+
+		case NODE_ADD: 
+		case NODE_SUB:
+		case NODE_MUL:
+		case NODE_DIV:
+		case NODE_ADD_EQUAL:
+		case NODE_SUB_EQUAL:
+		case NODE_MUL_EQUAL:
+		case NODE_DIV_EQUAL:
+		case NODE_LESS:
+		case NODE_GREATER:
+		case NODE_LESS_EQUAL:
+		case NODE_GREATER_EQUAL:
+		case NODE_EQUAL:
+		case NODE_NOT_EQUAL:
+		case NODE_LOGICAL_AND:
+		case NODE_LOGICAL_OR: {
+			if (expr->left) {
+				print_expression_recursive(expr->left, child_prefix, stmt_connector, is_last_stmt);
+			}
+
+			if (expr->right) {
+				print_expression_recursive(expr->right, child_prefix, stmt_connector, is_last_stmt);
+			}
+
+			break;
+		}
+
+		case NODE_NOT: {
+			if (expr->right) {
+				print_expression_recursive(expr->right, child_prefix, stmt_connector, is_last_stmt);
+			}
+			break;
+		}
+
+		case NODE_DECREMENT:
+		case NODE_INCREMENT: {
+			if (expr->left) {
+				print_expression_recursive(expr->left, child_prefix, stmt_connector, is_last_stmt);
+			}
+			break;
+		}
+	}
+}
+
 void print_statement_recursive(Node* stmt, char* child_prefix, char* stmt_connector, bool* is_last_stmt) {
-	
+	if (!stmt) return;
+
 	switch (stmt->type) {
 		case NODE_ASSIGNMENT: {
 			printf("Assignment\n");
 			if (stmt->left) {
-				print_statement_recursive(stmt->left, child_prefix, stmt_connector, is_last_stmt);
+				print_expression_recursive(stmt->left, child_prefix, stmt_connector, is_last_stmt);
+			}
+
+			if (stmt->right) {
+				print_expression_recursive(stmt->right, child_prefix, stmt_connector, is_last_stmt);
+			}
+			break;
+		}
+
+		case NODE_RETURN: {
+			if (stmt->right) {
+				print_expression_recursive(stmt->right, child_prefix, stmt_connector, is_last_stmt);
+			}
+			break;
+		}
+
+		case NODE_WHILE:
+		case NODE_IF:
+		case NODE_ELSE_IF: {
+			if (stmt->left) {
+				print_expression_recursive(stmt->left, child_prefix, stmt_connector, is_last_stmt);
 			}
 
 			if (stmt->right) {
@@ -1695,14 +2041,38 @@ void print_statement_recursive(Node* stmt, char* child_prefix, char* stmt_connec
 			}
 			break;
 		}
-		case NODE_NAME: {
-			printf("Identifier\n");
+
+		case NODE_ELSE: {
+			if (stmt->right) {
+				print_statement_recursive(stmt->right, child_prefix, stmt_connector, is_last_stmt);
+			}
 			break;
 		}
-		case NODE_INTEGER: {
-			printf("Integer\n");
+
+		case NODE_FOR: {
+			if (stmt->left) {
+				print_statement_recursive(stmt->left, child_prefix, stmt_connector, is_last_stmt);
+			}
+
+			Node* condition = stmt->left->next;
+			if (condition) {
+				print_expression_recursive(condition, child_prefix, stmt_connector, is_last_stmt);
+			}
+
+			Node* update = condition->next;
+			if (update) {
+				print_expression_recursive(update, child_prefix, stmt_connector, is_last_stmt);
+			}
+
+			if (stmt->right) {
+				print_statement_recursive(stmt->right, child_prefix, stmt_connector, is_last_stmt);
+			}
+
 			break;
 		}
+
+		case NODE_CONTINUE: 
+		case NODE_BREAK:  { break; }
 	}
 }
 
@@ -1727,9 +2097,9 @@ void print_ast(Node* root) {
 
 		if (node->t && node->t->kind == TYPE_FUNCTION) {
 			printf("%sIdentifier: '%s'", prefix, node->value.name);
-			printf(" [ function -> ");
+			printf(" [function -> ");
 			if (node->t->subtype) {
-				printf("%s ]\n", get_type_name(node->t->subtype->kind));
+				printf("%s]\n", get_type_name(node->t->subtype->kind));
 			}
 			
 			char* child_prefix = is_last ? "    " : CONTINUATION;
@@ -1751,9 +2121,9 @@ void print_ast(Node* root) {
 					bool is_last_param = (param_index == total_params - 1);
 					char* param_connector = is_last_param ? LAST_BRANCH : BRANCH;
 
-					printf("%s%sIdentifier: \"%s\"", child_prefix, param_connector, param->value.name);
-					if (param->t) {
-						printf(" [%s]\n", get_type_name(param->t->kind));
+					printf("%s%sIdentifier: \'%s\'", child_prefix, param_connector, param->right->value.name);
+					if (param->right->t) {
+						printf(" [%s]\n", get_type_name(param->right->t->kind));
 					}
 
 					param_index++;

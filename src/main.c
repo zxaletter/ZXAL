@@ -35,7 +35,10 @@ int main(int argc, char** argv) {
 	}
 
 	Node* root = parse(lexer->tokens, lexer->info);
-	resolve_tree(root);
+	// if (root) {
+	// 	print_ast(root);
+	// }
+	// resolve_tree(root);
 	// typecheck_tree(root);
 
 	free_ast(root);
