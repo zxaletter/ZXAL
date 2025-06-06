@@ -175,6 +175,8 @@ void create_error(error_t type, char* message, Token* token, FileInfo* info) {
 void display_error(Error* error) {
 	if (!error) return;
 
+	printf("%s", error->message);
+
 	int token_length = 1;
 
 	switch (error->token->type) {
@@ -318,8 +320,6 @@ void free_error_list() {
 }
 
 void report_error(Token* tok, FileInfo* info, error_t type) {
-	printf("Report error has been called.\nToken line number is %d and column number is %d\n", tok->line, tok->column);
-	printf("Info at %d is '%s'\n", tok->line, info->lines[tok->line - 1]);
 	
 	char* message = malloc(1024);
 	if (!message) return;
@@ -676,6 +676,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_ID) {
 				Token tok = peek_token(parser);
 				report_error(&tok, info, EXPECTED_IDENTIFIER);
+
 				// return NULL;
 			}
 
@@ -732,15 +733,17 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					advance_parser(parser);
 
 					if (peek_token_type(parser) == TOKEN_SEMICOLON) {
-						stmt = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
+						Node* decl = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
+						stmt = create_node(NODE_DECL, NULL, NULL, NULL, NULL, NULL);
 
 					} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 						advance_parser(parser); // move past '='
 						
 						Node* assignee = create_string_node(NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
+						Node* def = create_node(NODE_DEF, assignee, NULL, NULL, NULL, NULL);
 						Node* elements = parse_array_list(parser, info);
 
-						stmt = create_string_node(NODE_ASSIGNMENT, NULL, assignee, elements, NULL, NULL, NULL);  
+						stmt = create_node(NODE_ASSIGNMENT, def, elements, NULL, NULL, NULL);  
 
 						advance_parser(parser);
 
@@ -752,17 +755,19 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					} 
 				
 				} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
-					stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+					Node* decl = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+					stmt = create_node(NODE_DECL, decl, NULL, NULL, NULL, NULL);
 
 				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 					Node* assignee = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+					Node* def = create_node(NODE_DEF, assignee, NULL, NULL, NULL, NULL);
 					advance_parser(parser);
 					Node* expr_node = parse_logical_or(parser, info);
 					if (!expr_node) {
 						printf("Error: EXPR NODE IN 'parse_let' is null\n");
 						return NULL;
 					}
-					stmt = create_node(NODE_ASSIGNMENT, assignee, expr_node, NULL, NULL, NULL);
+					stmt = create_node(NODE_ASSIGNMENT, def, expr_node, NULL, NULL, NULL);
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 						Token token = peek_token(parser);
 						report_error(&token, info, EXPECTED_SEMICOLON);
@@ -994,8 +999,9 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						data_t kind = get_type(&tok);
 						struct type* type = create_type(kind, NULL);
 
-						Node* initializer = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, type);
-						if (initializer) {
+						Node* var = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, type); 
+						Node* def = create_node(NODE_DEF, NULL, NULL, NULL, NULL, NULL);
+						if (def) {
 							printf("Created string node\n");
 						}
 
@@ -1010,7 +1016,7 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 						advance_parser(parser);
 						
 						Node* expr_node = parse_logical_or(parser, info);
-						Node* assignment = create_node(NODE_ASSIGNMENT, initializer, expr_node, NULL, NULL, NULL);
+						Node* assignment = create_node(NODE_ASSIGNMENT, def, expr_node, NULL, NULL, NULL);
 						if (assignment) {
 							printf("Made assignment node\n");
 						}
@@ -1167,7 +1173,8 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 				advance_parser(parser);
 				
 				Node* expr_node = parse_logical_or(parser, info);
-				stmt = create_node(NODE_ASSIGNMENT, node, expr_node, NULL, NULL, NULL);
+				Node* def = create_node(NODE_DEF, node, NULL, NULL, NULL, NULL);
+				stmt = create_node(NODE_ASSIGNMENT, def, expr_node, NULL, NULL, NULL);
 
 			} else if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
 				advance_parser(parser);
@@ -1184,7 +1191,8 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					free(id);
 					return NULL;
 				}
-				stmt = create_node(NODE_ASSIGNMENT, node, expr, NULL, NULL, NULL);
+				Node* def = create_node(NODE_DEF, node, NULL, NULL, NULL, NULL);
+				stmt = create_node(NODE_ASSIGNMENT, def, expr, NULL, NULL, NULL);
 			} else if (peek_token_type(parser) == TOKEN_COLON) {
 				advance_parser(parser);
 
@@ -1208,8 +1216,8 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 					free(id);
 					// return NULL;
 				}
-
-				stmt = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+				Node* decl = create_string_node(NODE_NAME, id, NULL, NULL, NULL, NULL, t);
+				stmt = create_node(NODE_DECL, decl, NULL, NULL, NULL, NULL);
 			}
 			free(id);
 			break;
@@ -1294,12 +1302,13 @@ Node* parse_statement(Parser* parser, FileInfo* info) {
 }
 
 Node* parse_block(Parser* parser, FileInfo* info) {
+	Node* block = create_node(NODE_BLOCK, NULL, NULL, NULL, NULL, NULL);
+
 	Node* head = NULL;
 	Node* current = NULL;
-	Node* stmt = NULL; 
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
-		stmt = parse_statement(parser, info);
+		Node* stmt = parse_statement(parser, info);
 
 		if (stmt) {
 			if (!head) {
@@ -1317,18 +1326,19 @@ Node* parse_block(Parser* parser, FileInfo* info) {
 					return NULL;
 				}
 			}
-		} else {
-			printf("Error: Received NULL statement from 'parse_statement()'\n");
-			return NULL;
-		}
+		} 
 
 		if (peek_token_type(parser) == TOKEN_SEMICOLON) { advance_parser(parser); }
 	
 		if (peek_token_type(parser) == TOKEN_RIGHT_BRACE) { break; }
 	}
 
+	if (block) {
+		block->right = head;
+	}
+
 	advance_parser(parser); // go over '}'
-	return head;
+	return block;
 }
 
 Node* parse_parameters(Parser* parser, FileInfo* info) {
@@ -1408,7 +1418,6 @@ Node* parse_parameters(Parser* parser, FileInfo* info) {
 
 Node* parse_function(Parser* parser, FileInfo* info) {
 	Node* function_node = NULL;
-	printf("Calling parse_function\n");
 
 	advance_parser(parser);
 	if (peek_token_type(parser) != TOKEN_ID) {
@@ -1526,7 +1535,6 @@ Node* parse_function(Parser* parser, FileInfo* info) {
 	}
 
 	free(id);
-	printf("About to return function node\n");
 	return function_node;
 }
 
