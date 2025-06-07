@@ -70,10 +70,12 @@ typedef enum {
 	NODE_ARG, 
 	NODE_ASSIGNMENT,
 	NODE_ADDR,
+
 	NODE_BLOCK,
 	NODE_NAME,
 	NODE_DECL,
 	NODE_DEF,
+	NODE_AUG,
 
 	NODE_ADD,
 	NODE_SUB,
@@ -117,7 +119,6 @@ struct Node {
 	struct type* t;
 	bool node_free;
 	struct Symbol* symbol;
-
 };
 
 typedef enum {
@@ -195,7 +196,7 @@ Node* parse_enum(Parser* parser, FileInfo* info);
 Node* parse_struct(Parser* parser, FileInfo* info);
 Node* parse_switch(Parser* parser, FileInfo* info);
 Node* parse_args(Parser* parser, FileInfo* info);
-Node* parse_array_list(Parser* parser, FileInfo* info);
+Node* parse_array_list(Parser* parser, FileInfo* info, int* element_count);
 Node* parse_let(Parser* parser, FileInfo* info);
 Parser* initialize_parser(Token* tokens);
 Node* parse(Token* tokens, FileInfo* info);
@@ -206,7 +207,7 @@ void print_ast(Node* root);
 
 void synchronize(Parser* parser, token_t* synchronizations);
 Token* copy_token(Token* original_token);
-
+struct type* copy_type(struct type* t);
 void free_type(struct type* t);
 void free_expression(Node* node);
 void free_parameter_list(Node* head);
