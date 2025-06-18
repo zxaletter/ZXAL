@@ -4,7 +4,7 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
 							"else", "for", "while",
 						    "continue", "break", "return",
-							"switch", "case"};
+							"switch", "case", "true", "false"};
 
 
 Lexer* initialize_lexer(FileInfo* info) {
@@ -87,6 +87,10 @@ token_t key_t_to_token_t(keyword_t type) {
 		case KEYWORD_CONTINUE: return TOKEN_CONTINUE_KEYWORD;
 		case KEYWORD_BREAK: return TOKEN_BREAK_KEYWORD;
 		case KEYWORD_RETURN: return TOKEN_RETURN_KEYWORD;
+		case KEYWORD_SWITCH: return TOKEN_SWITCH_KEYWORD;
+		case KEYWORD_CASE: return TOKEN_CASE_KEYWORD;
+		case KEYWORD_TRUE: return TOKEN_TRUE_KEYWORD;
+		case KEYWORD_FALSE: return TOKEN_FALSE_KEYWORD;
 		default: return TOKEN_UNKNOWN;
 	}
 }
@@ -211,7 +215,12 @@ void get_delimeters(Lexer* lexer) {
 		case ';': type = TOKEN_SEMICOLON; break;
 		case ':': type = TOKEN_COLON; break;
 		case ',': type = TOKEN_COMMA; break;
-		case '\'': type = TOKEN_SINGLE_QUOTE; break;
+		case '\'': {
+			add_token(lexer, create_char_token(TOKEN_CHAR_LITERAL, peek_lexer(lexer), lexer->line, lexer->column));
+			advance_lexer(lexer);
+			advance_lexer(lexer);
+			return;
+		}
 	}
 
 	add_token(lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
@@ -347,7 +356,6 @@ void get_operator(Lexer* lexer) {
 			type = TOKEN_DOUBLE_QUOTE;
 			break;
 		}
-
 	}
 
 	if (isCompoundOp) {
@@ -553,10 +561,15 @@ void free_token(Token* token) {
 		token->type == TOKEN_CONTINUE_KEYWORD ||
 		token->type == TOKEN_BREAK_KEYWORD ||
 		token->type == TOKEN_FUNCTION_KEYWORD ||
+		token->type == TOKEN_RETURN_KEYWORD ||
+		token->type == TOKEN_SWITCH_KEYWORD ||
+		token->type == TOKEN_CASE_KEYWORD ||
+		token->type == TOKEN_TRUE_KEYWORD ||
+		token->type == TOKEN_FALSE_KEYWORD ||
 		token->type == TOKEN_LET_KEYWORD ||
 		token->type == TOKEN_ID ||
 		token->type == TOKEN_LOGICAL_OR ||
-		token->type == TOKEN_LOGICAL_AND
+		token->type == TOKEN_LOGICAL_AND 
 	) {
 		free(token->value.str);
 	}
@@ -598,18 +611,22 @@ void print_tokens(Token* tokens) {
 			case TOKEN_BREAK_KEYWORD:	
 			case TOKEN_FUNCTION_KEYWORD:
 			case TOKEN_RETURN_KEYWORD:
+			case TOKEN_SWITCH_KEYWORD:
+			case TOKEN_CASE_KEYWORD:
+			case TOKEN_TRUE_KEYWORD:
+			case TOKEN_FALSE_KEYWORD:
 			case TOKEN_IF_KEYWORD:
 			case TOKEN_ELSE_KEYWORD:
 			case TOKEN_LET_KEYWORD:
 			case TOKEN_LOGICAL_AND:
 			case TOKEN_LOGICAL_OR:
 			case TOKEN_ID: {
-				printf("TOKEN: %s\n", tokens[i].value.str);
+				printf("TOKEN TYPE: %d TOKEN: %s\n", tokens[i].type, tokens[i].value.str);
 				break;
 			}
 
 			case TOKEN_INTEGER: {
-				printf("TOKEN: %d\n", tokens[i].value.val);
+				printf("TOKEN TYPE: %d TOKEN: %d\n", tokens[i].type, tokens[i].value.val);
 				break;
 			}
 
@@ -632,9 +649,9 @@ void print_tokens(Token* tokens) {
 			case TOKEN_COLON:
 			case TOKEN_SEMICOLON:
 			case TOKEN_AMPERSAND:
-			case TOKEN_SINGLE_QUOTE:
+			case TOKEN_CHAR_LITERAL:
 			case TOKEN_PERIOD: {
-				printf("TOKEN: %c\n", tokens[i].value.c);
+				printf("TOKEN TYPE: %d, TOKEN: %c\n", tokens[i].type, tokens[i].value.c);
 				break;				
 			}
 		}

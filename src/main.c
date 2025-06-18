@@ -1,5 +1,8 @@
 #include "Lexer/lexer.h"
 #include "Parser/parser.h"
+#include "Symbols/symbols.h"
+#include "Symbols/types.h"
+#include "auxiliaries.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -33,14 +36,15 @@ int main(int argc, char** argv) {
 	if (lexer) {
 		print_tokens(lexer->tokens);
 	}
-	printf("here\n");
 	Node* root = parse(lexer->tokens, lexer->info);
-	// if (root) {
-	// 	print_ast(root);
-	// }
-	resolve_tree(root);
-	// typecheck_tree(root);
+	if (root) {
+		// print_ast(root);
+		resolve_tree(root);
+		typecheck_tree(root);
 
+	}
+
+	free_stacks();
 	free_ast(root);
 	free_lexer(lexer);
 	free(output);

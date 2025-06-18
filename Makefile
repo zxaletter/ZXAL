@@ -1,7 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Isrc
+CFLAGS = -g -Isrc
 
-# Find all .c files in src and subdirectories
 SOURCES = $(shell find src -name "*.c")
 OBJECTS = $(SOURCES:.c=.o)
 

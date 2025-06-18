@@ -5,69 +5,109 @@ static size_t param_byte_offset = 0;
 static size_t local_byte_offset = 0;
 static size_t total_local_bytes = 0;
 static bool start_at_param_bytes = false;
-Stack* stack;
+
+SymbolStack* symbol_stack = NULL;
+ContextStack* context_stack = NULL;
+
+void init_context_stack() {
+	context_stack = create_context();
+	if (!context_stack) {
+		perror("Failed to initialize global context stack\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+bool is_context_stack_empty() {
+	return context_stack->top == -1;
+}
+
+ContextStack* create_context() {
+	ContextStack* context_stack = malloc(sizeof(ContextStack));
+	if (!context_stack) {
+		perror("Unable to allocate space for context stack\n");
+		return NULL;
+	}
+
+	context_stack->top = -1;
+	context_stack->size = 0;
+	context_stack->capacity = CONTEXT_CAPACITY;
+	context_stack->contexts = malloc(sizeof(context_t) * context_stack->capacity);
+	if (!context_stack->contexts) {
+		perror("Unable to allocate space for context types\n");
+		free(context_stack);
+		return NULL;
+	}
+
+	return context_stack;
+}
+
+void push_context(context_t new_context) {
+	if (context_stack->size >= context_stack->capacity) {
+		context_stack->capacity *= 2;
+		context_stack->contexts = realloc(context_stack->contexts, context_stack->capacity * sizeof(context_t));
+		if (!context_stack->contexts) {
+			perror("Unable to reallocate space for context types\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	context_stack->contexts[++context_stack->top] = new_context;
+	context_stack->size++;
+}
+
+void pop_context() {
+	if (!is_context_stack_empty()) {
+		context_stack->contexts[context_stack->top--];
+		context_stack->size--;
+	}
+}
+
+bool context_lookup(context_t context) {
+	for (int i = context_stack->top; i >= 0; i--) {
+		context_t type = context_stack->contexts[i];
+		if (type == context) { 
+			return true; 
+		} 
+	}
+	return false;
+}
 
 void init_symbol_stack() {
-	stack = create_stack();
-	if (!stack) {
+	symbol_stack = create_stack();
+	if (!symbol_stack) {
 		perror("Failed to initialize global symbol stack\n");
 		exit(EXIT_FAILURE);
 	}
 } 
 
 bool push_scope() {
-	if (stack->size >= stack->capacity) {
-		stack->capacity *= 2;
-		stack->tables = realloc(stack->tables, stack->capacity);
-		if (!stack->tables) {
+	if (symbol_stack->size >= symbol_stack->capacity) {
+		symbol_stack->capacity *= 2;
+		symbol_stack->tables = realloc(symbol_stack->tables, symbol_stack->capacity * sizeof(SymbolTable*));
+		if (!symbol_stack->tables) {
 			perror("Unable to reallocate stack tables\n");
 			return false;
 		}
 	}
 
-	stack->tables[++stack->top] = create_symbol_table();
-	if (!stack->tables[stack->top]) {
+	symbol_stack->tables[++symbol_stack->top] = create_symbol_table();
+	if (!symbol_stack->tables[symbol_stack->top]) {
 		perror("Unable to create new symbol table\n");
 		return false;
 	}
 
-	stack->size++;
+	symbol_stack->size++;
 	return true;
 }
 
 bool pop_scope() {
 	if (!is_stack_empty()) {
-		stack->tables[stack->top--];
-		stack->size--;
+		symbol_stack->tables[symbol_stack->top--];
+		symbol_stack->size--;
 		return true;
 	}
 
 	return false;
-}
-
-struct type* type_copy(struct type* original_type) {
-	struct type* duplicate_type = malloc(sizeof(struct type));
-	if (!duplicate_type) {
-		perror("Unable to allocate space for type\n");
-		return NULL;
-	}
-
-	printf("Type we're copying is %d\n", original_type->kind);
-
-	duplicate_type->kind = original_type->kind;
-	duplicate_type->type_free = false;
-	if (original_type->subtype) {
-		duplicate_type->subtype = type_copy(original_type->subtype);
-		if (!duplicate_type->subtype) {
-			perror("Unable to copy subtype\n");
-			free(duplicate_type);
-			return NULL;
-		}
-	} else {
-		duplicate_type->subtype = NULL;
-	}
-	printf("About to return\n");
-	return duplicate_type;
 }
 
 Symbol* create_symbol(symbol_t kind, char* name, struct type* t) {
@@ -78,6 +118,17 @@ Symbol* create_symbol(symbol_t kind, char* name, struct type* t) {
 	}
 
 	sym->kind = kind;
+	sym->symbol_free = false;
+	sym->bind_symbol = false;
+	sym->name = NULL;
+	sym->type = NULL;
+	sym->link = NULL;
+	sym->next = NULL;
+	sym->local_byte_offset = 0;
+	sym->total_bytes = 0;
+	sym->param_byte_offset = 0;
+	sym->actual_bytes = 0;
+
 	if (name) {
 		sym->name = strdup(name);
 		if (!sym->name) {
@@ -85,33 +136,67 @@ Symbol* create_symbol(symbol_t kind, char* name, struct type* t) {
 			free(sym);
 			return NULL;
 		} else {
-			printf("Got name\n");
+			printf("Got name '%s' for new symbol.\n", sym->name);
 		}
-	} else {
-		printf("name is NULL\n");
-		sym->name = NULL;
-	}
+	} 
 
-	printf("oh here\n");
 	if (t) {
 		sym->type = type_copy(t);
 		if (!sym->type) {
-			printf("'sym->type' is NULL\n");
+			printf("Error: 'sym->type' is NULL after type_copy for symbol '%s'\n", sym->name ? sym->name : "NULL_NAME");
 			free(sym->name);
 			free(sym);
 			return NULL;
 		}		
-	} else {
-		printf("'%s' has type NULL\n", sym->name);
-		sym->type = NULL;
 	}
-	printf("after type\n");
-	printf("here\n");
 
+	printf("About to create symbol with name '%s'\n", name ? name : "NULL_NAME");
+
+	return sym;
+}
+
+Symbol* create_array_symbol(symbol_t kind, char* name, int element_count, struct type* type) {
+	Symbol* sym = malloc(sizeof(Symbol));
+	if (!sym) {
+		perror("Error: Unable to allocate space for symbol\n");
+		return NULL;
+	}
+
+	sym->kind = kind;
 	sym->symbol_free = false;
 	sym->bind_symbol = false;
-	sym->array_size = 0;
-	printf("About to create symbol with name '%s'\n", name);
+	sym->name = NULL;
+	sym->type = NULL;
+	sym->link = NULL;
+	sym->next = NULL;
+	sym->local_byte_offset = 0;
+	sym->total_bytes = 0;
+	sym->param_byte_offset = 0;
+	sym->actual_bytes = 0;
+	sym->array_size = element_count;
+	
+	if (name) {
+		sym->name = strdup(name);
+		if (!sym->name) {
+			perror("Unable to duplicate name for sym member\n");
+			free(sym);
+			return NULL;
+		} else {
+			printf("successful duplication of array name '%s'\n", sym->name);
+		}
+	} 
+
+	if (type) {
+		sym->type = type_copy(type);
+		if (!sym->type) {
+			printf("Unable to copy type for array symbol '%s'\n", sym->name ? sym->name : "NULL_NAME");
+			free(sym->name);
+			free(sym);
+			return NULL;
+		} else {
+			printf("Successfully copied array type with kind %d for '%s'\n", sym->type->kind, sym->name ? sym->name : "NULL_NAME");
+		}
+	}
 
 	return sym;
 }
@@ -127,59 +212,76 @@ SymbolTable* create_symbol_table() {
 	table->size = 0;
 	table->capacity = TABLE_CAPACITY;
 	table->symbols = calloc(table->capacity, sizeof(Symbol*));
-	
+	if (!table->symbols) {
+		perror("Error: Unable to allocate space for symbol table hash array\n");
+		free(table);
+		return NULL;
+	}
+
 	table->symboltable_free = false;
 	return table;
 }
 
-Stack* create_stack() {
-	Stack* stack = malloc(sizeof(Stack));
-	if (!stack) {
+SymbolStack* create_stack() {
+	SymbolStack* symbol_stack = malloc(sizeof(SymbolStack));
+	if (!symbol_stack) {
 		perror("Error: Unable to allocate space for stack\n");
 		return NULL;
 	}
 
-	stack->top = -1;
-	stack->size = 0;
-	stack->capacity = STACK_CAPACITY;
-	stack->tables = malloc(sizeof(SymbolTable*) * stack->capacity);
-	if (!stack->tables) {
+	symbol_stack->top = -1;
+	symbol_stack->size = 0;
+	symbol_stack->capacity = STACK_CAPACITY;
+	symbol_stack->tables = malloc(sizeof(SymbolTable*) * symbol_stack->capacity);
+	if (!symbol_stack->tables) {
 		perror("Unable to allocate space for stack tables\n");
-		free(stack);
+		free(symbol_stack);
 		return NULL;
 	}
 
-	return stack;
+	return symbol_stack;
 }
 
 bool is_stack_empty() {
-	return stack->top == -1;
+	return symbol_stack->top == -1;
 }
 
 bool scope_bind(Symbol* symbol, int hash_key) {
-	if (!symbol) return false;
+	if (!symbol || !symbol->name) {
+		printf("Error: Attempted to bind NULL symbol or symbol with NULL name.\n");
+		return false;
+	}
 
-	SymbolTable* table = stack->tables[stack->top];
-	if (table) {
-		printf("got table\n");
+	SymbolTable* table = symbol_stack->tables[symbol_stack->top];
+	if (!table) {
+		printf("Error: Current symbol table is NULL in scope_bind.\n");
+		return false;
 	}
 	
 	if (table->symbols) {
 		if (table->symbols[hash_key]) {
-			symbol->link = table->symbols[hash_key];
-			table->symbols[hash_key] = symbol;
-			printf("Just bound '%s' to scope level %d\n", symbol->name, stack->top);
-			return true;			
-		} else {
-			table->symbols[hash_key] = symbol;
-			printf("Just bound '%s' to scope level %d\n", symbol->name, stack->top);
-			return true;
+			Symbol* sym = table->symbols[hash_key];
+			Symbol* current = sym;
+			while (current) {
+				if (current->name && strcmp(current->name, symbol->name) == 0) {
+					printf("Name collision at scope level with '%s'.\n ", table->level, current->name);
+					return false;
+				}
+				current = current->link;
+			}
 		}
+		symbol->link = table->symbols[hash_key];
+		table->symbols[hash_key] = symbol;
+		printf("Bound symbol '%s' to scope level ('%d') at hash key %d -> Address: '%p'\n",
+			symbol->name, symbol_stack->top, hash_key, (void*)table->symbols[hash_key]);
+		return true;
 	} 
+	printf("Error: Symbol table hash array is NULL in scope_bind for table level %d.\n", table->level);
 	return false;
 }
 
 int hash(char* name) {
+	if (!name) return 0;
 	unsigned int hash = 0;
 	while (*name) {
 		hash = (hash << 1) + *name++;
@@ -188,462 +290,522 @@ int hash(char* name) {
 }
 
 Symbol* scope_lookup(Symbol* symbol, int hash_key) {
-	if (!symbol) return NULL;
+	if (!symbol || !symbol->name) return NULL;
 
-	for (int i = stack->top - 1; i >= 0; i--) {
-		SymbolTable* table = stack->tables[i];
+	for (int i = symbol_stack->top; i >= 0; i--) {
+		SymbolTable* table = symbol_stack->tables[i];
+		if (!table || !table->symbols) continue;
 
 		Symbol* sym = table->symbols[hash_key];
-		while (sym) {
-			Node* next = sym->link; 
-			if (strcmp(sym->name, symbol->name) == 0) {
-				return sym;
+		Symbol* current = sym;
+		while (current) { 
+			if (current->name  && strcmp(current->name, symbol->name) == 0) {
+				printf("Found symbol '%s' in scope level %d.\n", current->name, table->level);
+				return current;
 			}
-			sym = next;
+			current = current->link;
 		}			
 	}
-	
+	printf("Symbol '%s' not found in any scope.\n", symbol->name);
 	return NULL;
 }
 
 Symbol* scope_lookup_current(Symbol* symbol, int hash_key) {
-	if (!symbol) return NULL;
+	if (!symbol || !symbol->name) return NULL;
 
-	printf("in scope lookup current -> Current scope level is %d\n", stack->top);
-	SymbolTable* current_table = stack->tables[stack->top];
-	if (!current_table) {
-		printf("Current table is NULL\n");
+	SymbolTable* current_table = symbol_stack->tables[symbol_stack->top];
+	if (!current_table || !current_table->symbols) {
+		printf("Current table or its symbols array is NULL in scope_lookup_current\n");
 		return NULL;
 	}
-	printf("About to traverse link\n");
 	
 	Symbol* sym = current_table->symbols[hash_key];
 	Symbol* current = sym;
 	while (current) {
-		Symbol* next = sym->link;
-		if (strcmp(current->name, symbol->name) == 0) {
-			printf("Found '%s'\n", current->name);
+		if (current->name && strcmp(current->name, symbol->name) == 0) {
+			printf("Found '%s' in current scope.\n", current->name);
 			return current;
 		}
-		current = next;
+		current = current->link;
 	}
-
+	printf("Symbol '%s' not found in current scope.\n", symbol->name);
 	return NULL;
 }
 
 size_t get_num_bytes(Symbol* symbol) {
-	if (!symbol) return 0;
+	if (!symbol || !symbol->type) return 0;
 
 	size_t size = 0;
-	printf("in get num bytes\n");
-	if (symbol->type) {
-		switch (symbol->type->kind) {
-			case TYPE_INTEGER: {
-				printf("in int case\n");
-				size = sizeof(int);
-				return size;
-			}
-
-			case TYPE_CHAR:
-			case TYPE_BOOL: {
-				printf("in bool or char case\n");
-				size = sizeof(char);
-				return size;
-			}
-
-			case TYPE_ARRAY: {
-				printf("in array case\n");
-				if (symbol->type->subtype) {
-					size_t array_size = 0;
-					if (symbol->type->subtype->kind == TYPE_INTEGER) {
-						array_size = symbol->array_size;
-						size = array_size * sizeof(int);
-					} else {
-						size = array_size * sizeof(char); 
-					}
-				}
-				return size;
-			}
+	switch (symbol->type->kind) {
+		case TYPE_INTEGER: {
+			size = sizeof(int);
+			return size;
 		}
+
+		case TYPE_CHAR:
+		case TYPE_BOOL: {
+			size = sizeof(char);
+			return size;
+		}
+
+		case TYPE_ARRAY: {
+			if (symbol->type->subtype) {
+				size_t element_size = 0;
+				switch (symbol->type->subtype->kind) {
+					case TYPE_INTEGER: element_size = sizeof(int); break;
+					case TYPE_CHAR:
+					case TYPE_BOOL: element_size = sizeof(char); break;
+					default: 
+						printf("Warning: Unknown array element type %d for symbol '%s'. Returning 0 bytes.\n", symbol->type->subtype->kind, symbol->name ? symbol->name : "N/A");
+						return 0;
+				}
+				size = symbol->array_size * element_size;
+			} else {
+				printf("Warning: Array symbol '%s' has NULL subtype. Returning 0 bytes.\n", symbol->name ? symbol->name : "N/A");
+				return 0;
+			}
+			return size;
+		}
+		case TYPE_FUNCTION:
+		case TYPE_VOID:
+		case TYPE_POINTER:
+		case TYPE_STRUCT:
+		case TYPE_UNKNOWN:
+		default:
+			printf("Warning: get_num_bytes: Unhandled or UNKNOWN type kind %d for symbol '%s'. Returning 0 bytes.\n", symbol->type->kind, symbol->name ? symbol->name : "N/A");
+			return 0;
 	}
-	printf("im here\n");
+	
 	return size;
 }
 
-void resolve_params(Node* params) {
-	if (!stack || !params) return;
-
-	int param_hash_key;
-	data_t type = params->right->t->kind;
-	
-	switch (type) {
-		case TYPE_INTEGER: {
-			param_hash_key = hash(params->right->value.name);
-			printf("Parameter hash key: '%d'\n", param_hash_key);
-			params->right->symbol = create_symbol(SYMBOL_PARAM, params->right->value.name, params->right->t);
-
-			if (scope_bind(params->right->symbol, param_hash_key)) {
-				printf("Bound symbol '%s' to scope level ('%d')\n", params->right->symbol->name, stack->top);
-			}
-			printf("In param int case now\n");
-			size_t size = sizeof(int);
-
-			if (param_byte_offset == 0) {
-				param_byte_offset = size;
-			} else {
-				param_byte_offset += size;
-			}
-			printf("made it here\n");
-			params->right->symbol->param_byte_offset = param_byte_offset;
-			params->right->symbol->actual_bytes = size;
-			printf("\033[31mParameter: '%s' -> Offset: %d\033[0m\n", params->right->symbol->name, params->right->symbol->param_byte_offset);
-			break;
-		}
-
-		case TYPE_BOOL:
-		case TYPE_CHAR: {
-			param_hash_key = hash(params->right->value.name);
-
-			params->right->symbol = create_symbol(SYMBOL_PARAM, params->right->value.name, params->right->t);
-			scope_bind(params->right->symbol, param_hash_key);
-
-			size_t size = sizeof(char);
-
-			if (param_byte_offset == 0) {
-				param_byte_offset = size;
-			} else {
-				param_byte_offset += size;
-			}
-
-			params->symbol->param_byte_offset = param_byte_offset;
-			params->symbol->actual_bytes = size;
-			break;
-		}
-	}
-
-}
-
-Symbol* create_array_symbol(symbol_t kind, char* name, int element_count, struct type* type) {
-	Symbol* sym = malloc(sizeof(Symbol));
-	if (!sym) {
-		perror("Error: Unable to allocate space for symbol\n");
-		return NULL;
-	}
-	printf("IN CREATE ARRAY SYMBOL\n");
-	sym->kind = kind;
-	sym->array_size = element_count;
-	
-	printf("Number of elements is: %d\n", sym->array_size);
-	printf("here\n");
-
-	if (name) {
-		printf("About to duplicate name\n");
-		sym->name = strdup(name);
-		printf("Duplicate\n");
-		if (!sym->name) {
-			perror("Unable to duplicate name for sym member\n");
-			free(sym);
-			return NULL;
-		} else {
-			printf("successful duplication of name\n");
-		}
-	} else {
-		sym->name = NULL;
-	}
-	printf("About to check type\n");
-
-	if (type) {
-		sym->type = copy_type(type);
-		printf("Failure\n");
-		if (!sym->type) {
-			free(sym->name);
-			free(sym);
-			return NULL;
-		} else {
-			printf("Successfully copied type\n");
-		}
-	} else {
-		sym->type = NULL;
-	}
-	printf("now\n");
-
-	sym->symbol_free = false;
-	sym->bind_symbol = false;
-	printf("yu\n");
-	printf("uy\n");
-	return sym;
-}
 
 data_t get_kind(struct type* t) {
-	if (t->kind) {
-		switch (t->kind) {
-			case TYPE_INTEGER: return TYPE_INTEGER;
-			case TYPE_CHAR: return TYPE_CHAR;
-			case TYPE_BOOL: return TYPE_BOOL;
-			case TYPE_VOID: return TYPE_VOID;
-			case TYPE_ARRAY: return TYPE_ARRAY;
-			case TYPE_POINTER: return TYPE_POINTER;
-			default: return TYPE_UNKNOWN;
-		}
+	if (t) {
+		return t->kind;
 	}
+	return TYPE_UNKNOWN;
 }
 
-static bool in_return = false;
-void resolve_expression(Node* node) {
-	static bool op_child = false;
-	static bool in_aug = false;
-	static bool in_call = false;
+Symbol* symbol_copy(Symbol* original_symbol) {
+	if (!original_symbol) return NULL;
 
-	if (!node) return;
+	Symbol* duplicate_symbol = malloc(sizeof(Symbol));
+	if (!duplicate_symbol) {
+		perror("Unable to allocate space for duplicate symbol\n");
+		return NULL;
+	}
+
+	duplicate_symbol->kind = original_symbol->kind;
+	duplicate_symbol->symbol_free = false;
+	duplicate_symbol->bind_symbol = false;
+	duplicate_symbol->name = NULL;
+	duplicate_symbol->type = NULL;
+	duplicate_symbol->link = NULL;
+	duplicate_symbol->next = NULL;
+	duplicate_symbol->local_byte_offset = original_symbol->local_byte_offset;
+	duplicate_symbol->total_bytes = original_symbol->total_bytes;
+	duplicate_symbol->param_byte_offset = original_symbol->param_byte_offset;
+	duplicate_symbol->actual_bytes = original_symbol->actual_bytes;
+	duplicate_symbol->array_size = original_symbol->array_size;
+
+	if (original_symbol->name) {
+		duplicate_symbol->name = strdup(original_symbol->name);
+		if (!duplicate_symbol->name) {
+			printf("Unable to original_symbol name '%s'.\n", original_symbol->name ? original_symbol->name : "N/A");
+			free(duplicate_symbol);
+			return NULL;
+		}
+	} 
+
+	if (original_symbol->type) {
+		duplicate_symbol->type = type_copy(original_symbol->type);
+		if (!duplicate_symbol->type) {
+			printf("Unable to duplicate original symbol type with kind %d.\n", original_symbol->type->kind);
+			free(duplicate_symbol->name);
+			free(duplicate_symbol);
+			return NULL;
+		}
+	} 
+
+	if (original_symbol->link) {
+		int link_count = 0;
+		Symbol* current_saved_link = duplicate_symbol->link; // address of duplicate link
+		Symbol* current_link = original_symbol->link;
+
+		while (current_link) {
+			duplicate_symbol->link = symbol_copy(current_link);
+
+			if (!duplicate_symbol->link) {
+				Symbol* current_saved_link = NULL;
+				printf("Unable to copy link '%s'.\n", current_link->name ? current_link->name : "N/A");
+				int i = 0;
+				Symbol* sym_link= NULL;
+				for (sym_link = current_saved_link; sym_link && (i < link_count); sym_link = sym_link->next) {
+					free(sym_link->name);
+					free_type(sym_link->type);
+					free(sym_link);
+					return NULL;
+				}
+			}
+
+			duplicate_symbol->link = duplicate_symbol->link->next;
+			current_link = current_link->next;	
+			link_count++;
+		}
+	}
+
+	return duplicate_symbol;
+}
+
+void resolve_expression(Node* node) {
+	if (!node || !node->type) return;
 
 	size_t size;
 	int hash_key;
-	printf("Now im here\n");
-	if (node->type) {
-		printf("about to go to switch stmt\n");
-		switch (node->type) {
-			printf("In switch\n");
-			// will do NODE_ADDR after adding support for pointers
 
-			case NODE_INTEGER: { break; }
+	switch (node->type) {
+		case NODE_CHAR: 
+		case NODE_BOOL:
+		case NODE_INTEGER: { break; }
 
-			case NODE_LOGICAL_AND:
-			case NODE_LOGICAL_OR:
-			case NODE_NOT_EQUAL:
-			case NODE_EQUAL:
-			case NODE_GREATER_EQUAL:
-			case NODE_LESS_EQUAL:
-			case NODE_GREATER:
-			case NODE_LESS:
-			case NODE_DIV_EQUAL:
-			case NODE_MUL_EQUAL:
-			case NODE_SUB_EQUAL:
-			case NODE_ADD_EQUAL:
-			case NODE_DIV:
-			case NODE_MUL:
-			case NODE_SUB:
-			case NODE_ADD: {
-				op_child = true;
-				if (node->left) {
-					resolve_expression(node->left);
-				}
-
-				if (node->right) {
-					printf("About to resolve right child of op\n");
-					resolve_expression(node->right);
-				}
-				op_child = false;
-				break;
+		case NODE_LOGICAL_AND:
+		case NODE_LOGICAL_OR:
+		case NODE_NOT_EQUAL:
+		case NODE_EQUAL:
+		case NODE_GREATER_EQUAL:
+		case NODE_LESS_EQUAL:
+		case NODE_GREATER:
+		case NODE_LESS:
+		case NODE_DIV_EQUAL:
+		case NODE_MUL_EQUAL:
+		case NODE_SUB_EQUAL:
+		case NODE_ADD_EQUAL:
+		case NODE_DIV:
+		case NODE_MUL:
+		case NODE_SUB:
+		case NODE_ADD: {
+			printf("in binary op: '%d'\n", node->type);
+			push_context(CONTEXT_OP);
+			if (node->left) {
+				printf("About to resolve left child of op\n");
+				resolve_expression(node->left);
 			}
 
-			case NODE_NOT: {
-				if (node->right) {
-					resolve_expression(node->right);
-				}
-				break;
-			}
+			if (!node->left) { printf("left child of binary op is NULL\n"); }
 
-			case NODE_DECREMENT:
-			case NODE_INCREMENT: {
-				op_child = true;
-				if (node->left) {
-					printf("in NODE_INCREMENT OR DECREMENT\n");
-					resolve_expression(node->left);
-					printf("LEAVING NODE INCREMENT OR DECREMENT\n");
-				}
-				op_child = false;
-				break;
+			if (node->right) {
+				printf("About to resolve right child of op\n");
+				resolve_expression(node->right);
+			}
+			pop_context();
+			break;
+		}
+
+		case NODE_NOT: {
+			push_context(CONTEXT_OP);
+			if (node->right) {
+				resolve_expression(node->right);
+			}
+			pop_context();
+			break;
+		}
+
+		case NODE_DECREMENT:
+		case NODE_INCREMENT: {
+			push_context(CONTEXT_OP);
+			if (node->left) {
+				resolve_expression(node->left);
+			}
+			pop_context();
+			break;
 				
+		}
+
+		case NODE_ARRAY_LIST: {
+			printf("in array list case\n");
+			if (node->right) {
+				Node* element = node->right;
+				while (element) {
+					resolve_expression(element);
+					element = element->next;
+				}
+			}
+			break;
+		}
+
+		case NODE_CALL: {
+			push_context(CONTEXT_CALL);
+			printf("IN NODE CALL for function '%s'\n", node->left && node->left->value.name ? node->left->value.name : "N/A");
+			if (node->left) {
+				resolve_expression(node->left);
 			}
 
-			case NODE_CALL: {
-				in_call = true;
-				if (node->left) {
-					printf("resolving calling function name\n");
-					resolve_expression(node->left);
-					printf("resolved calling function name\n");
+			if (node->left && node->left->symbol && node->left->symbol->type) {
+				printf("NODE CALL NAME TYPE: '%d'\n", node->left->symbol->type->kind);
+				if (node->left->symbol->type->kind == TYPE_FUNCTION && node->left->symbol->type->subtype) {
+					printf("TYPE from NODE_CALL is '%d' and RETURN TYPE is '%d'\n",
+						node->left->symbol->type->kind, node->left->symbol->type->subtype->kind);
+				} else {
+					printf("Warning: Call target '%s' is not a function or has not return type.\n", node->left->value.name ? node->left->value.name : "N/A");
 				}
-
-				if (node->right) {
-					printf("About to resolve arguments\n");
-					Node* arg = node->right;
-					while (arg) {
-						Node* next = arg->next;
-						resolve_expression(arg);
-						arg = next;	
-					}
-				}
-				in_call = false;
-				break;
+			} else {
+				printf("Warning: Function call target '%s' has no resoled symbol or type.\n", node->left->value.name ? node->left->value.name : "N/A");
 			}
 
-			case NODE_ARG: {
-				printf("In node arg\n");
-				if (node->right) {
-					resolve_expression(node->right);
+			if (node->right) {
+				Node* arg = node->right;
+				while (arg) {
+					Node* next = arg->next;
+					resolve_expression(arg);
+					arg = next;	
+				}
+			}
+			pop_context();
+			printf("LEAVING NODE_CALL\n");
+			break;
+		}
+
+		case NODE_ARG: {
+			printf("\033[31mIN NODE ARG about to resolve its expression\033[0m\n");
+			if (node->right) {
+				resolve_expression(node->right);
+			} 
+
+			if (node->right && node->right->symbol) {
+				printf("\033[31mFINISHED RESOLVING NODE ARG (right child symbol found: '%s')\033[0m\n", node->right->symbol->name ? node->right->symbol->name : "N/A");
+			} else {
+				printf("\033[31mWARNING: NODE ARG right child or its symbol is NULL.\033[0m\n");
+			}
+			break;
+		}
+
+		case NODE_NAME: {
+				printf("IN node name processing '%s'\n", node->value.name ? node->value.name : "NULL_NAME_NODE");
+				if (!node->value.name) {
+					printf("Error: NODE_NAME has NULL name. Cannot resolve\n");
+					return;
 				}
 
-				break;
-			}
-
-			case NODE_NAME: {
-				printf("In node name case in RESOLVE EXPRESSION\n");
 				hash_key = hash(node->value.name);
-				if (node->t) {
+				Symbol* sym = NULL;
+				if (node->t && !node->symbol) {
 					data_t kind = get_kind(node->t);
-					printf("array\n");
 					if (kind == TYPE_ARRAY) {
-						printf("hellon\n");
-						if (node->value.name) {
-							printf("Name is '%s'\n", node->value.name);
-							printf("Element count is: %d\n", node->right->value.val);
+						int count = 0;
+						if (node->right && node->right->type == NODE_INTEGER) {
+							count = node->right->value.val;
 						}
-						int count = node->right->value.val;
-						node->symbol = create_array_symbol(SYMBOL_LOCAL, node->value.name, count, node->t);
-						printf("sdasdas\n");
+						sym = create_array_symbol(SYMBOL_LOCAL, node->value.name, count, node->t);
+
+						node->symbol = symbol_copy(sym);
+						// node->symbol = sym;
 					} else {
-						printf("heeee\n");
-						node->symbol = create_symbol(SYMBOL_LOCAL, node->value.name, node->t);
+						sym = create_symbol(SYMBOL_LOCAL, node->value.name, node->t);
+						node->symbol = symbol_copy(sym);
+						// node->symbol = sym;
 					}
+
+					if (!node->symbol) {
+						printf("Error: Failed to create symbol for NOME_NAME '%s' (initial creation).\n", node->value.name);
+						return;
+					}
+
+					if (!scope_bind(sym, hash_key)) {
+						printf("Error: Failed to bind newly created symbol '%s' during initial resolution.\n", node->value.name);
+						free_symbol(node->symbol);
+						return;
+					}
+
+					printf("Node '%s' symbol created and bound (initial decl/def).\n", node->value.name);
+
+					if (node->symbol->kind == SYMBOL_LOCAL) {
+						size = get_num_bytes(node->symbol);
+						if (size > 0) {
+							if (total_local_bytes == 0) { total_local_bytes = size; }
+							else { total_local_bytes += size; }
+							
+							printf("Updated total local bytes for '%s': %zu\n", node->value.name, total_local_bytes);
+
+							if (!start_at_param_bytes && param_byte_offset > 0) {
+								local_byte_offset = param_byte_offset;
+								local_byte_offset += size;
+								start_at_param_bytes = true;
+							} else { local_byte_offset += size; }
+
+							node->symbol->local_byte_offset = local_byte_offset;
+							node->symbol->actual_bytes = size;
+						}
+					}
+					return;
 				}
-				printf("got here\n");
-				if (in_return || op_child || in_aug || in_call) {
+
+				if (context_lookup(CONTEXT_OP) || context_lookup(CONTEXT_IF) ||
+				    context_lookup(CONTEXT_LOOP) || context_lookup(CONTEXT_RETURN) || 
+				    context_lookup(CONTEXT_AUG) || context_lookup(CONTEXT_CALL)) {
+					
 					Symbol* temp_symbol = create_symbol(SYMBOL_LOCAL, node->value.name, NULL);
 					if (!temp_symbol) {
 						printf("temp symbol is NULL\n");
 						return;
 					}
-					printf("Current scope level: %d\n", stack->top);
+
 					Symbol* sym = scope_lookup_current(temp_symbol, hash_key);
-					if (sym) {
-						printf("sym name is '%s'\n", sym->name);
-					}
-					printf("here\n");
 					if (!sym) {
 						printf("In NODE_NAME: Did not find symbol in current scope, looking through remaining scopes\n");
+
 						sym = scope_lookup(temp_symbol, hash_key);
 						if (!sym) {
 							printf("Did not find symbol in the remaining scopes\n");
+							free_symbol(temp_symbol);
 							return;
 						} else {
 							printf("Found symbol '%s' in remaining scopes\n", sym->name);
+							node->symbol = symbol_copy(sym);
+
+							if (sym->type) {
+								if (sym->type->kind == TYPE_INTEGER || sym->type->kind == TYPE_CHAR ||
+									sym->type->kind == TYPE_BOOL || sym->type->kind == TYPE_ARRAY) {
+
+									if (!node->t || (node->t->kind != TYPE_FUNCTION && node->t->kind != sym->type->kind)) {
+										if (node->t) free_type(node->t);
+										node->t = type_copy(sym->type);
+
+									}
+								} else if (sym->type->kind == TYPE_FUNCTION) {
+									if (!node->t || node->t->kind != TYPE_FUNCTION) {
+										if (node->t) free_type(node->t);
+										node->t = type_copy(sym->type);
+									}
+								}
+							}
 							free_symbol(temp_symbol);
-							node->symbol = sym;
 							return;
 						}
 					} else {
-						printf("no im here\n");
-						printf("here i am\n");
+						node->symbol = symbol_copy(sym);
+
+						if (node->t) {
+							if (node->t->kind == TYPE_FUNCTION) {
+								if (sym->type && sym->type->kind == TYPE_FUNCTION && sym->type->subtype) {
+									if (node->t->subtype) free_type(node->t->subtype);
+									node->t->subtype = type_copy(sym->type->subtype);
+								}
+							}
+						}
+
+						if (sym->type) {
+							if (sym->type->kind == TYPE_INTEGER || sym->type->kind == TYPE_CHAR ||
+								sym->type->kind == TYPE_BOOL || sym->type->kind == TYPE_ARRAY) {
+
+								if (!node->t || (node->t->kind != TYPE_FUNCTION && node->t->kind != sym->type->kind)) {
+									if (node->t) free_type(node->t);
+									node->t = type_copy(sym->type);
+								}
+							} else if (sym->type->kind == TYPE_FUNCTION) {
+								if (!node->t || node->t->kind != TYPE_FUNCTION) {
+									if (node->t) free_type(node->t);
+									node->t = type_copy(sym->type);
+								}
+							}
+						} 
 						free_symbol(temp_symbol);
-						node->symbol = sym;
 						return;
 					}
-				} else {
-					size = get_num_bytes(node->symbol);
-					if (total_local_bytes == 0) {
-						total_local_bytes = size;
-					} else {
-						total_local_bytes += size;
-					}
-					printf("Total local bytes: %zu\n", total_local_bytes);
-					if (!start_at_param_bytes && param_byte_offset > 0) {
-						local_byte_offset = param_byte_offset;
-						local_byte_offset += size;
-						start_at_param_bytes = true;
-					} else {
-						local_byte_offset += size;
-					}
-					printf("hello\n");
-					node->symbol->local_byte_offset = local_byte_offset;
-					printf("heras\n");
-					node->symbol->actual_bytes = size;
-					printf("here\n");
-				}
+				} 
 
-				printf("\033[31mSymbol: '%s' -> Size: %zu\033[0m\n", node->symbol->name, node->symbol->actual_bytes);
-				printf("we here\n");
+				printf("\033[31mSymbol: '%s' -> Size: %zu -> Type: %d\033[0m\n", node->symbol->name, node->symbol->actual_bytes, node->symbol->type->kind);
 				break;
-			}
+		}
 
-			case NODE_DECL: {
+		case NODE_DECL: {
 				if (node->left) {
-					int hash_key = hash(node->left->value.name);
 					resolve_expression(node->left);
-					if (node->left->symbol) {
-						Symbol* sym = scope_lookup_current(node->left->symbol, hash_key);
-						if (!sym) {
-							printf("No redeclaration!\n");	
-							node->left->symbol = sym;
-							scope_bind(node->left->symbol, hash_key);
-						} else {
-							printf("Redeclaration!\n");
-							return;
-						}		
-					}
+					// if (node->left->symbol) {
+					// int hash_key = hash(node->left->value.name);
+					// 	Symbol* existing_sym = scope_lookup_current(node->left->symbol, hash_key);
+					// 	if (existing_sym && existing_sym != node->left->symbol) {
+					// 		printf("\033[31mError: Redeclaration of '%s'!\033[0m\n", node->left->value.name);
+					// 		free_symbol(node->left->symbol);
+					// 		node->left->symbol = existing_sym;
+					// 	} else if (!existing_sym) {
+					// 		printf("Declaration: '%s' successfully bound.\n", node->left->value.name);
+					// 	}
+					// } else {
+					// 	printf("Warning: Left child of NODE_DECL has no symbol after resolution\n");
+					// }
 				}
 				break;
-			}
+		}
 
-			case NODE_DEF: {
-				printf("in node def for '%s'\n", node->left->value.name);
+		case NODE_DEF: {
 				if (node->left) {
-					int hash_key = hash(node->left->value.name);
 					resolve_expression(node->left);
-					printf("back from call\n");
-					if (node->left->symbol) {
-						Symbol* sym = scope_lookup_current(node->left->symbol, hash_key);
-						if (sym) {
-							printf("Two definitions with same name in the same scope\n");
-							return;
-						} else {
-							if (!scope_bind(node->left->symbol, hash_key)) {
-								printf("unable to bind symbol to scope level %d\n", stack->top);
-								return;
-							}
-
-						}
-					}
+					// if (node->left->symbol) {
+					// 	int hash_key = hash(node->left->value.name);
+					// 	Symbol* existing_sym = scope_lookup_current(node->left->symbol, hash_key);
+					// 	if (existing_sym) { printf("Existing symbol has type %d -> name '%s' -> Address '%p' and node left symbol has type %d -> name '%s' -> Address: '%p'\n", existing_sym->type->kind, existing_sym->name ? existing_sym->name : "N/A",
+					// 		(void*)existing_sym, node->left->symbol->type->kind, node->left->symbol->name ? node->left->symbol->name : "N/A", (void*)node->left->symbol); }
+					// 	if (existing_sym && (existing_sym != node->left->symbol)) {
+					// 		printf("\033[31mError: Redefinition of '%s' in the same scope.\033[0m\n", node->left->value.name);
+					// 		free_symbol(node->left->symbol);
+					// 		node->left->symbol = existing_sym;
+					// 	} else if (!existing_sym) {
+					// 		printf("Definition: '%s' successfully bound.\n", node->left->value.name);
+					// 	}
+					// } else {
+					// 	printf("Warning: Left child of NODE_DEF has no symbol has after resolution\n");
+					// }
 				}
 				break;
-			}
+		}
 
-			case NODE_AUG: {
-				in_aug = true;
+		case NODE_AUG: {
+				push_context(CONTEXT_AUG);
 				printf("IN NODE AUG\n");
 				if (node->left) {
-					printf("we have left\n");					
 					resolve_expression(node->left);
 				}
-				printf("got to end\n");
-				in_aug = false;
+				pop_context();
 				break;
-			}
+		}
 
-			case NODE_SUBSCRIPT: {
+		case NODE_SUBSCRIPT: {
 				printf("we have subscript\n");
 				if (node->left) {
+					printf("\033[31mResolving left child of subscript node\033[0m\n");
 					resolve_expression(node->left);	
 				}
 
 				if (node->right) {
+					printf("\033[31mResolving right child of subscript node\033[0m\n");
 					resolve_expression(node->right);
 				}
 
+				if (node->left && node->left->symbol && node->left->symbol->type) {
+					if (node->left->symbol->type->kind == TYPE_ARRAY) {
+						node->symbol = node->left->symbol;
+
+						if (node->t) free_type(node->t);
+						node->t = type_copy(node->left->symbol->type->subtype);
+					} else {
+						printf("\033[31mError: Left child of NODE_SUBSCRIPT '%s' is not an array type (found %d).\033[0m\n",
+							node->left->value.name ? node->left->value.name : "N/A", node->left->symbol->type->kind);
+					}
+				}
 				break;
-			}
 		}
 	}
-	printf("leaving resolve expression\n");
 }
 
 void resolve_statement(Node* node) {
-	if (!node) return;
+	if (!node || !node->type) return;
 
-	printf("in resolve statement\n");
+	printf("in resolve statement (node type %d)\n", node->type);
 	switch (node->type) {
-		case NODE_WHILE:
 		case NODE_IF:
 		case NODE_ELSE_IF: {
+			push_context(CONTEXT_IF);
 			push_scope();
 			if (node->left) {
 				resolve_expression(node->left);
@@ -654,6 +816,7 @@ void resolve_statement(Node* node) {
 			} 
 			
 			pop_scope();
+			pop_context();
 			break;
 		}
 
@@ -665,23 +828,40 @@ void resolve_statement(Node* node) {
 			pop_scope();
 			break;
 		}
-
-		case NODE_FOR: {
+		case NODE_WHILE: {
+			printf("\033[32mIN NODE_WHILE CASE IN RESOLVE STATEMENT\033[0m\n");
 			push_scope();
+			push_context(CONTEXT_LOOP);
 
 			if (node->left) {
-				printf("\033[31mResolving initializer\033[0m\n");
-				resolve_statement(node->left);
-				printf("\033[32mFinished Resolving initializer\033[0m\n");
+				resolve_expression(node->left);
 			}
 
-			Node* condition = node->left->next;
+			if (node->right) {
+				resolve_statement(node->right);
+			}
+
+			pop_scope();
+			pop_context();
+			break;
+		}
+		case NODE_FOR: {
+			push_scope();
+			push_context(CONTEXT_LOOP);
+
+			if (node->left) {
+				printf("\033[31mResolving initializer in for loop\033[0m\n");
+				resolve_statement(node->left);
+				printf("\033[32mFinished Resolving initializer in for loop\033[0m\n");
+			}
+
+			Node* condition = node->left ? node->left->next : NULL;
 			if (condition) {
 				printf("\033[32mType of condition is: %d\033[0m\n", condition->type);
 				resolve_expression(condition);
 			}
 
-			Node* update = condition->next;
+			Node* update = condition ? condition->next : NULL;
 			if (update) {
 				printf("\033[32mType on update node is: %d\033[0m\n", update->type);
 				resolve_expression(update);
@@ -692,36 +872,36 @@ void resolve_statement(Node* node) {
 			}
 
 			pop_scope();
+			pop_context();
 			break;
 		}
 		
 		case NODE_RETURN: {
-			in_return = true;
 			printf("\033[31mIN RETURN STATEMENT\033[0m\n");
-			if (node->right) {
+			if (!node->right) {
+				if (!context_lookup(CONTEXT_VOID_FUNCTION)) {
+					printf("Return statement with no void function\n");
+					exit(EXIT_FAILURE);
+				}
+			} else {
+				push_context(CONTEXT_RETURN);
+				if (!context_lookup(CONTEXT_NONVOID_FUNCTION)) {
+					printf("Return without function\n");
+					exit(EXIT_FAILURE);
+				}
 				resolve_expression(node->right);
+				pop_context();
 			}
-			printf("back in node return\n");
-			in_return = false;
+			
 			break;
 		}
 
 		case NODE_ASSIGNMENT: {
 			if (node->left) {
-				if (node->type) {
-					printf("\033[1;31mAssignment node has type: %d\033[0m\n", node->type);
-				}
-				if (node->left->type) {
-					printf("\033[1;31mLeft node of assignment node has type: %d\033[0m\n", node->left->type);
-				}
 				resolve_expression(node->left);
-				printf("resolved left node\n");
 			}
-
 			if (node->right) {
-				printf("Attempting to resolve right node for assignment\n");
 				resolve_expression(node->right);
-				printf("resolved right node\n");
 			}
 
 			break;
@@ -736,22 +916,79 @@ void resolve_statement(Node* node) {
 					stmt = stmt_next;
 				}
 			}
-
 			break;
 		}
 
 		case NODE_DECREMENT:
 		case NODE_INCREMENT: {
 			if (node->left) {
+				push_context(CONTEXT_OP);
 				resolve_expression(node->left);
+				pop_context();
 			}
 			break;
 		}
-		case NODE_BREAK:
-		case NODE_CONTINUE: { break; } 
+
+		case NODE_BREAK: {
+			if (!context_lookup(CONTEXT_LOOP) && !context_lookup(CONTEXT_SWITCH)) {
+				printf("break keyword not in loop or switch\n");
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
+		case NODE_CONTINUE: { 
+			if (!context_lookup(CONTEXT_LOOP)) {
+				printf("continue keyword not in loop\n");
+				exit(EXIT_FAILURE);
+			}
+			break; 
+		} 
+		case NODE_CALL: {
+			resolve_expression(node);
+			break;
+		}
 
 	}
 	printf("leaving resolve statement\n");
+}
+
+void resolve_params(Node* wrapped_param) {
+	if (!symbol_stack || !wrapped_param || !wrapped_param->right || !wrapped_param->right->t || !wrapped_param->right->value.name) {
+		printf("Warning: resolve_params received incomplete/NULL parameter node.\n");
+		return;
+	}
+
+	int param_hash_key = hash(wrapped_param->right->value.name);
+	
+	wrapped_param->right->symbol = create_symbol(SYMBOL_PARAM, wrapped_param->right->value.name, wrapped_param->right->t);
+	if (!wrapped_param->right->symbol) {
+		printf("Error: Failed to create symbol for parameters '%s'.\n", wrapped_param->right->value.name);
+		return;
+	}
+
+	Symbol* existing_param = scope_lookup_current(wrapped_param->right->symbol, param_hash_key);
+	if (existing_param) {
+		printf("\033[31mError: Redefinition of parameter '%s' in funciton scope. Original defined at scope level %d.\033[0m\n",
+			wrapped_param->right->symbol->name, scope_level);
+		free_symbol(wrapped_param->right->symbol);
+		wrapped_param->right->symbol = NULL;
+		return;
+	}
+
+	if (scope_bind(wrapped_param->right->symbol, param_hash_key)) {
+		printf("Bound parameter symbol '%s' to scope level ('%d')\n", wrapped_param->right->symbol->name, symbol_stack->top);
+	}
+
+	size_t size = get_num_bytes(wrapped_param->right->symbol);
+	if (size > 0) {
+		if (param_byte_offset == 0) { param_byte_offset = size; }
+		else { param_byte_offset += size; }
+		wrapped_param->right->symbol->param_byte_offset = param_byte_offset;
+		wrapped_param->right->symbol->actual_bytes = size;
+		printf("\033[31mParameter: '%s' -> Offset: %zu -> Actual Bytes: %zu\033[0m\n",
+			wrapped_param->right->symbol->name, wrapped_param->right->symbol->param_byte_offset, wrapped_param->right->symbol->actual_bytes);
+
+	}
 }
 
 void resolve_globals(Node* node) {
@@ -760,15 +997,13 @@ void resolve_globals(Node* node) {
 	switch (node->type) {
 		case NODE_ASSIGNMENT: {
 			hash_key = hash(node->left->value.name);
-			printf("Hash key is '%d'\n", hash_key);
 			Symbol* sym = create_symbol(SYMBOL_GLOBAL, node->left->value.name, node->left->t);		
 			if (scope_lookup_current(sym, hash_key)) {
-				printf("Reclaration error\n");
 				return;
 			} else {
 				node->left->symbol = sym;
 				if (scope_bind(node->left->symbol, hash_key)) {
-					printf("Bound symbol '%s' to scope level ('%d')\n", node->left->symbol->name, stack->top);
+					printf("Bound symbol '%s' to scope level ('%d')\n", node->left->symbol->name, symbol_stack->top);
 				}				
 			}
 
@@ -776,54 +1011,61 @@ void resolve_globals(Node* node) {
 		}
 
 		case NODE_NAME: {
-			if (node->t->kind == TYPE_FUNCTION) {
-				hash_key = hash(node->value.name);
+			if (node->t) {
+				if (node->t->kind == TYPE_FUNCTION) {
+					if (node->t->subtype && node->t->subtype->kind == TYPE_VOID) { push_context(CONTEXT_VOID_FUNCTION);}
+					else { push_context(CONTEXT_NONVOID_FUNCTION); }
 
-				node->symbol = create_symbol(SYMBOL_GLOBAL, node->value.name, node->t);
-				if (scope_bind(node->symbol, hash_key)) {
-					printf("Bound symbol '%s' to scope level ('%d')\n", node->symbol->name, stack->top);
-				}
-
-				size_t total_param_bytes = 0;
-				push_scope();
-
-				if (node->left) {
-					Node* param = node->left;
-					while (param) {
-						Node* next = param->next;
-						resolve_params(param);
-						total_param_bytes += param->right->symbol->actual_bytes;
-						param = next;
+					hash_key = hash(node->value.name);
+					node->symbol = create_symbol(SYMBOL_GLOBAL, node->value.name, node->t);
+					if (scope_bind(node->symbol, hash_key)) {
+						printf("\033[31mBound symbol '%s' to scope level ('%d') with TYPE: '%d' and RETURN TYPE: '%d'\033[0m\n", node->symbol->name, symbol_stack->top, node->symbol->type->kind, node->symbol->type->subtype->kind);
 					}
-				}
-				printf("\033[33mTotal param bytes: %zu\033[0m\n", total_param_bytes);
 
-				if (node->right) {
-					Node* block = node->right;
-					Node* stmt = block->right;
-					while (stmt) {
-						Node* next = stmt->next;
-						resolve_statement(stmt);
-						stmt = next;
+					size_t total_param_bytes = 0;
+					push_scope();
+
+					if (node->t->params) {
+						Node* wrapped_param = node->t->params;
+						while (wrapped_param) {
+							Node* next_wrapped_param = wrapped_param->next;
+							resolve_params(wrapped_param);
+							total_param_bytes += wrapped_param->right->symbol->actual_bytes;
+							wrapped_param = next_wrapped_param;
+						}
 					}
+					printf("\033[33mTotal param bytes: %zu\033[0m\n", total_param_bytes);
+
+					if (node->right) {
+						Node* block = node->right;
+						Node* stmt = block->right;
+						while (stmt) {
+							Node* next = stmt->next;
+							resolve_statement(stmt);
+							stmt = next;
+						}
+					}
+
+					pop_scope();
+
+					// printf("Total local bytes: %d\n", total_local_bytes);
+					// printf("Above\n");
+					node->symbol->total_bytes = total_param_bytes + total_local_bytes;
+					printf("Below\n");
+					printf("Total local bytes for '%s' before alignment: %d\n", node->symbol->name, node->symbol->total_bytes);
+
+					if ((node->symbol->total_bytes % 16) != 0) {
+						node->symbol->total_bytes += 16 - (node->symbol->total_bytes % 16);
+					}
+
+					printf("Total local bytes for '%s' after alignment: %d\n", node->symbol->name, node->symbol->total_bytes);
+
+
+					param_byte_offset = 0;
+					total_local_bytes = 0;
+					start_at_param_bytes = false;
+					pop_context();
 				}
-
-				pop_scope();
-
-				printf("Total local bytes: %d\n", total_local_bytes);
-				node->symbol->total_bytes = total_param_bytes + total_local_bytes;
-				printf("Total local bytes for '%s' before alignment: %d\n", node->symbol->name, node->symbol->total_bytes);
-
-				if ((node->symbol->total_bytes % 32) != 0) {
-					node->symbol->total_bytes += 32 - (node->symbol->total_bytes % 32);
-				}
-
-				printf("Total local bytes for '%s' after alignment: %d\n", node->symbol->name, node->symbol->total_bytes);
-
-
-				param_byte_offset = 0;
-				total_local_bytes = 0;
-				start_at_param_bytes = false;
 			} 
 			break;
 		}
@@ -834,6 +1076,7 @@ void resolve_tree(Node* root) {
 	if (!root) return;
 
 	init_symbol_stack();
+	init_context_stack();
 
 	push_scope();
 	
@@ -845,40 +1088,46 @@ void resolve_tree(Node* root) {
 	}
 
 	pop_scope();
-
-	free_stack(stack);
-}
-
-void free_symbol_type(struct type* type) {
-	if (!type) return;
-	if (type->subtype) free_symbol_type(type->subtype);
-	free(type);
 }
 
 void free_symbol(Symbol* symbol) {
-	if (!symbol || symbol->symbol_free) return;
+	if (!symbol || (symbol && symbol->symbol_free)) return;
+
+	symbol->symbol_free = true;
 
 	if (symbol->name) free(symbol->name);
-	if (symbol->type) free_symbol_type(symbol->type);
+	if (symbol->type) free_type(symbol->type);
+	if (symbol->link) {
+		Node* current_link = symbol->link;
+		while (current_link) {
+			free_symbol(current_link);
+			current_link = current_link->next;
+		}
+	}
 	free(symbol);
 }
 
 void free_table(SymbolTable* table) {
-	if (!table || table->symboltable_free) return;
+	if (!table || (table && table->symboltable_free)) return;
 
 	table->symboltable_free = true;
-	for (int i = 0; i < table->size; i++) {
-		free_symbol(table->symbols[i]);
+
+	for (int i = 0; i < table->capacity; i++) {
+		Symbol* current = table->symbols[i];
+		free_symbol(current);
 	}
+	free(table->symbols);
 	free(table);
 }
 
-void free_stack(Stack* stack) {
-	if (!stack) return;
+void free_stacks() {
+	if (!symbol_stack || !context_stack) return;
 
-	for (int i = stack->top; i >= 0; i--) {
-		free_table(stack->tables[i]);
+	for (int i = symbol_stack->top; i >= 0; i--) {
+		free_table(symbol_stack->tables[i]);
 	}
 
-	free(stack);
+	free(context_stack->contexts);
+	free(context_stack);
+	free(symbol_stack);
 }

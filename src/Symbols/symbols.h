@@ -2,6 +2,8 @@
 #define SYMBOLS_H
 
 #include "Parser/parser.h"
+#include "auxiliaries.h"
+#include "errorsandcontext.h"
 #define STACK_CAPACITY 100
 #define TABLE_CAPACITY 300
 
@@ -39,12 +41,12 @@ typedef struct SymbolTable {
 	bool symboltable_free;
 } SymbolTable;
 
-typedef struct Stack {
+typedef struct SymbolStack {
 	int top;
 	int size;
 	int capacity;
 	SymbolTable** tables;
-} Stack;
+} SymbolStack;
 
 size_t get_num_bytes(Symbol* symbol);
 data_t get_kind(struct type* t);
@@ -56,12 +58,12 @@ Symbol* create_symbol(symbol_t kind, char* name, struct type* type);
 bool scope_bind(Symbol* symbol, int hash_key);
 Symbol* scope_lookup(Symbol* symbol, int hash_key);
 Symbol* scope_lookup_current(Symbol* symbol, int hash_key);
-struct type* type_copy(struct type* t);
+Symbol* symbol_copy(Symbol* original_symbol);
 
 bool is_stack_empty();
 bool push_scope();
 bool pop_scope();
-Stack* create_stack();
+SymbolStack* create_stack();
 void init_symbol_stack();
 void resolve_expression(Node* node);
 void resolve_statement(Node* node);
@@ -69,8 +71,7 @@ void resolve_params(Node* param);
 void resolve_globals(Node* node);
 void resolve_tree(Node* root);
 
-void free_symbol_type(struct type* type);
 void free_symbol(Symbol* symbol);
 void free_table(SymbolTable* table);
-void free_stack(Stack* stack);
+void free_stacks();
 #endif
