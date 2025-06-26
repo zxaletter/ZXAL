@@ -1,12 +1,13 @@
 #ifndef AUXILIARIES_H
 #define AUXILIARIES_H
 
-#define ERROR_CAPACITY 100
-#define CONTEXT_CAPACITY 10
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "memallocator.h"
 
+#define ERROR_CAPACITY 100
+#define CONTEXT_CAPACITY 10
 #define NUM_NODES 1000
 
 typedef enum {
@@ -77,9 +78,17 @@ struct Node {
 	Node* prev;
 	Node* next;
 	struct type* t;
-	bool node_free;
+	bool freed;
 	struct Symbol* symbol;
+	int reg;
 };
+
+typedef struct {
+	int size; 
+	int capacity;
+	int node_index;
+	Node** nodes;
+} NodeTable;
 
 typedef enum {
 	TYPE_INTEGER,
@@ -105,8 +114,8 @@ struct type {
 Node* params_copy(Node* params);
 Node* create_param(Node* wrapped_param);
 
-struct type* type_create(data_t main_type, struct type* subtype, Node* params);
-struct type* type_copy(struct type* t);
+struct type* type_create(Arena* arena, data_t main_type, struct type* subtype, Node* params);
+struct type* type_copy(Arena* arena, struct type* t);
 bool type_equals(struct type* a, struct type* b);
 
 void typecheck_params(Node* params);

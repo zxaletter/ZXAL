@@ -5,7 +5,7 @@
 #include "auxiliaries.h"
 #include "errorsandcontext.h"
 #define STACK_CAPACITY 100
-#define TABLE_CAPACITY 300
+#define TABLE_CAPACITY 300 
 
 typedef enum {
 	SYMBOL_LOCAL,
@@ -30,7 +30,6 @@ typedef struct Symbol {
 	};
 
 	int array_size;
-
 } Symbol;
 
 typedef struct SymbolTable {
@@ -73,5 +72,5 @@ void resolve_tree(Node* root);
 
 void free_symbol(Symbol* symbol);
 void free_table(SymbolTable* table);
-void free_stacks();
+void free_symbol_stack();
 #endif

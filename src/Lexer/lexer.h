@@ -8,6 +8,7 @@
 #include <ctype.h>
 
 #define KEYWORDS 19
+#define INITIAL_TOKEN_CAPACITY 250
 extern char* keyword[KEYWORDS];
 
 typedef enum {
@@ -71,8 +72,6 @@ typedef enum {
 	TOKEN_SEMICOLON, 
 	TOKEN_AMPERSAND,  // 55
 	TOKEN_PERIOD, 
-	TOKEN_SINGLE_QUOTE,
-	TOKEN_DOUBLE_QUOTE, 
 
 	TOKEN_UNKNOWN, // 59
 	TOKEN_EOF 
@@ -108,9 +107,6 @@ typedef struct Lexer {
 	int capacity;
 	FileInfo* info;
 } Lexer;
-
-
-// Members need to be in corresponding order as elements of keywords
 
 typedef enum {
 	KEYWORD_FUNCTION,
@@ -168,5 +164,6 @@ Lexer* initialze_lexer(FileInfo* info);
 Lexer* lex(char* filename);
 
 void print_tokens(Token* tokens);
-void free_tokens(Token* tokens);
+void free_token(Token* tokens);
+void free_duplicate_token(Token* token);
 #endif

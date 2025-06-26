@@ -1,18 +1,32 @@
 CC = gcc
 CFLAGS = -g -Isrc
 
-SOURCES = $(shell find src -name "*.c")
-OBJECTS = $(SOURCES:.c=.o)
+DIRS = src/Lexer src/Parser src/Semantics src/IR 
 
-all: zxal
+SOURCES = $(shell find $(DIRS) -name "*.c") src/main.c
 
-zxal: $(OBJECTS)
-	$(CC) -o zxal $(OBJECTS)
+OUTPUT = program
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+INCLUDES = -I src -I src/Lexer -I src/Parser -I src/Semantics -I src/IR
+
+all: $(OUTPUT)
+
+$(OUTPUT): $(SOURCES)
+	gcc -g $(INCLUDES) -o $@ $^
 
 clean:
-	rm -f $(OBJECTS) zxal
+	rm -f $(OUTPUT)
 
-.PHONY: all clean
+# OBJECTS = $(SOURCES:.c=.o)
+# all: zxal
+
+# zxal: $(OBJECTS)
+# 	$(CC) -o zxal $(OBJECTS)
+
+# %.o: %.c
+# 	$(CC) $(CFLAGS) -c $< -o $@
+
+# clean:
+# 	rm -f $(OBJECTS) zxal
+
+# .PHONY: all clean

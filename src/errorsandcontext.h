@@ -18,8 +18,6 @@ typedef enum {
 	EXPECTED_COMMA,
 	EXPECTED_COLON,
 	EXPECTED_SEMICOLON,
-	EXPECTED_SINGLE_QUOTE,
-	EXPECTED_DOUBLE_QUOTE,
 
 	EXPECTED_ELSE_KEYWORD,
 	EXPECTED_RETURN_KEYWORD,
@@ -42,12 +40,12 @@ typedef struct Error {
 	FileInfo* info;
 } Error;
 
-typedef struct ErrorList {
-	Error** list;
+typedef struct {
+	Error** errors;
 	int size;
 	int capacity;
-	int current_error;
-} ErrorList;
+	int error_index;
+} ErrorTable;
 
 typedef enum {
 	CONTEXT_OP,
@@ -74,5 +72,17 @@ void push_context(context_t context);
 void pop_context();
 void init_context();
 ContextStack* create_context();
+void free_context_stack();
+
+void log_error(Token* tok, FileInfo* info, error_t error);
+void init_error_table();
+void add_error_to_error_table(Error* err);
+void create_error(error_t type, char* message, Token* token, FileInfo* info);
+void display_error(Error* error);
+void emit_errors();
+
+ErrorTable create_error_table();
+void free_error(Error* error);
+void free_error_table();
 
 #endif

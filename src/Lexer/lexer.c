@@ -1,4 +1,5 @@
 #include "lexer.h"
+#include "memallocator.h"
 
 char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
@@ -8,7 +9,7 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 
 
 Lexer* initialize_lexer(FileInfo* info) {
-	struct Lexer* lexer = malloc(sizeof(struct Lexer));
+	Lexer* lexer = malloc(sizeof(Lexer));
 	if (!lexer) {
 		fprintf(stderr, "Error: Failed to allocate space for lexer\n");
 		return NULL;
@@ -18,7 +19,7 @@ Lexer* initialize_lexer(FileInfo* info) {
 	lexer->end = info->contents;
 	lexer->line = 1;
 	lexer->column = 1;
-	lexer->capacity = 250;
+	lexer->capacity = INITIAL_TOKEN_CAPACITY;
 	lexer->tokenIdx = 0;
 	lexer->tokens = malloc(sizeof(Token) * lexer->capacity);
 	if (!lexer->tokens) {
@@ -135,7 +136,7 @@ Token create_string_token(token_t type, char* str, int line, int column) {
 void add_token(Lexer* lexer, Token token) {
 	if (lexer->tokenIdx >= lexer->capacity) {
 		lexer->capacity *= 2;
-		lexer->tokens = realloc(lexer->tokens, lexer->capacity);
+		lexer->tokens = realloc(lexer->tokens, lexer->capacity * sizeof(Token));
 		if (!lexer->tokens) {
 			printf("Error: Unable to reallocate 'lexer->tokens' in 'add_token'\n");
 			return;
@@ -152,10 +153,7 @@ void get_identifier(Lexer* lexer) {
 
 	int length = lexer->end - lexer->start;
 	char* identifier = malloc(length + 1);
-	if (!identifier) {
-		printf("Error: identifier is NULL\n");
-		return;
-	}
+	if (!identifier) return;
 
 	strncpy(identifier, lexer->start, length);
 	identifier[length] = '\0';
@@ -184,10 +182,7 @@ void get_number(Lexer* lexer) {
 
 	int length = lexer->end - lexer->start;
 	char* text = malloc(length + 1);
-	if (!text) {
-		printf("Error: Unable to allocate number text\n");
-		return;
-	}
+	if (!text) return;
 
 	strncpy(text, lexer->start, length);
 	text[length] = '\0';
@@ -218,6 +213,10 @@ void get_delimeters(Lexer* lexer) {
 		case '\'': {
 			add_token(lexer, create_char_token(TOKEN_CHAR_LITERAL, peek_lexer(lexer), lexer->line, lexer->column));
 			advance_lexer(lexer);
+			if (peek_lexer(lexer) != '\'') {
+				printf("Expected matching token '\''.\n");
+				return;
+			}
 			advance_lexer(lexer);
 			return;
 		}
@@ -352,10 +351,6 @@ void get_operator(Lexer* lexer) {
 			break;
 		}
 
-		case '"': {
-			type = TOKEN_DOUBLE_QUOTE;
-			break;
-		}
 	}
 
 	if (isCompoundOp) {
@@ -484,10 +479,6 @@ FileInfo* retrieve_file_contents(char* filename) {
 		current_line_index++;
 	}
 
-	// for (int i = 0; i < info->line_count; i++) {
-	// 	printf("Line %d: '%s'\n", i + 1, info->lines[i]);
-	// }
-
 	fclose(file);
 	return info;
 }
@@ -539,6 +530,8 @@ void free_file_info(FileInfo* info) {
 }
 
 void free_token(Token* token) {
+	if (!token) return;
+
 	if (token->type == TOKEN_ARROW || 
 		token->type == TOKEN_ADD_EQUAL ||
 		token->type == TOKEN_SUB_EQUAL ||
@@ -575,17 +568,58 @@ void free_token(Token* token) {
 	}
 
 }
+void free_duplicate_token(Token* token) {
+	if (!token) return;
 
+	if (token->type == TOKEN_ARROW || 
+		token->type == TOKEN_ADD_EQUAL ||
+		token->type == TOKEN_SUB_EQUAL ||
+		token->type == TOKEN_DIV_EQUAL ||
+		token->type == TOKEN_MUL_EQUAL ||
+		token->type == TOKEN_LESS_EQUAL ||
+		token->type == TOKEN_GREATER_EQUAL ||
+		token->type == TOKEN_NOT_EQUAL ||
+		token->type == TOKEN_EQUAL ||
+		token->type == TOKEN_INCREMENT ||
+		token->type == TOKEN_DECREMENT ||
+		token->type == TOKEN_INT_KEYWORD ||
+		token->type == TOKEN_CHAR_KEYWORD ||
+		token->type == TOKEN_BOOL_KEYWORD ||
+		token->type == TOKEN_VOID_KEYWORD ||
+		token->type == TOKEN_STRUCT_KEYWORD ||
+		token->type == TOKEN_ENUM_KEYWORD ||
+		token->type == TOKEN_FOR_KEYWORD ||
+		token->type == TOKEN_WHILE_KEYWORD ||
+		token->type == TOKEN_CONTINUE_KEYWORD ||
+		token->type == TOKEN_BREAK_KEYWORD ||
+		token->type == TOKEN_FUNCTION_KEYWORD ||
+		token->type == TOKEN_RETURN_KEYWORD ||
+		token->type == TOKEN_SWITCH_KEYWORD ||
+		token->type == TOKEN_CASE_KEYWORD ||
+		token->type == TOKEN_TRUE_KEYWORD ||
+		token->type == TOKEN_FALSE_KEYWORD ||
+		token->type == TOKEN_LET_KEYWORD ||
+		token->type == TOKEN_ID ||
+		token->type == TOKEN_LOGICAL_OR ||
+		token->type == TOKEN_LOGICAL_AND 
+	) {
+		free(token->value.str);
+	}
+
+	free(token);
+}
 void free_lexer(Lexer* lexer) {
 	for (int i = 0; lexer->tokens[i].type != TOKEN_EOF; i++) {
 		free_token(&lexer->tokens[i]);
 	}
 
 	free_file_info(lexer->info);
+	free(lexer->tokens);
 	free(lexer);
 }
 
 void print_tokens(Token* tokens) {
+	if (!tokens) return;
 	for (int i = 0; tokens[i].type != TOKEN_EOF; i++) {
 		switch (tokens[i].type) {
 			case TOKEN_ARROW:

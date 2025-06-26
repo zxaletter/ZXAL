@@ -1,36 +1,17 @@
-function process_elements(count: int, flag: bool) -> bool {
-    let numbers: int[5] = {10, 20, 30, 40, 50};
-    let found: bool = false;
-    let char_val: char = 'A';
-
-    for (let i: int = 0; i < count; i++) {
-        if (i >= 5) {
-            break; 
-        }
-
-        if (numbers[i] > 25 && flag) {
-            found = true;
-        } else if (numbers[i] == 10 || !flag) {
-            char_val = 'Z'; 
-            continue; 
-        } else {
-            numbers[i] = numbers[i] + 1;
-        }
+function fibonacci(n: int) -> int {
+    if (n <= 1) {
+        return n;
     }
-
-    let k: int = 0;
-    while (k < 3) {
-        numbers[k] = numbers[k] * 2;
-        k = k + 1;
-    }
-
-    return found;
+    return fibonacci(n - 1) + fibonacci(n - 2);
 }
 
-function main_logic() -> void {
-    let result: bool = process_elements(4, true);
+function main_logic() -> int {
     let final_char: char = 'B';
-    if (result) {
+    let condition: bool = true;
+    if (condition) {
         final_char = 'T';
     }
+
+    let final_value_check: int = fibonacci(5);
+    return final_value_check;
 }

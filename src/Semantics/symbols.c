@@ -9,10 +9,13 @@ static bool start_at_param_bytes = false;
 SymbolStack* symbol_stack = NULL;
 ContextStack* context_stack = NULL;
 
+
+
 void init_context_stack() {
 	context_stack = create_context();
 	if (!context_stack) {
 		perror("Failed to initialize global context stack\n");
+		free_symbol_stack();
 		exit(EXIT_FAILURE);
 	}
 }
@@ -102,6 +105,8 @@ bool push_scope() {
 
 bool pop_scope() {
 	if (!is_stack_empty()) {
+		SymbolTable* table = symbol_stack->tables[symbol_stack->top];
+		free_table(table);
 		symbol_stack->tables[symbol_stack->top--];
 		symbol_stack->size--;
 		return true;
@@ -135,23 +140,18 @@ Symbol* create_symbol(symbol_t kind, char* name, struct type* t) {
 			perror("Unable to duplicate name\n");
 			free(sym);
 			return NULL;
-		} else {
-			printf("Got name '%s' for new symbol.\n", sym->name);
-		}
+		} 
 	} 
 
 	if (t) {
 		sym->type = type_copy(t);
 		if (!sym->type) {
 			printf("Error: 'sym->type' is NULL after type_copy for symbol '%s'\n", sym->name ? sym->name : "NULL_NAME");
-			free(sym->name);
+			if (name) free(sym->name);
 			free(sym);
 			return NULL;
 		}		
 	}
-
-	printf("About to create symbol with name '%s'\n", name ? name : "NULL_NAME");
-
 	return sym;
 }
 
@@ -181,8 +181,6 @@ Symbol* create_array_symbol(symbol_t kind, char* name, int element_count, struct
 			perror("Unable to duplicate name for sym member\n");
 			free(sym);
 			return NULL;
-		} else {
-			printf("successful duplication of array name '%s'\n", sym->name);
 		}
 	} 
 
@@ -190,14 +188,11 @@ Symbol* create_array_symbol(symbol_t kind, char* name, int element_count, struct
 		sym->type = type_copy(type);
 		if (!sym->type) {
 			printf("Unable to copy type for array symbol '%s'\n", sym->name ? sym->name : "NULL_NAME");
-			free(sym->name);
+			if (sym->name) free(sym->name);
 			free(sym);
 			return NULL;
-		} else {
-			printf("Successfully copied array type with kind %d for '%s'\n", sym->type->kind, sym->name ? sym->name : "NULL_NAME");
-		}
+		} 
 	}
-
 	return sym;
 }
 
@@ -409,6 +404,9 @@ Symbol* symbol_copy(Symbol* original_symbol) {
 	duplicate_symbol->actual_bytes = original_symbol->actual_bytes;
 	duplicate_symbol->array_size = original_symbol->array_size;
 
+	printf("In 'symbol_copy' copying symbol for '%s' with local byte offset: %zu, Parameter byte offset: %zu, and byte size: %zu\n", original_symbol->name,
+		original_symbol->local_byte_offset, original_symbol->param_byte_offset, original_symbol->actual_bytes);
+
 	if (original_symbol->name) {
 		duplicate_symbol->name = strdup(original_symbol->name);
 		if (!duplicate_symbol->name) {
@@ -422,44 +420,24 @@ Symbol* symbol_copy(Symbol* original_symbol) {
 		duplicate_symbol->type = type_copy(original_symbol->type);
 		if (!duplicate_symbol->type) {
 			printf("Unable to duplicate original symbol type with kind %d.\n", original_symbol->type->kind);
-			free(duplicate_symbol->name);
+			if (duplicate_symbol->name) free(duplicate_symbol->name);
 			free(duplicate_symbol);
 			return NULL;
 		}
 	} 
 
+
 	if (original_symbol->link) {
-		int link_count = 0;
-		Symbol* current_saved_link = duplicate_symbol->link; // address of duplicate link
-		Symbol* current_link = original_symbol->link;
-
-		while (current_link) {
-			duplicate_symbol->link = symbol_copy(current_link);
-
-			if (!duplicate_symbol->link) {
-				Symbol* current_saved_link = NULL;
-				printf("Unable to copy link '%s'.\n", current_link->name ? current_link->name : "N/A");
-				int i = 0;
-				Symbol* sym_link= NULL;
-				for (sym_link = current_saved_link; sym_link && (i < link_count); sym_link = sym_link->next) {
-					free(sym_link->name);
-					free_type(sym_link->type);
-					free(sym_link);
-					return NULL;
-				}
-			}
-
-			duplicate_symbol->link = duplicate_symbol->link->next;
-			current_link = current_link->next;	
-			link_count++;
-		}
+		Symbol* current_original_symbol_link = original_symbol->link;
+		
+		
 	}
 
 	return duplicate_symbol;
 }
 
 void resolve_expression(Node* node) {
-	if (!node || !node->type) return;
+	if (!node || (node && !node->type)) return;
 
 	size_t size;
 	int hash_key;
@@ -485,17 +463,12 @@ void resolve_expression(Node* node) {
 		case NODE_MUL:
 		case NODE_SUB:
 		case NODE_ADD: {
-			printf("in binary op: '%d'\n", node->type);
 			push_context(CONTEXT_OP);
 			if (node->left) {
-				printf("About to resolve left child of op\n");
 				resolve_expression(node->left);
 			}
 
-			if (!node->left) { printf("left child of binary op is NULL\n"); }
-
 			if (node->right) {
-				printf("About to resolve right child of op\n");
 				resolve_expression(node->right);
 			}
 			pop_context();
@@ -523,7 +496,6 @@ void resolve_expression(Node* node) {
 		}
 
 		case NODE_ARRAY_LIST: {
-			printf("in array list case\n");
 			if (node->right) {
 				Node* element = node->right;
 				while (element) {
@@ -536,21 +508,8 @@ void resolve_expression(Node* node) {
 
 		case NODE_CALL: {
 			push_context(CONTEXT_CALL);
-			printf("IN NODE CALL for function '%s'\n", node->left && node->left->value.name ? node->left->value.name : "N/A");
 			if (node->left) {
 				resolve_expression(node->left);
-			}
-
-			if (node->left && node->left->symbol && node->left->symbol->type) {
-				printf("NODE CALL NAME TYPE: '%d'\n", node->left->symbol->type->kind);
-				if (node->left->symbol->type->kind == TYPE_FUNCTION && node->left->symbol->type->subtype) {
-					printf("TYPE from NODE_CALL is '%d' and RETURN TYPE is '%d'\n",
-						node->left->symbol->type->kind, node->left->symbol->type->subtype->kind);
-				} else {
-					printf("Warning: Call target '%s' is not a function or has not return type.\n", node->left->value.name ? node->left->value.name : "N/A");
-				}
-			} else {
-				printf("Warning: Function call target '%s' has no resoled symbol or type.\n", node->left->value.name ? node->left->value.name : "N/A");
 			}
 
 			if (node->right) {
@@ -562,21 +521,13 @@ void resolve_expression(Node* node) {
 				}
 			}
 			pop_context();
-			printf("LEAVING NODE_CALL\n");
 			break;
 		}
 
 		case NODE_ARG: {
-			printf("\033[31mIN NODE ARG about to resolve its expression\033[0m\n");
 			if (node->right) {
 				resolve_expression(node->right);
 			} 
-
-			if (node->right && node->right->symbol) {
-				printf("\033[31mFINISHED RESOLVING NODE ARG (right child symbol found: '%s')\033[0m\n", node->right->symbol->name ? node->right->symbol->name : "N/A");
-			} else {
-				printf("\033[31mWARNING: NODE ARG right child or its symbol is NULL.\033[0m\n");
-			}
 			break;
 		}
 
@@ -598,12 +549,12 @@ void resolve_expression(Node* node) {
 						}
 						sym = create_array_symbol(SYMBOL_LOCAL, node->value.name, count, node->t);
 
-						node->symbol = symbol_copy(sym);
-						// node->symbol = sym;
+						// node->symbol = symbol_copy(sym);
+						node->symbol = sym;
 					} else {
 						sym = create_symbol(SYMBOL_LOCAL, node->value.name, node->t);
-						node->symbol = symbol_copy(sym);
-						// node->symbol = sym;
+						// node->symbol = symbol_copy(sym);
+						node->symbol = sym;
 					}
 
 					if (!node->symbol) {
@@ -611,9 +562,9 @@ void resolve_expression(Node* node) {
 						return;
 					}
 
-					if (!scope_bind(sym, hash_key)) {
+					if (!scope_bind(node->symbol, hash_key)) {
 						printf("Error: Failed to bind newly created symbol '%s' during initial resolution.\n", node->value.name);
-						free_symbol(node->symbol);
+						free_symbol(sym);
 						return;
 					}
 
@@ -634,6 +585,7 @@ void resolve_expression(Node* node) {
 							} else { local_byte_offset += size; }
 
 							node->symbol->local_byte_offset = local_byte_offset;
+							printf("\033[31mLocal byte offset for '%s' is %zu\033[0m\n", node->symbol->name, node->symbol->local_byte_offset);
 							node->symbol->actual_bytes = size;
 						}
 					}
@@ -643,6 +595,8 @@ void resolve_expression(Node* node) {
 				if (context_lookup(CONTEXT_OP) || context_lookup(CONTEXT_IF) ||
 				    context_lookup(CONTEXT_LOOP) || context_lookup(CONTEXT_RETURN) || 
 				    context_lookup(CONTEXT_AUG) || context_lookup(CONTEXT_CALL)) {
+
+					printf("In context case for '%s'\n", node->value.name ? node->value.name : "N/A");
 					
 					Symbol* temp_symbol = create_symbol(SYMBOL_LOCAL, node->value.name, NULL);
 					if (!temp_symbol) {
@@ -661,7 +615,8 @@ void resolve_expression(Node* node) {
 							return;
 						} else {
 							printf("Found symbol '%s' in remaining scopes\n", sym->name);
-							node->symbol = symbol_copy(sym);
+							// node->symbol = symbol_copy(sym);
+							node->symbol = sym;
 
 							if (sym->type) {
 								if (sym->type->kind == TYPE_INTEGER || sym->type->kind == TYPE_CHAR ||
@@ -683,7 +638,8 @@ void resolve_expression(Node* node) {
 							return;
 						}
 					} else {
-						node->symbol = symbol_copy(sym);
+						// node->symbol = symbol_copy(sym);
+						node->symbol = sym;
 
 						if (node->t) {
 							if (node->t->kind == TYPE_FUNCTION) {
@@ -699,8 +655,9 @@ void resolve_expression(Node* node) {
 								sym->type->kind == TYPE_BOOL || sym->type->kind == TYPE_ARRAY) {
 
 								if (!node->t || (node->t->kind != TYPE_FUNCTION && node->t->kind != sym->type->kind)) {
-									if (node->t) free_type(node->t);
-									node->t = type_copy(sym->type);
+									if (!node->t) {
+										node->t = type_copy(sym->type);
+									}
 								}
 							} else if (sym->type->kind == TYPE_FUNCTION) {
 								if (!node->t || node->t->kind != TYPE_FUNCTION) {
@@ -718,51 +675,17 @@ void resolve_expression(Node* node) {
 				break;
 		}
 
+		case NODE_DEF:
 		case NODE_DECL: {
 				if (node->left) {
 					resolve_expression(node->left);
-					// if (node->left->symbol) {
-					// int hash_key = hash(node->left->value.name);
-					// 	Symbol* existing_sym = scope_lookup_current(node->left->symbol, hash_key);
-					// 	if (existing_sym && existing_sym != node->left->symbol) {
-					// 		printf("\033[31mError: Redeclaration of '%s'!\033[0m\n", node->left->value.name);
-					// 		free_symbol(node->left->symbol);
-					// 		node->left->symbol = existing_sym;
-					// 	} else if (!existing_sym) {
-					// 		printf("Declaration: '%s' successfully bound.\n", node->left->value.name);
-					// 	}
-					// } else {
-					// 	printf("Warning: Left child of NODE_DECL has no symbol after resolution\n");
-					// }
-				}
-				break;
-		}
-
-		case NODE_DEF: {
-				if (node->left) {
-					resolve_expression(node->left);
-					// if (node->left->symbol) {
-					// 	int hash_key = hash(node->left->value.name);
-					// 	Symbol* existing_sym = scope_lookup_current(node->left->symbol, hash_key);
-					// 	if (existing_sym) { printf("Existing symbol has type %d -> name '%s' -> Address '%p' and node left symbol has type %d -> name '%s' -> Address: '%p'\n", existing_sym->type->kind, existing_sym->name ? existing_sym->name : "N/A",
-					// 		(void*)existing_sym, node->left->symbol->type->kind, node->left->symbol->name ? node->left->symbol->name : "N/A", (void*)node->left->symbol); }
-					// 	if (existing_sym && (existing_sym != node->left->symbol)) {
-					// 		printf("\033[31mError: Redefinition of '%s' in the same scope.\033[0m\n", node->left->value.name);
-					// 		free_symbol(node->left->symbol);
-					// 		node->left->symbol = existing_sym;
-					// 	} else if (!existing_sym) {
-					// 		printf("Definition: '%s' successfully bound.\n", node->left->value.name);
-					// 	}
-					// } else {
-					// 	printf("Warning: Left child of NODE_DEF has no symbol has after resolution\n");
-					// }
+					
 				}
 				break;
 		}
 
 		case NODE_AUG: {
 				push_context(CONTEXT_AUG);
-				printf("IN NODE AUG\n");
 				if (node->left) {
 					resolve_expression(node->left);
 				}
@@ -771,14 +694,11 @@ void resolve_expression(Node* node) {
 		}
 
 		case NODE_SUBSCRIPT: {
-				printf("we have subscript\n");
 				if (node->left) {
-					printf("\033[31mResolving left child of subscript node\033[0m\n");
 					resolve_expression(node->left);	
 				}
 
 				if (node->right) {
-					printf("\033[31mResolving right child of subscript node\033[0m\n");
 					resolve_expression(node->right);
 				}
 
@@ -799,9 +719,8 @@ void resolve_expression(Node* node) {
 }
 
 void resolve_statement(Node* node) {
-	if (!node || !node->type) return;
+	if (!node || (node && !node->type)) return;
 
-	printf("in resolve statement (node type %d)\n", node->type);
 	switch (node->type) {
 		case NODE_IF:
 		case NODE_ELSE_IF: {
@@ -828,6 +747,7 @@ void resolve_statement(Node* node) {
 			pop_scope();
 			break;
 		}
+
 		case NODE_WHILE: {
 			printf("\033[32mIN NODE_WHILE CASE IN RESOLVE STATEMENT\033[0m\n");
 			push_scope();
@@ -877,21 +797,20 @@ void resolve_statement(Node* node) {
 		}
 		
 		case NODE_RETURN: {
-			printf("\033[31mIN RETURN STATEMENT\033[0m\n");
+			// printf("\033[31mIN RETURN STATEMENT\033[0m\n");
 			if (!node->right) {
 				if (!context_lookup(CONTEXT_VOID_FUNCTION)) {
-					printf("Return statement with no void function\n");
 					exit(EXIT_FAILURE);
 				}
-			} else {
-				push_context(CONTEXT_RETURN);
-				if (!context_lookup(CONTEXT_NONVOID_FUNCTION)) {
-					printf("Return without function\n");
-					exit(EXIT_FAILURE);
-				}
-				resolve_expression(node->right);
-				pop_context();
 			}
+
+			push_context(CONTEXT_RETURN);
+			if (!context_lookup(CONTEXT_NONVOID_FUNCTION)) {
+				exit(EXIT_FAILURE);
+			}
+
+			resolve_expression(node->right);
+			pop_context();
 			
 			break;
 		}
@@ -931,14 +850,12 @@ void resolve_statement(Node* node) {
 
 		case NODE_BREAK: {
 			if (!context_lookup(CONTEXT_LOOP) && !context_lookup(CONTEXT_SWITCH)) {
-				printf("break keyword not in loop or switch\n");
 				exit(EXIT_FAILURE);
 			}
 			break;
 		}
 		case NODE_CONTINUE: { 
 			if (!context_lookup(CONTEXT_LOOP)) {
-				printf("continue keyword not in loop\n");
 				exit(EXIT_FAILURE);
 			}
 			break; 
@@ -949,7 +866,6 @@ void resolve_statement(Node* node) {
 		}
 
 	}
-	printf("leaving resolve statement\n");
 }
 
 void resolve_params(Node* wrapped_param) {
@@ -975,8 +891,9 @@ void resolve_params(Node* wrapped_param) {
 		return;
 	}
 
-	if (scope_bind(wrapped_param->right->symbol, param_hash_key)) {
-		printf("Bound parameter symbol '%s' to scope level ('%d')\n", wrapped_param->right->symbol->name, symbol_stack->top);
+	if (!scope_bind(wrapped_param->right->symbol, param_hash_key)) {
+		free_symbol(wrapped_param->right->symbol);
+		return;
 	}
 
 	size_t size = get_num_bytes(wrapped_param->right->symbol);
@@ -1013,14 +930,19 @@ void resolve_globals(Node* node) {
 		case NODE_NAME: {
 			if (node->t) {
 				if (node->t->kind == TYPE_FUNCTION) {
-					if (node->t->subtype && node->t->subtype->kind == TYPE_VOID) { push_context(CONTEXT_VOID_FUNCTION);}
-					else { push_context(CONTEXT_NONVOID_FUNCTION); }
+					if (node->t->subtype && node->t->subtype->kind == TYPE_VOID) { 
+						push_context(CONTEXT_VOID_FUNCTION);
+						printf("Pushed Context Void function.\n");
+					} else { 
+						push_context(CONTEXT_NONVOID_FUNCTION); 
+						printf("Pushed Context NON void function.\n");
+					}
 
 					hash_key = hash(node->value.name);
 					node->symbol = create_symbol(SYMBOL_GLOBAL, node->value.name, node->t);
 					if (scope_bind(node->symbol, hash_key)) {
 						printf("\033[31mBound symbol '%s' to scope level ('%d') with TYPE: '%d' and RETURN TYPE: '%d'\033[0m\n", node->symbol->name, symbol_stack->top, node->symbol->type->kind, node->symbol->type->subtype->kind);
-					}
+					} 
 
 					size_t total_param_bytes = 0;
 					push_scope();
@@ -1048,8 +970,6 @@ void resolve_globals(Node* node) {
 
 					pop_scope();
 
-					// printf("Total local bytes: %d\n", total_local_bytes);
-					// printf("Above\n");
 					node->symbol->total_bytes = total_param_bytes + total_local_bytes;
 					printf("Below\n");
 					printf("Total local bytes for '%s' before alignment: %d\n", node->symbol->name, node->symbol->total_bytes);
@@ -1088,46 +1008,53 @@ void resolve_tree(Node* root) {
 	}
 
 	pop_scope();
+	free_context_stack();
+	free_symbol_stack();
 }
 
 void free_symbol(Symbol* symbol) {
 	if (!symbol || (symbol && symbol->symbol_free)) return;
 
-	symbol->symbol_free = true;
-
 	if (symbol->name) free(symbol->name);
 	if (symbol->type) free_type(symbol->type);
 	if (symbol->link) {
-		Node* current_link = symbol->link;
+		Symbol* current_link = symbol->link;
 		while (current_link) {
+			Symbol* next_link = current_link->link;
 			free_symbol(current_link);
-			current_link = current_link->next;
+			current_link = next_link;
 		}
 	}
+	symbol->symbol_free = true;
 	free(symbol);
 }
 
 void free_table(SymbolTable* table) {
 	if (!table || (table && table->symboltable_free)) return;
 
-	table->symboltable_free = true;
+	// for (int i = 0; i < table->capacity; i++) {
+	// 	Symbol* current = table->symbols[i];
+	// 	free_symbol(current);
+	// }
 
-	for (int i = 0; i < table->capacity; i++) {
-		Symbol* current = table->symbols[i];
-		free_symbol(current);
-	}
 	free(table->symbols);
+	table->symboltable_free = true;
 	free(table);
 }
 
-void free_stacks() {
-	if (!symbol_stack || !context_stack) return;
+
+void free_symbol_stack() {
+	if (!symbol_stack) return;
 
 	for (int i = symbol_stack->top; i >= 0; i--) {
 		free_table(symbol_stack->tables[i]);
 	}
+	free(symbol_stack->tables);
+	free(symbol_stack);
+}
 
+void free_context_stack() {
+	if (!context_stack) return;
 	free(context_stack->contexts);
 	free(context_stack);
-	free(symbol_stack);
 }
