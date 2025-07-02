@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "memallocator.h"
+#include "compilercontext.h"
 
 #define ERROR_CAPACITY 100
 #define CONTEXT_CAPACITY 10
@@ -37,7 +37,7 @@ typedef enum {
 	NODE_DEF,
 	NODE_AUG,
 
-	NODE_ADD,
+	NODE_ADD, // 24
 	NODE_SUB, // 25
 	NODE_DIV,
 	NODE_MUL,
@@ -106,23 +106,24 @@ typedef enum {
 struct type {
 	data_t kind;
 	bool type_free;	
+	bool is_a_copy;
 	struct type* subtype;
 	Node* params;
 };
 
 // everything for typechecker 
-Node* params_copy(Node* params);
-Node* create_param(Node* wrapped_param);
+Node* params_copy(CompilerContext* ctx, Node* params);
+Node* create_param(CompilerContext* ctx,Node* wrapped_param);
 
-struct type* type_create(Arena* arena, data_t main_type, struct type* subtype, Node* params);
-struct type* type_copy(Arena* arena, struct type* t);
+struct type* type_create(CompilerContext* ctx, data_t main_type, struct type* subtype, Node* params);
+struct type* type_copy(CompilerContext* ctx, struct type* t);
 bool type_equals(struct type* a, struct type* b);
 
 void typecheck_params(Node* params);
-struct type* typecheck_expression(Node* expr);
-void typecheck_statement(Node* stmt);
-void typecheck_globals(Node* globals);
-void typecheck_tree(Node* root);
+struct type* typecheck_expression(CompilerContext* ctx, Node* expr);
+void typecheck_statement(CompilerContext* ctx, Node* stmt);
+void typecheck_globals(CompilerContext* ctx, Node* globals);
+void typecheck_tree(CompilerContext* ctx, Node* root);
 void free_type(struct type* t);
 // 
 #endif

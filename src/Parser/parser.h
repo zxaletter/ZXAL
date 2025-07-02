@@ -1,11 +1,11 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include "auxiliaries.h"
 #include "Lexer/lexer.h"
 #include "Semantics/symbols.h"
-#include "auxiliaries.h"
+#include "compilercontext.h"
 #include "errorsandcontext.h"
-#include "memallocator.h"
 
 typedef struct {
 	int size;
@@ -26,38 +26,38 @@ node_t get_op_kind(Token* token);
 data_t get_type(Token* token);
 char* get_token_string(token_t type);
 
-Node* create_node(Arena* arena, node_t type, Node* left, Node* right,
+Node* create_node(CompilerContext* ctx, node_t type, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
-Node* create_string_node(Arena* arena, node_t type, char* id, Node* left, Node* right,
+Node* create_string_node(CompilerContext* ctx, node_t type, char* id, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
-Node* create_char_node(Arena* arena, node_t type, char ch, Node* left, Node* right,
+Node* create_char_node(CompilerContext* ctx, node_t type, char ch, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
-Node* create_int_node(Arena* arena, node_t type, int val, Node* left, Node* right,
+Node* create_int_node(CompilerContext* ctx, node_t type, int val, Node* left, Node* right,
 	Node* prev, Node* next, struct type* t);
 
-Node* parse_factor(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_unary(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_multiplicative(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_additive(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_relational(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_logical_and(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_logical_or(Arena* arena, Parser* parser, FileInfo* info);
+Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_unary(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_multiplicative(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_additive(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_relational(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_logical_and(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_logical_or(CompilerContext* ctx, Parser* parser, FileInfo* info);
 
-Node* parse_statement(Arena* arena,Parser* parser, FileInfo* info);
-Node* parse_block(Arena* arena,Parser* parser, FileInfo* info);
-Node* parse_parameters(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_function(Arena* arena,Parser* parser, FileInfo* info);
-Node* parse_enum_body(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_enum(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_struct(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_switch(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_args(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse_array_list(Arena* arena, Parser* parser, FileInfo* info, int* element_count);
-Node* parse_let(Arena* arena, Parser* parser, FileInfo* info);
-Node* parse(Arena* arena, Token* tokens, FileInfo* info);
+Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info);
+Node* parse_block(CompilerContext* ctx,Parser* parser, FileInfo* info);
+Node* parse_parameters(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_function(CompilerContext* ctx,Parser* parser, FileInfo* info);
+Node* parse_enum_body(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_enum(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_struct(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_switch(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_args(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse_array_list(CompilerContext* ctx, Parser* parser, FileInfo* info, int* element_count);
+Node* parse_let(CompilerContext* ctx, Parser* parser, FileInfo* info);
+Node* parse(CompilerContext* ctx, Token* tokens, FileInfo* info);
 Parser initialize_parser(Token* tokens);
 
 // void add_node_to_node_table(Node* node);
@@ -65,8 +65,8 @@ Parser initialize_parser(Token* tokens);
 // NodeTable create_node_table();
 // void free_node_table();
 
-void synchronize(Parser* parser, token_t* synchronizations);
-Token* copy_token(Token* original_token);
+void synchronize(Parser* parser, token_t* synchronizations, size_t length);
+Token* copy_token(CompilerContext* ctx, Token* original_token);
 void free_node(Node* node);
 void free_globals(Node* node);
 void free_ast(Node* root);

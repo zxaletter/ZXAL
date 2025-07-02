@@ -3,19 +3,20 @@
 #include "IR/dag.h"
 #include "IR/tac.h"
 // #include "Codegen/codegen.h"
+#include "compilercontext.h" 
 #include "auxiliaries.h"
-#include "memallocator.h"
 #include <stdlib.h>
 #include <stdio.h>
 
-char* make_output_string(char* filename) {
+char* make_output_string(CompilerContext* ctx, char* filename) {
 	char* output = NULL;
 
-	size_t filename_length = sizeof(filename);
+	size_t filename_length = strlen(filename);
 	for (size_t i = 0; i < filename_length; i++) {
 		if (filename[i] == '.') {
 			int length = &filename[i] - filename;
-			output = malloc(length + 5);
+			// output = malloc(length + 5);
+			output = arena_allocate(ctx->lexer_arena, length + 5);
 			if (!output) {
 				perror("Unable to allocate space for output string.\n");
 				return NULL;
@@ -34,24 +35,27 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	char* filename = argv[1];
-	char* output = make_output_string(filename);
+	CompilerContext* ctx = create_compiler_context();
+	if (!ctx) {
+		return 1;
+	} else {
+		printf("We have context\n");
+	}
 
-	Lexer* lexer = lex(filename);
+	char* filename = argv[1];
+	char* output = make_output_string(ctx, filename);
+
+
+	Lexer* lexer = lex(ctx, filename);
 	print_tokens(lexer->tokens);
 
-	Arena* ast_arena = create_arena(AST_ARENA);
-	Node* ast_root = parse(ast_arena, lexer->tokens, lexer->info);
-	free_arena(ast_arena);
-	// resolve_tree(ast_root);
-	// typecheck_tree(ast_root);
+	Node* ast_root = parse(ctx, lexer->tokens, lexer->info);
+	resolve_tree(ctx, ast_root);
+	typecheck_tree(ctx, ast_root);
 	
-	// DAGNode* dag_root = build_DAG(ast_root);
-	// TACTable* tac_table = build_tacs(dag_root);
-	// free_tac_table(tac_table);
-	// free_dag(dag_root);
-	// free_ast(ast_root);
-	free_lexer(lexer);
-	free(output);
+	DAGNode* dag_root = build_DAG(ctx, ast_root);
+	TACTable* tac_table = build_tacs(ctx, dag_root);
+	build_cfg(ctx, tac_table);
+	free_compiler_context(ctx);
 	return 0;
 }

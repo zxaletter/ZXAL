@@ -7,17 +7,18 @@ static int tac_function_argument_index = 0;
 TACTable* tac_table = NULL;
 TACContextStack tac_context_stack;
 
-void init_tac_table() {
-	tac_table = create_tac_table();
+void init_tac_table(CompilerContext* ctx) {
+	tac_table = create_tac_table(ctx);
 	if (!tac_table) {
 		printf("In 'init_tac_table', received NULL tac table.\n");
-		exit(EXIT_FAILURE);
+		// exit(EXIT_FAILURE);
 	}
 	printf("Created tac table\n");
 }
 
-TACTable* create_tac_table() {
-	TACTable* table = malloc(sizeof(TACTable));
+TACTable* create_tac_table(CompilerContext* ctx) {
+	// TACTable* table = malloc(sizeof(TACTable));
+	TACTable* table = arena_allocate(ctx->ir_arena, sizeof(TACTable));
 	if (!table) {
 		perror("In 'create_tac_table', unable to allocate space for tac table.\n");
 		return NULL;
@@ -26,101 +27,43 @@ TACTable* create_tac_table() {
 	table->size = 0;
 	table->tac_index = 0;
 	table->capacity = INITIAL_TABLE_CAPACITY;
-	table->tacs = calloc(table->capacity, sizeof(TACInstruction*));
+	// table->tacs = calloc(table->capacity, sizeof(TACInstruction*));
+	table->tacs = arena_allocate(ctx->ir_arena, sizeof(TACInstruction*) * table->capacity);
 	if (!table->tacs) {
 		perror("In 'create_tac_table', unable to allocate space and initialize table->tacs.\n");
-		free(table);
+		// free(table);
 		return NULL;
 	}
 	printf("About to return tac table\n");
 	return table;
 }
 
-TACInstruction* create_tac(tac_t type, char* name, char* op1, char* op2, char* op3, Symbol* symbol) {
-	TACInstruction* tac = malloc(sizeof(TACInstruction));
+TACInstruction* create_tac(CompilerContext* ctx, tac_t type, Operand* result, Operand* op1, Operand* op2, Operand* op3) {
+	TACInstruction* tac = arena_allocate(ctx->ir_arena, sizeof(TACInstruction));
 	if (!tac) {
 		perror("In 'create_TAC', unable to allocate space for tac.\n");
 		return NULL;
 	}
 
 	tac->type = type;
-	tac->freed = false;
-	tac->name = NULL;
-	tac->op1 = NULL;
-	tac->op2 = NULL;
-	tac->op3 = NULL;
-	tac->symbol = NULL;
-	
-	if (name) {
-		tac->name = strdup(name);
-		if (!tac->name) {
-			printf("In 'create_tac', unable to duplicate '%s'.\n", name);
-			free(tac);
-			return NULL;
-		}
-
-	}
-
-	if (op1) {
-		tac->op1 = strdup(op1);
-		if (!tac->op1) {
-			perror("In 'create_TAC', unable to duplicate 'op1'.\n");
-			if (tac->name) free(tac->name);
-			free(tac);
-			return NULL;
-		}
-	}
-
-	if (op2) {
-		tac->op2 = strdup(op2);
-		if (!tac->op2) {
-			perror("In 'create_TAC', unable to duplicate 'op2'.\n");
-			if (tac->op1) free(tac->op1);
-			if (tac->name) free(tac->name);
-			free(tac);
-			return NULL;
-		}
-
-	}
-
-	if (op3) {
-		tac->op3 = strdup(op3);
-		if (!tac->op3) {
-			perror("In 'create_TAC', unable to duplicate 'op3'.\n");
-			if (tac->op2) free(tac->op2);
-			if (tac->op1) free(tac->op1);
-			if (tac->name) free(name);
-			free(tac);
-			return NULL;
-		}
-
-	}
-
-	if (symbol) {
-		tac->symbol = symbol_copy(symbol);
-		if (!tac->symbol) {
-			printf("In 'create_tac', unable to copy symbol with name '%s'.\n", symbol->name ? symbol->name : "N/A");
-			if (tac->op3) free(tac->op3);
-			if (tac->op2) free(tac->op2);
-			if (tac->op1) free(tac->op1);
-			if (tac->name) free(tac->name);
-			free(tac);
-			return NULL;
-		}
-	}
+	tac->result = result;
+	tac->op1 = op1;
+	tac->op2 = op2;
+	tac->op3 = op3;
 	return tac;
 }
 
-void init_tac_context_stack() {
-	tac_context_stack = create_tac_context_stack();
+bool init_tac_context_stack(CompilerContext* ctx) {
+	tac_context_stack = create_tac_context_stack(ctx);
 	if (!tac_context_stack.contexts) {
-		free_tac_table();
+		// free_tac_table();
 		exit(EXIT_FAILURE);
 	}
 }
 
-TACContextStack create_tac_context_stack() {
-	TACContext** contexts = calloc(INITIAL_TACCONTEXT_CAPACITY, sizeof(TACContext*));
+TACContextStack create_tac_context_stack(CompilerContext* ctx) {
+	// TACContext** contexts = calloc(INITIAL_TACCONTEXT_CAPACITY, sizeof(TACContext*));
+	TACContext** contexts = arena_allocate(ctx->ir_arena, sizeof(TACContext*) * INITIAL_TACCONTEXT_CAPACITY);
 	if (!contexts) {
 		TACContextStack dummy_stack = {
 			.size = 0,
@@ -144,16 +87,20 @@ bool is_tac_context_stack_empty() {
 	return tac_context_stack.top == -1;
 } 
 
-void push_tac_context(TACContext* context) {
-	if (!context) return;
+void push_tac_context(CompilerContext* ctx, TACContext* context) {
+	if (!context || !tac_context_stack.contexts) return;
 
 	if (tac_context_stack.size >= tac_context_stack.capacity) {
+		int prev_capacity = tac_context_stack.capacity;
 		tac_context_stack.capacity *= 2;
-		tac_context_stack.contexts = realloc(tac_context_stack.contexts, sizeof(TACContext*) * tac_context_stack.capacity);
-		if (!tac_context_stack.contexts) {
-			perror("In 'push_tac_context', unable to realloc TAC contexts.\n");
+		int new_capacity = tac_context_stack.capacity;
+		// tac_context_stack.contexts = realloc(tac_context_stack.contexts, sizeof(TACContext*) * tac_context_stack.capacity);
+		void* new_contexts = arena_reallocate(ctx->ir_arena, tac_context_stack.contexts, prev_capacity, new_capacity);
+		if (!new_contexts) {
+			perror("In 'push_tac_context', unable to reallocate TAC contexts.\n");
 			return;
 		}
+		tac_context_stack.contexts = new_contexts;
 	}
 	tac_context_stack.contexts[++tac_context_stack.top] = context;
 	tac_context_stack.size++;
@@ -168,107 +115,149 @@ TACContext* peek_tac_context() {
 
 void pop_tac_context() {
 	if (!is_tac_context_stack_empty()) {
-		TACContext* current_context = tac_context_stack.contexts[tac_context_stack.top];
-		free_tac_context(current_context);
+		// TACContext* current_context = tac_context_stack.contexts[tac_context_stack.top];
+		// free_tac_context(current_context);
 		tac_context_stack.top--;
 		tac_context_stack.size--;
 	}
-	printf("TAC context stack is empty, unable to pop\n");
 }
 
-TACContext* tac_context_lookup(tac_t target_type) {
-	for (int i = tac_context_stack.top; i >= 0; i--) {
-		TACContext* current = tac_context_stack.contexts[i];
-		if (current->type == target_type) {
-			return current;
+void clear_tac_contexts(tac_t target_type) {
+	if (!is_tac_context_stack_empty) {
+		while (tac_context_stack.top >= 0 && tac_context_stack.contexts[tac_context_stack.top]->type != target_type) {
+			tac_context_stack.top--;
+			tac_context_stack.size--;
 		}
+		tac_context_stack.top--;
+		tac_context_stack.size--;
 	}
+}
+
+TACContext* tac_context_lookup(tac_t* tac_target_types, size_t length) {
+	if (!tac_target_types || !tac_context_stack.contexts){
+	 	printf("\033[31mIn 'tac_context_lookup', tac target typesor contexts are NULL\033[0m\n");
+		return NULL;
+	}
+	if (length > 0) {
+		printf("length greater than 0\n");
+		for (int i = tac_context_stack.top; i >= 0; i--) {
+			TACContext* current_context = tac_context_stack.contexts[i];
+			if (current_context) {
+				printf("We have current context\n");
+				for (int j = 0; j < length; j++) {
+					printf("Looping through tac target types\n");
+					if (current_context->type == tac_target_types[j]) {
+						return current_context;
+					}
+				}			
+			}
+		}
+	} else {
+		printf("\033[31mIn 'tac_context_lookup', length of tac target types array is is not greater than ZERO\033[0m\n");
+	}
+
 	return NULL;
 }
 
-TACContext* create_tac_context(tac_t type, char* next_label, char* end_label, char* update_label) {
-	TACContext* context = malloc(sizeof(TACContext));
-	if (!context) {
+TACContext* create_tac_context(CompilerContext* ctx, tac_t type, char* next_label, char* end_label, char* update_label) {
+	// TACContext* context = malloc(sizeof(TACContext));
+	TACContext* tac_context = arena_allocate(ctx->ir_arena, sizeof(TACContext));
+	if (!tac_context) {
 		perror("In 'create_context_stack', unable to allocate space for tac context.\n");
 		return NULL;
 	}
-	context->type = type;
-	context->end_label = NULL;
-	context->update_label = NULL;
-	context->next_label = NULL;
+	tac_context->type = type;
+	tac_context->end_label = NULL;
+	tac_context->update_label = NULL;
+	tac_context->next_label = NULL;
 
 	if (next_label) {
-		context->next_label = strdup(next_label);
-		if (!context->next_label) {
+		// context->next_label = strdup(next_label);
+		tac_context->next_label = arena_allocate(ctx->ir_arena, strlen(next_label) + 1);
+		if (!tac_context->next_label) {
 			printf("In 'create_tac_context', unable to duplicate label '%s'\n", next_label);
-			free(context);
+			// free(context);
 			return NULL;
 		}
+		strcpy(tac_context->next_label, next_label);
 	}
 
 	if (end_label) {
-		context->end_label = strdup(end_label);
-		if (!context->end_label) {
+		// context->end_label = strdup(end_label);
+		tac_context->end_label = arena_allocate(ctx->ir_arena, strlen(end_label) + 1);
+		if (!tac_context->end_label) {
 			printf("In 'create_context_stack', unable to duplicate label '%s'\n", end_label);
-			if (context->next_label) free(context->next_label);
-			free(context);
+			// if (context->next_label) free(context->next_label);
+			// free(context);
 			return NULL;
 		}
+		strcpy(tac_context->end_label, end_label);
 	}
 
 	if (update_label) {
-		context->update_label = strdup(update_label);
-		if (!context->update_label) {
-			printf("In 'create_context_stack', unable to duplicate update label '%s'.\n", update_label);
-			if (context->end_label) free(context->end_label);
-			if (context->next_label) free(context->next_label);
-			free(context);
+		// context->update_label = strdup(update_label);
+		tac_context->update_label = arena_allocate(ctx->ir_arena, strlen(update_label) + 1);
+		if (!tac_context->update_label) {
+			// printf("In 'create_context_stack', unable to duplicate update label '%s'.\n", update_label);
+			// if (context->end_label) free(context->end_label);
+			// if (context->next_label) free(context->next_label);
+			// free(context);
 			return NULL;
 		}
+		strcpy(tac_context->update_label, update_label);
 	}
-	return context;
+	return tac_context;
 }
 
-char* generate_label() {
-	char buffer[32];
-	snprintf(buffer, sizeof(buffer), ".L%d", label_counter++);
-	return strdup(buffer);
+char* generate_label(CompilerContext* ctx) {
+	char* buffer = arena_allocate(ctx->ir_arena, sizeof(char) * 100);
+	snprintf(buffer, 100, ".L%d", label_counter++);
+	return buffer;
 }
 
-char* tac_variable_create() {
-	char buffer[32];
-	snprintf(buffer, sizeof(buffer), "t%d", tac_variable_index++);
-	return strdup(buffer);
+char* tac_variable_create(CompilerContext* ctx) {
+	char* buffer = arena_allocate(ctx->ir_arena, sizeof(char) * 32);
+	if (!buffer) return NULL;
+	snprintf(buffer, 32, "t%d", tac_variable_index++);
+	return buffer;
 }
 
-char* tac_parameter_label() {
-	char buffer[32];
-	snprintf(buffer, sizeof(buffer), "p%d", tac_parameter_index++);
-	return strdup(buffer);
+char* tac_parameter_label(CompilerContext* ctx) {
+	char* buffer = arena_allocate(ctx->ir_arena, sizeof(char) * 32);
+	if (!buffer) return NULL;
+	snprintf(buffer, 32, "p%d", tac_parameter_index++);
+	return buffer;
 }
 
-char* tac_function_argument_label() {
-	char buffer[32];
-	snprintf(buffer, sizeof(buffer), "a%d", tac_function_argument_index++);
-	return strdup(buffer);
+char* tac_function_argument_label(CompilerContext* ctx) {
+	char* buffer = arena_allocate(ctx->ir_arena, sizeof(char) * 32);
+	if (!buffer) return NULL;
+	snprintf(buffer, 32, "a%d", tac_function_argument_index++);
+	return buffer;
 }
 
-char* tac_function_name(char* function_name) {
-	char buffer[60];
-	snprintf(buffer, sizeof(buffer), "_%s:", function_name);
-	return strdup(buffer);
+char* tac_function_name(CompilerContext* ctx, char* function_name) {
+	char* buffer = arena_allocate(ctx->ir_arena, strlen(function_name) + 3);
+	if (!buffer) return NULL;
+	snprintf(buffer, strlen(function_name) + 3, "_%s:", function_name);
+	return buffer;
 }
 
-void add_tac_to_table(TACInstruction* tac) {
-	if (!tac) return;
+void add_tac_to_table(CompilerContext* ctx, TACInstruction* tac) {
+	if (!tac || !tac_table) return;
+
+	printf("Adding TAC of type %d to table\n", tac->type);
 
 	if (tac_table->size >= tac_table->capacity) {
+		int prev_capacity = tac_table->capacity;
 		tac_table->capacity *= 2;
-		tac_table->tacs = realloc(tac_table->tacs, sizeof(TACInstruction*) * tac_table->capacity);
-		if (!tac_table->tacs) {
-			perror("In 'add_tac_to_table', unable to reallocate tac_table->tacs.\n");
+		int new_capacity = tac_table->capacity;
+		void* new_tacs = arena_reallocate(ctx->ir_arena, tac_table->tacs, prev_capacity, new_capacity);
+		if (!new_tacs) {
+			perror("In 'add_tac_to_table', unable to reallocate tacs\n");
 			return;
 		}
+		tac_table->tacs = new_tacs;
 	}
 	tac_table->tacs[tac_table->tac_index++] = tac;
 	tac_table->size++;
@@ -301,24 +290,105 @@ tac_t get_tac_type(dagnode_t type) {
 	}
 }
 
-void build_tac_from_parameter_dag(DAGNode* wrapped_param) {
-	if (!wrapped_param) return;
-	TACInstruction* result = NULL;
-	DAGNode* current_wrapped_param = wrapped_param;
-	while (current_wrapped_param) {
-		DAGNode* actual_param_node = current_wrapped_param->right;
-		char* parameter_label = tac_parameter_label();
-		char* actual_param_node_name = actual_param_node->value.name;		
-		result = create_tac(TAC_PARAM, parameter_label, actual_param_node_name, NULL, NULL, actual_param_node->symbol);
-		add_tac_to_table(result);
-		current_wrapped_param = current_wrapped_param->next;
+Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value) {
+	Operand* new_operand = arena_allocate(ctx->ir_arena, sizeof(Operand));
+	if (!new_operand) {
+		perror("In 'create_operand', unabel to allocate space for new operand\n");
+		return NULL;
+	}
+
+	new_operand->kind = kind;
+	new_operand->value = value;
+	return new_operand;
+}
+
+char* convert_subtype_to_string(struct type* type) {
+	if (!type) return NULL;
+
+	switch (type->kind) {
+		case TYPE_INTEGER: return "SIZEOF_INT";
+		case TYPE_CHAR: return "SIZEOF_CHAR";
+		case TYPE_BOOL: return "SIZEOF_BOOL";
+		case TYPE_ARRAY: {
+			return convert_subtype_to_string(type->subtype);
+		}
 	}
 }
 
-TACInstruction* build_tac_from_expression_dag(DAGNode* node) {
-	if (!node) return;
+TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, DAGNode* array_identifier, DAGNode* array_list) {
+	if (!array_identifier || !array_list) return NULL;
+
+	OperandValue array_subtype_val = {
+		.label_name = convert_subtype_to_string(array_identifier->type)
+	};
+	if (!array_subtype_val.label_name) {
+		printf("\033[31mIN BUILD_TAC_FROM_ARRAY_DAGNODE, array subtype val label name is NULL\033[0m\n");
+		return NULL;
+	} else {
+		printf("\033[31mSUCCESSFULLY converted array subtype to string, result = '%s'\033[0m\n", array_subtype_val.label_name);
+	}
+	Operand* array_subtype_op = create_operand(ctx, OP_LABEL, array_subtype_val);
+	if (!array_subtype_op) {
+		printf("\033[31mUnable to create subtype op in 'BUILD_TAC_FROM_ARRAY_DAGNODE'\033[0m\n");
+		return NULL;
+	} else {
+		printf("\033[31mSUCESSFULLY MADE ARRAY SUBTYPE OP\033[0m\n");
+	}
+
+	OperandValue array_identifier_val = { .sym = array_identifier->symbol }; 
+	Operand* array_identifier_op = create_operand(ctx, OP_SYMBOL, array_identifier_val);
+	if (!array_identifier_op) {
+		printf("\033[31mUNABLE TO CREATE array identifier op\033[0m\n");
+		return NULL;
+	} else {
+		printf("\033[31mSUCCESSFULLY MADE ARRAY IDENTIFIER OP\033[0m\n");
+	}
+
+	int i = 0;
+	DAGNode* element = array_list->right;
+
+	while (element) {
+		printf("\033[31mCurrent element type is %d\n\033[0m\n", element->kind);
+		DAGNode* next_element = element->next;
+
+		OperandValue element_index_label_val = { .label_name = tac_variable_create(ctx) };
+		Operand* element_index_op = create_operand(ctx, OP_LABEL, element_index_label_val);
+		
+		OperandValue buffer_val = { .int_val = i };
+		Operand* buffer_op = create_operand(ctx, OP_INT_LITERAL, buffer_val);
+		
+		TACInstruction* element_index_tac = create_tac(ctx, TAC_MUL, element_index_op, buffer_op, array_subtype_op, NULL);
+		add_tac_to_table(ctx, element_index_tac);
+
+		OperandValue element_address_val = { .label_name = tac_variable_create(ctx) };
+		Operand* element_address_op = create_operand(ctx, OP_LABEL, element_address_val);
+
+		TACInstruction* pos_tac = create_tac(ctx, TAC_ADD, element_address_op, array_identifier_op, element_index_op, NULL);
+		add_tac_to_table(ctx, pos_tac);
+
+		OperandValue element_val = { .int_val = element->value.val };
+		Operand* element_op = create_operand(ctx, OP_INT_LITERAL, element_val);
+		if (!element_op) {
+			printf("\033[31mIn build_tac_from_array_dagnode', element op is NULL\033[0m\n");
+			return NULL;
+		}
+		TACInstruction* element_store_tac = create_tac(ctx, TAC_STORE, element_address_op, element_op, NULL, NULL); 
+		add_tac_to_table(ctx, element_store_tac);
+		
+		i++;
+		element = next_element;
+	}
+}
+
+operand_t get_operand_type(Operand* op) {
+	if (!op) return OP_UNKNOWN;
+	return op->kind;
+}
+
+TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, DAGNode* node) {
+	if (!node) return NULL;
+	
 	TACInstruction* result = NULL;
-	printf("In 'build_tac_from_expression_dag'.\n");
 	switch (node->kind) {
 		case DAG_ADD:
 		case DAG_SUB:
@@ -334,17 +404,37 @@ TACInstruction* build_tac_from_expression_dag(DAGNode* node) {
 		case DAG_LESS_EQUAL:
 		case DAG_GREATER_EQUAL:
 		case DAG_EQUAL:
-		case DAG_NOT_EQUAL: {		
+		case DAG_NOT_EQUAL:
+		case DAG_LOGICAL_AND:
+		case DAG_LOGICAL_OR: {		
 			tac_t type = get_tac_type(node->kind);
-			char* tac_variable = tac_variable_create();
-			build_tac_from_expression_dag(node->left);
-			build_tac_from_expression_dag(node->right);
+			TACInstruction* left_op_tac = build_tac_from_expression_dag(ctx, node->left);
+			TACInstruction* right_op_tac = build_tac_from_expression_dag(ctx, node->right);
 
-			char* op1_str = node->left->name;
-			char* op2_str = node->right->name;
-			result = create_tac(type, tac_variable, op1_str, op2_str, NULL, node->symbol);
-			add_tac_to_table(result);
-			node->name = tac_variable;
+
+			if (!left_op_tac || !right_op_tac) return NULL;
+				
+			 
+			OperandValue main_operand_value = {
+				.label_name = tac_variable_create(ctx)
+			};
+			Operand* binary_operand = create_operand(ctx, OP_LABEL, main_operand_value);
+			result = create_tac(ctx, type, binary_operand, left_op_tac->result, right_op_tac->result, NULL);
+			add_tac_to_table(ctx, result);
+			break;
+		}
+
+		case DAG_NOT: {
+			TACInstruction* unary_tac = build_tac_from_expression_dag(ctx, node->right);
+			if (!unary_tac) return NULL;
+
+			OperandValue val = {
+				.label_name = tac_variable_create(ctx)
+			};
+
+			Operand* op = create_operand(ctx, OP_LABEL, val);
+			result = create_tac(ctx, TAC_NOT, op, unary_tac->result, NULL, NULL);
+			add_tac_to_table(ctx, result);
 			break;
 		}
 
@@ -352,215 +442,433 @@ TACInstruction* build_tac_from_expression_dag(DAGNode* node) {
 		case DAG_BOOL:
 		case DAG_INTEGER: {
 			tac_t type = get_tac_type(node->kind);
-			char* tac_variable = tac_variable_create();
+			char* tac_variable = tac_variable_create(ctx);
+			OperandValue tac_variable_union = {
+				.label_name = tac_variable
+			};
+			Operand* left_operand = create_operand(ctx, OP_LABEL, tac_variable_union);
 
-			char buffer[32];
-			snprintf(buffer, sizeof(buffer), "%d", node->value.val);
-			result = create_tac(type, tac_variable, buffer, NULL, NULL, NULL);
-			add_tac_to_table(result);
-			node->name = tac_variable;
+			OperandValue buffer_union = {
+				.int_val = node->value.val,
+			};
+			Operand* right_operand = create_operand(ctx, OP_INT_LITERAL, buffer_union);
+			result = create_tac(ctx, type, left_operand, right_operand, NULL, NULL);
+			add_tac_to_table(ctx, result);
+			
 			break;
 		}
 
 		case DAG_INCREMENT:
 		case DAG_DECREMENT: {
 			tac_t type = get_tac_type(node->kind);
-			char* tac_variable = tac_variable_create();
+			char* tac_variable = tac_variable_create(ctx);
 
-			build_tac_from_expression_dag(node->left);
-			char* op1_str = node->left->name;
-			result = create_tac(type, tac_variable, op1_str, NULL, NULL, node->symbol);
-			add_tac_to_table(result);
-			node->name = tac_variable;
+			DAGNode* int_dagnode = create_int_dagnode(ctx, DAG_INTEGER, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+			DAGNode* copy_node = copy_dagnode(ctx, node->left);
+
+			dagnode_t dag_kind = (node->kind == DAG_INCREMENT) ? DAG_ADD : DAG_SUB;
+			DAGNode* op_dagnode = create_dagnode(ctx, dag_kind, node->left, int_dagnode, NULL, NULL, NULL, NULL, NULL);
+			build_tac_from_expression_dag(ctx, op_dagnode);
+			build_tac_from_expression_dag(ctx, node->left);
+			
+			if (!node->left->name) {
+				return NULL;
+			}
+
+			OperandValue op_dagnode_value = {
+				.label_name = node->left->name
+			};
+			Operand* op_dagnode_operand = create_operand(ctx, OP_LABEL, op_dagnode_value);
+
+			OperandValue res_value = {
+				.sym = node->left->symbol,
+			};
+			Operand* res = create_operand(ctx, OP_SYMBOL, res_value);
+			TACInstruction* tac_assignment = create_tac(ctx, TAC_ASSIGNMENT, res, NULL, op_dagnode_operand, NULL);
+			add_tac_to_table(ctx, tac_assignment);
+		
 			break;
 		}
 
-		case DAG_NAME: {
-			node->name = node->value.name;	
-			break;
-		}
+		case DAG_NAME: {			
+			OperandValue value = {
+				.sym = node->symbol,
+			};
 
-		case DAG_DECL:
-		case DAG_DEF:
-		case DAG_AUG: {
-			build_tac_from_expression_dag(node->left);
-			node->name = strdup(node->left->name);
+			Operand* op = create_operand(ctx, OP_SYMBOL, value);
+			result = create_tac(ctx, TAC_NAME, op, NULL, NULL, NULL);	
 			break;
 		}
 
 		case DAG_ARG: {
-			char* arg_label = tac_function_argument_label();
-			char* actual_arg_name = node->left->name ? node->left->name : NULL;
-			Symbol* actual_arg_symbol = node->left->symbol ? node->left->symbol : NULL;
-			TACInstruction* arg_tac = create_tac(TAC_ARG, arg_label, actual_arg_name, NULL, NULL, actual_arg_symbol);
-			add_tac_to_table(arg_tac);
-			node->name = arg_label;
+			OperandValue arg_value_label = {
+				.label_name = tac_function_argument_label(ctx)
+			};
+			Operand* left_operand = create_operand(ctx, OP_LABEL, arg_value_label);
+
+			TACInstruction* arg = build_tac_from_expression_dag(ctx, node->right);
+			if (!arg) {
+				printf("\033[31mIN DAG_ARG CASE, TAC INSTRUTCTION ARG IS NULL\033[0m\n");
+				return NULL;
+			}
+			
+			if (arg->result) {
+				printf("\033[31mARG RESULT OPERAND HAS TYPE %d\033[0m\n", arg->result->kind);
+			}			
+			TACInstruction* arg_tac = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL, NULL);
+			add_tac_to_table(ctx, arg_tac);
 			break;
 		}
 
 		case DAG_CALL: {
-			TACInstruction* tac_call = create_tac(TAC_CALL, node->value.name, NULL, NULL, NULL, node->symbol);
-			add_tac_to_table(tac_call);
-
 			DAGNode* arg = node->right;
 			while (arg) {
 				DAGNode* next_arg = arg->next;
-				build_tac_from_expression_dag(arg);
+				build_tac_from_expression_dag(ctx, arg);
 				arg = next_arg;
 			}
+
+			TACInstruction* function_name = build_tac_from_expression_dag(ctx, node->left);
+
+			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_call);
+
+			OperandValue func_return_label = {
+				.label_name = tac_variable_create(ctx)
+			};
+			Operand* function_label_operand = create_operand(ctx, OP_LABEL, func_return_label);
+
+			OperandValue _return_label = {
+				.label_name = "_RET"
+			};
+			Operand* _return_operand = create_operand(ctx, OP_LABEL, _return_label);
+
+			TACInstruction* tac_function_return = create_tac(ctx, TAC_ASSIGNMENT, function_label_operand, NULL, _return_operand, NULL);
+			add_tac_to_table(ctx, tac_function_return);
+
+			result = tac_function_return;
 			break;
 		}
 
-		// case DAG_SUBSCRIPT: {
-		// 	size_t element_size = sizeof(node->symbol->type->subtype);
-		// 	DAGNode* index_dagnode = create_int_dag_node(DAG_INTEGER, element_size, NULL, NULL, NULL, NULL, NULL, NULL);
-		// 	DAGNode* scaled_index_dagnode = create_dag_node(DAG_MUL, node->right, element_size, NULL, NULL, NULL, NULL);
-		// 	TACInstruction* scaled_index_tac = build_tac_from_expression_dag(scaled_index_dagnode);
-			
-			
-		// 	TACInstruction* address_tac = build_tac_from_expression_dag()
+		case DAG_SUBSCRIPT: {
+			build_tac_from_expression_dag(ctx, node->left);
+			build_tac_from_expression_dag(ctx, node->right);
 
-		// 	break;
-		// }
+			char* array_subtype = convert_subtype_to_string(node->type);
+			if (!array_subtype) return NULL;
+			OperandValue array_val = {
+				.label_name = array_subtype
+			};
+			Operand* op_array_val = create_operand(ctx, OP_LABEL, array_val);
+
+			char* tac_mul_label = tac_variable_create(ctx);
+			OperandValue mul_label_val = {
+				.label_name = tac_mul_label
+			};
+			Operand* op_mul = create_operand(ctx, OP_LABEL, mul_label_val);
+
+			OperandValue index_val = {
+				.sym = node->right->symbol,
+			};
+			Operand* index_op = create_operand(ctx, OP_SYMBOL, index_val);
+
+			TACInstruction* tac_index = create_tac(ctx, TAC_MUL, op_mul, index_op, op_array_val, NULL);
+			add_tac_to_table(ctx, tac_index);
+
+			char* tac_add_label = tac_variable_create(ctx);
+			OperandValue add_val = {
+				.label_name = tac_add_label
+			};
+			Operand* op_add = create_operand(ctx, OP_LABEL, add_val);
+			TACInstruction* address_tac = create_tac(ctx, TAC_ADD, op_add, op_mul, index_op, NULL);
+			add_tac_to_table(ctx, address_tac);
+
+			char* tac_store_dereference_label = tac_variable_create(ctx);
+			OperandValue store_val = {
+				.label_name = tac_store_dereference_label
+			};
+			Operand* store_op = create_operand(ctx, OP_LABEL, store_val);
+			TACInstruction* dereference_tac = create_tac(ctx, TAC_DEREFERENCE, store_op, op_add, NULL, NULL);
+			add_tac_to_table(ctx, dereference_tac);
+			result = dereference_tac;
+			break;
+		}
+
+		default: {
+			printf("\033[31mUNKNOWN DAG NODE in 'build_tac_from_expression_dag' with type %d\033[0m\n", node->kind);
+			return NULL;
+		}
 	}
 	return result;
 }
 
-void build_tac_from_statement_dag(DAGNode* node) {
+void build_tac_from_statement_dag(CompilerContext* ctx, DAGNode* node) {
 	if (!node) return;
 
 	switch (node->kind) {
 		case DAG_ASSIGNMENT: {
-			build_tac_from_expression_dag(node->left);
-			build_tac_from_expression_dag(node->right);
+			if (node->right) {
+				if (node->right->kind == DAG_ARRAY_LIST) {
+					build_tac_from_array_dagnode(ctx, node->left, node->right);
+				} else if (node->left->kind == DAG_SUBSCRIPT) {
+					TACInstruction* left_instruction = build_tac_from_expression_dag(ctx, node->left);
+					TACInstruction* right_instruction = build_tac_from_expression_dag(ctx, node->right);
+					TACInstruction* store_tac = create_tac(ctx, TAC_STORE, left_instruction->result, right_instruction->result, NULL, NULL);
+					add_tac_to_table(ctx, store_tac);
+				} else {
+					TACInstruction* left_instruction = build_tac_from_expression_dag(ctx, node->left);
+					TACInstruction* right_instruction = build_tac_from_expression_dag(ctx, node->right);
+					TACInstruction* tac_assignment = create_tac(ctx, TAC_ASSIGNMENT, left_instruction->result, NULL, right_instruction->result, NULL);
+					add_tac_to_table(ctx, tac_assignment);
+				}
+			}
 
-			char* op2_str = node->right->name;
-			TACInstruction* tac_assignment = create_tac(TAC_ASSIGNMENT, node->left->value.name, NULL, op2_str, NULL, node->left->symbol);
-			add_tac_to_table(tac_assignment);
+			break;
+		}
+
+		case DAG_CALL: {
+			build_tac_from_expression_dag(ctx, node);
 			break;
 		}
 
 		case DAG_IF: {			
-			char* if_true_label = generate_label();
-			char* if_false_label = generate_label();
-			char* end_label = generate_label();
+			char* if_true_label = generate_label(ctx);
+			char* if_false_label = generate_label(ctx);
+			char* end_label = generate_label(ctx);
+			bool is_next_statement_else = false;
 
-			TACContext* context_if = create_tac_context(TAC_IF, if_false_label, end_label, NULL);
-			push_tac_context(context_if);
+			TACContext* context_if = create_tac_context(ctx, TAC_IF, if_false_label, end_label, NULL);
+			push_tac_context(ctx, context_if);
 
-			TACInstruction* condition_tac = build_tac_from_expression_dag(node->left);
-			TACInstruction* condition_false_tac = create_tac(TAC_IF_FALSE, condition_tac->name, if_false_label, NULL, NULL, NULL);
-			add_tac_to_table(condition_false_tac);
+			TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, node->left);
+			if (!condition_tac) return;
 
-			TACInstruction* if_true_tac = create_tac(TAC_LABEL, if_true_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(if_true_tac);
-			build_tac_from_statement_dag(node->right);
-			TACInstruction* goto_tac = create_tac(TAC_GOTO, end_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(goto_tac);
+			OperandValue if_false_val = {
+				.label_name = if_false_label
+			};
+			Operand* if_false_op = create_operand(ctx, OP_LABEL, if_false_val);
 
-			TACInstruction* end_label_tac = create_tac(TAC_LABEL, end_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(end_label_tac);
-			pop_tac_context();
+			OperandValue end_val = {
+				.label_name = end_label
+			};
+			Operand* end_op = create_operand(ctx, OP_LABEL, end_val);
+
+			OperandValue condition_tac_val = {
+				.label_name = condition_tac->result->value.label_name
+			};
+			Operand* condition_tac_op = create_operand(ctx, OP_LABEL, condition_tac_val);
+
+			TACInstruction* condition_false_tac = NULL;
+			if (node->next) {
+				if (node->next->kind != DAG_ELSE_IF && node->next->kind != DAG_ELSE) {
+					condition_false_tac = create_tac(ctx, TAC_IF_FALSE, condition_tac_op, end_op, NULL, NULL);
+					add_tac_to_table(ctx, condition_false_tac);
+					pop_tac_context();
+				} else {
+					is_next_statement_else = true;
+					condition_false_tac = create_tac(ctx, TAC_IF_FALSE, condition_tac_op, if_false_op, NULL, NULL);
+					add_tac_to_table(ctx, condition_false_tac);
+				}
+			} else {
+				condition_false_tac = create_tac(ctx, TAC_IF_FALSE, condition_tac_op, end_op, NULL, NULL);
+				add_tac_to_table(ctx, condition_false_tac);
+			}
+
+			OperandValue if_true_val = {
+				.label_name = if_true_label
+			};
+			Operand* if_true_op = create_operand(ctx, OP_LABEL, if_true_val);
+
+			TACInstruction* if_true_tac = create_tac(ctx, TAC_LABEL, if_true_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, if_true_tac);
+			build_tac_from_statement_dag(ctx, node->right);
+			TACInstruction* goto_tac = create_tac(ctx, TAC_GOTO, end_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, goto_tac);
+
+			if (!is_next_statement_else) {
+				TACInstruction* end_label_tac = create_tac(ctx, TAC_LABEL, end_op, NULL, NULL, NULL);
+				add_tac_to_table(ctx, end_label_tac);
+			}
+
 			break;
 		}
 
 		case DAG_ELSE_IF: {
 			TACContext* retrieved_context = peek_tac_context();
-			TACInstruction* else_if_tac = create_tac(TAC_LABEL, retrieved_context->next_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(else_if_tac);
+			if (!retrieved_context) return;
 
-			char* else_if_condition_true_label = generate_label();
-			char* else_if_condition_false_label = generate_label();
+			OperandValue retrieved_next_val = {
+				.label_name = retrieved_context->next_label
+			};
+			Operand* retrieved_next_op = create_operand(ctx, OP_LABEL, retrieved_next_val);
 
-			TACContext* context_else_if = create_tac_context(TAC_ELSE_IF, else_if_condition_false_label, retrieved_context->end_label, NULL);
-			push_tac_context(context_else_if);
+			OperandValue retrieved_end_val = {
+				.label_name = retrieved_context->end_label
+			};
+			Operand* retrieved_end_op = create_operand(ctx, OP_LABEL, retrieved_end_val);
 
-			TACInstruction* else_if_condition_tac = build_tac_from_expression_dag(node->left);
-			TACInstruction* else_if_condition_false_tac = create_tac(TAC_IF_FALSE, else_if_condition_tac->name, else_if_condition_false_label, NULL, NULL, NULL);
-			add_tac_to_table(else_if_condition_false_tac);
+			TACInstruction* else_if_label_tac = create_tac(ctx, TAC_LABEL, retrieved_next_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, else_if_label_tac);
 
-			TACInstruction* else_if_condition_true_tac = create_tac(TAC_LABEL, else_if_condition_true_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(else_if_condition_true_tac);
-			build_tac_from_statement_dag(node->right);
-			TACInstruction* goto_tac = create_tac(TAC_GOTO, retrieved_context->end_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(goto_tac);
+			char* else_if_condition_true_label = generate_label(ctx);
+			char* else_if_condition_false_label = generate_label(ctx);
+			bool is_next_statement_else = false;
 			
-			pop_tac_context();
+			OperandValue condition_true_val = {
+				.label_name = else_if_condition_true_label
+			};
+			Operand* condition_true_op = create_operand(ctx, OP_LABEL, condition_true_val);
+
+			OperandValue condition_false_val = {
+				.label_name = else_if_condition_false_label
+			};
+			Operand* condition_false_op = create_operand(ctx, OP_LABEL, condition_false_val);
+
+			TACContext* context_else_if = create_tac_context(ctx, TAC_ELSE_IF, else_if_condition_false_label, retrieved_context->end_label, NULL);
+			push_tac_context(ctx, context_else_if);
+			
+			TACInstruction* else_if_condition_tac = build_tac_from_expression_dag(ctx, node->left);
+			if (!else_if_condition_tac) {
+				printf("\033[31mELSE IF CONDITION TAC IS NULL\033[0m\n");
+				return NULL;
+			}
+			TACInstruction* else_if_condition_false_tac = NULL;
+			if (node->next) {
+				if (node->next->kind != DAG_ELSE_IF && node->next->kind != DAG_ELSE) {
+					else_if_condition_false_tac = create_tac(ctx, TAC_IF_FALSE, else_if_condition_tac->result, retrieved_end_op, NULL, NULL);
+					add_tac_to_table(ctx, else_if_condition_false_tac);
+					clear_tac_contexts(TAC_IF);
+				} else {
+					is_next_statement_else = true;
+					else_if_condition_false_tac = create_tac(ctx, TAC_IF_FALSE, else_if_condition_tac->result, condition_false_op, NULL, NULL);
+					add_tac_to_table(ctx, else_if_condition_false_tac);
+				}
+			} 
+
+			TACInstruction* else_if_condition_true_tac = create_tac(ctx, TAC_LABEL, condition_true_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, else_if_condition_true_tac);
+			build_tac_from_statement_dag(ctx, node->right);
+			TACInstruction* goto_tac = create_tac(ctx, TAC_GOTO, retrieved_end_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, goto_tac);
+
+			if (!is_next_statement_else) {
+				TACInstruction* end_label_tac = create_tac(ctx, TAC_LABEL, retrieved_end_op, NULL, NULL, NULL);
+				add_tac_to_table(ctx, end_label_tac);
+			}
+			
+			// pop_tac_context();
 			break;
 		}
 
 		case DAG_ELSE: {
 			TACContext* retrieved_context = peek_tac_context();
-			TACInstruction* else_tac = create_tac(TAC_LABEL, retrieved_context->next_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(else_tac);
-			build_tac_from_statement_dag(node->right);
+			if (!retrieved_context) return;
+
+			OperandValue retrieved_next_val = {
+				.label_name = retrieved_context->next_label
+			};
+			Operand* retrieved_next_op = create_operand(ctx, OP_LABEL, retrieved_next_val);
+
+			TACInstruction* else_tac = create_tac(ctx, TAC_LABEL, retrieved_next_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, else_tac);
+			build_tac_from_statement_dag(ctx, node->right);
+
+			OperandValue retrieved_end_val = {
+				.label_name = retrieved_context->end_label
+			};
+			Operand* retrieved_end_op = create_operand(ctx, OP_LABEL, retrieved_end_val);
+
+			TACInstruction* remaining_tac_instructions_label = create_tac(ctx, TAC_LABEL, retrieved_end_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, remaining_tac_instructions_label);
+			clear_tac_contexts(TAC_IF);
 			break;
 		}
 
 		case DAG_WHILE: {
-			TACInstruction* tac_while_boundary = create_tac(TAC_WHILE, NULL, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_while_boundary);
+			char* while_condition_label = generate_label(ctx);
+			// char* update_label = generate_label(ctx);
+			char* end_label = generate_label(ctx);
 
-			char* condition_true_label = generate_label();
-			char* update_label = generate_label();
-			char* end_label = generate_label();
+			OperandValue while_condition_val = { .label_name = while_condition_label };
+			// OperandValue update_val = { .label_name = update_label };
+			OperandValue end_val =  { .label_name = end_label };
 
-			TACContext* context_while = create_tac_context(TAC_WHILE, NULL, update_label, end_label);
-			push_tac_context(context_while);
+			Operand* while_condition_op = create_operand(ctx, OP_LABEL, while_condition_val);
+			// Operand* update_op = create_operand(ctx, OP_LABEL, update_val);
+			Operand* end_op = create_operand(ctx, OP_LABEL, end_val);
 
-			TACInstruction* condition_tac = build_tac_from_expression_dag(node->left);
-			TACInstruction* condition_false_tac = create_tac(TAC_IF_FALSE, condition_tac->name, end_label, NULL, NULL, NULL);
-			add_tac_to_table(condition_false_tac);
+			TACContext* context_while = create_tac_context(ctx, TAC_WHILE, NULL, while_condition_label, end_label);
+			push_tac_context(ctx, context_while);
 
-			TACInstruction* condition_true_tac = create_tac(TAC_LABEL, condition_true_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(condition_true_tac);
-			build_tac_from_statement_dag(node->right);
+			TACInstruction* while_condition_tac = create_tac(ctx, TAC_LABEL, while_condition_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, while_condition_tac);
 
-			TACInstruction* update_tac = create_tac(TAC_LABEL, update_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(update_tac);
+			TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, node->left);
+			TACInstruction* condition_false_tac = create_tac(ctx, TAC_IF_FALSE, condition_tac->result, end_op, NULL, NULL);
+			add_tac_to_table(ctx, condition_false_tac);
 
-			TACInstruction* goto_tac = create_tac(TAC_GOTO, condition_true_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(goto_tac);
+			build_tac_from_statement_dag(ctx, node->right);
 
-			TACInstruction* end_tac = create_tac(TAC_LABEL, end_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(end_tac);
+			// TACInstruction* update_tac = create_tac(ctx, TAC_LABEL, update_op, NULL, NULL, NULL);
+			// add_tac_to_table(ctx, update_tac);
+
+			TACInstruction* goto_tac = create_tac(ctx, TAC_GOTO, while_condition_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, goto_tac);
+
+			TACInstruction* end_tac = create_tac(ctx, TAC_LABEL, end_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, end_tac);
 
 			pop_tac_context();
 			break;
 		}
 
 		case DAG_FOR: {
-			TACInstruction* tac_for_boundary = create_tac(TAC_FOR, NULL, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_for_boundary);
+			char* loop_start_label = generate_label(ctx);
+			char* loop_update_label = generate_label(ctx);
+			char* loop_end_label = generate_label(ctx);
 
-			DAGNode* initializer = node->left;
-			build_tac_from_statement_dag(initializer);
+			OperandValue loop_start_val = { .label_name = loop_start_label };
+			OperandValue loop_update_val = { .label_name = loop_update_label };
+			OperandValue loop_end_val = { .label_name = loop_end_label };
 
-			char* loop_start_label = generate_label();
-			char* loop_update_label = generate_label();
-			char* loop_end_label = generate_label();
+			Operand* loop_start_op = create_operand(ctx, OP_LABEL, loop_start_val);
+			Operand* loop_update_op = create_operand(ctx, OP_LABEL, loop_update_val);
+			Operand* loop_end_op = create_operand(ctx, OP_LABEL, loop_end_val);
 
-			TACContext* context_for = create_tac_context(TAC_FOR, NULL, loop_end_label, loop_update_label);
-			push_tac_context(context_for);
+			TACContext* context_for = create_tac_context(ctx, TAC_FOR, NULL, loop_update_label, loop_end_label);
+			if (!context_for) return;
 
-			TACInstruction* tac_loop_start_label = create_tac(TAC_LABEL, loop_start_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_loop_start_label);
+			push_tac_context(ctx, context_for);
 
-			DAGNode* condition = initializer->left;
-			TACInstruction* condition_tac = build_tac_from_expression_dag(condition);
-			TACInstruction* tac_false_label = create_tac(TAC_IF_FALSE, condition_tac->name, loop_end_label, NULL, NULL, NULL);
-			add_tac_to_table(tac_false_label);
+			DAGNode* initializer_dagnode = node->left ? node->left : NULL;
+			build_tac_from_statement_dag(ctx, initializer_dagnode);
 
-			build_tac_from_statement_dag(node->right); 
+			TACInstruction* tac_loop_start_label = create_tac(ctx, TAC_LABEL, loop_start_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_loop_start_label);
+			DAGNode* condition_dagnode = initializer_dagnode ? initializer_dagnode->next : NULL;
+			if (!condition_dagnode) {
+				printf("\033[31mCondition dagnode is NULL\033[0m\n");
+			}
+			printf("\033[31mCondition dagnode has type %d\033[0m\n", condition_dagnode->kind);
+			TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, condition_dagnode);
+			if (!condition_tac) {
+				printf("condition tac is false\n");
+			}
+			
+			TACInstruction* tac_false_label = create_tac(ctx, TAC_IF_FALSE, condition_tac->result, loop_end_op, NULL, NULL);
+			add_tac_to_table(ctx, tac_false_label);
+			build_tac_from_statement_dag(ctx, node->right); 
+			
+			TACInstruction* tac_update_label = create_tac(ctx, TAC_LABEL, loop_update_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_update_label);
 
-			TACInstruction* tac_update_label = create_tac(TAC_LABEL, loop_update_label, NULL, NULL, NULL, NULL);
-			DAGNode* update = condition->left;
-			build_tac_from_expression_dag(update);
-			TACInstruction* tac_goto = create_tac(TAC_GOTO, loop_start_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_goto);
+			DAGNode* update_dagnode = condition_dagnode ? condition_dagnode->next : NULL;
+			build_tac_from_expression_dag(ctx, update_dagnode);
+			TACInstruction* tac_goto = create_tac(ctx, TAC_GOTO, loop_start_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_goto);
 
-			TACInstruction* tac_loop_end_label = create_tac(TAC_LABEL, loop_end_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_loop_end_label);
+			TACInstruction* tac_loop_end_label = create_tac(ctx, TAC_LABEL, loop_end_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_loop_end_label);
 
 			pop_tac_context();
 			break;
@@ -569,160 +877,327 @@ void build_tac_from_statement_dag(DAGNode* node) {
 		case DAG_RETURN: {
 			TACInstruction* tac_result = NULL;
 			if (!node->right) {
-				tac_result = create_tac(TAC_RETURN, NULL, NULL, NULL, NULL, NULL);
+				tac_result = create_tac(ctx, TAC_RETURN, NULL, NULL, NULL, NULL);
 			} else {
-				TACInstruction* tac_return = build_expression_dag_node(node->right);
-				tac_result = create_tac(TAC_RETURN, tac_return->name, NULL, NULL, NULL, node->symbol);
+				printf("right dag node has type: %d\n", node->right->kind);
+				TACInstruction* tac_return = build_tac_from_expression_dag(ctx, node->right);
+				if (!tac_return) {
+					printf("\033[31mtac return is NULL\033[0m\n");
+					return;
+				}
+				tac_result = create_tac(ctx, TAC_RETURN, tac_return->result, NULL, NULL, NULL);
 			}
-			add_tac_to_table(tac_result);
+			add_tac_to_table(ctx, tac_result);
 			break;
 		}
 
 		case DAG_INCREMENT:
 		case DAG_DECREMENT: {
-			tac_t type = get_tac_type(node->kind);
-			build_tac_from_expression_dag(node->left);
 
-			DAGNode* left = copy_dag_node(node->left);
-
-			DAGNode* right = create_int_dag_node(DAG_INTEGER, 1, NULL, NULL, NULL, NULL, NULL, NULL);
-			
-
-			DAGNode* op_dagnode = create_dag_node(node->kind, left, right, NULL, NULL, NULL, NULL);	
-			if (!op_dagnode) {
-				free_dag_node(right);
-				free_dag_node(left);
+			DAGNode* left = copy_dagnode(ctx, node->left);
+			if (!left) {
+				printf("IN DAG_INCREMENT/DECREMENT, unable to copy node->left\n");
 				return NULL;
 			}
 
-			build_expression_dag_node(op_dagnode);
+			DAGNode* right = create_int_dagnode(ctx, DAG_INTEGER, 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+			if (!right) {
+				printf("IN DAG_INCREMENT/DECREMENT, unable to create int dag node\n");
+				return NULL;
+			}
+			printf("\033[31mDAGNode kind is %d\033[0m\n", node->kind);
+			dagnode_t dag_kind = (node->kind == DAG_INCREMENT) ? DAG_ADD : DAG_SUB;
+			DAGNode* op_dagnode = create_dagnode(ctx, dag_kind, left, right, NULL, NULL, NULL,NULL, NULL);	
+			if (!op_dagnode) {
+				// free_dag_node(right);
+				// free_dag_node(left);
+				return NULL;
+			}
 
-			char* tac_variable = op_dagnode->name;
-			char* op1_str = op_dagnode->left->name;
-			char* op2_str = op_dagnode->right->name;
-			TACInstruction* tac_increment = create_tac(type, tac_variable, op1_str, op2_str, NULL, NULL);
-			add_tac_to_table(tac_increment);
+			TACInstruction* op_dagnode_instruction = build_tac_from_expression_dag(ctx, op_dagnode);
+			TACInstruction* left_instruction = build_tac_from_expression_dag(ctx, node->left);
 
-			TACInstruction* tac_assignment = create_tac(TAC_ASSIGNMENT, node->left->name, NULL, tac_variable, NULL, NULL);
-			add_tac_to_table(tac_assignment);
-			free_dag_node(op_dagnode);
+			TACInstruction* tac_assignment = create_tac(ctx, TAC_ASSIGNMENT, left_instruction->result, NULL, op_dagnode_instruction->result, NULL);
+			add_tac_to_table(ctx, tac_assignment);
 			break;
 		}
 
 		case DAG_BREAK: {
-			TACContext* context_break = tac_context_lookup(TAC_FOR);
+			printf("\033[31mIN DAG_BREAK CASE\033[0m\n");
+			tac_t tac_target_types[2] = {TAC_FOR, TAC_WHILE};
+			size_t length = sizeof(tac_target_types) / sizeof(tac_target_types[0]);
+			TACContext* context_break = tac_context_lookup(tac_target_types, length);
 			if (!context_break) return;
 
-			TACInstruction* tac_break = create_tac(TAC_GOTO, context_break->end_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_break);
+			OperandValue retrieved_end_val = { .label_name = context_break->end_label };
+			Operand* end_op = create_operand(ctx, OP_LABEL, retrieved_end_val);
+			TACInstruction* tac_break = create_tac(ctx, TAC_GOTO, end_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_break);
+			printf("\033[31mLeaving DAG_BREAK CASE\033[0m\n");
 			break;
 		}
 
 		case DAG_CONTINUE: {
-			TACContext* context_continue = tac_context_lookup(TAC_FOR);
+			printf("\033[31mIN DAG_CONTINUE CASE\033[0m\n");
+			tac_t tac_target_types[2] = {TAC_FOR, TAC_WHILE};
+			size_t length = sizeof(tac_target_types) / sizeof(tac_target_types[0]);
+			TACContext* context_continue = tac_context_lookup(tac_target_types, length);
 			if (!context_continue) return;
-			TACInstruction* tac_continue = create_tac(TAC_GOTO, context_continue->update_label, NULL, NULL, NULL, NULL);
-			add_tac_to_table(tac_continue);
+
+			OperandValue retrieved_update_val = { .label_name = context_continue->update_label };
+			Operand* update_op = create_operand(ctx, OP_LABEL, retrieved_update_val);
+			TACInstruction* tac_continue = create_tac(ctx, TAC_GOTO, update_op, NULL, NULL, NULL);
+			add_tac_to_table(ctx, tac_continue);
+			printf("\033[31mLeaving DAG_CONTINUE CASE\033[0m\n");
 			break;
+
 		}
 
 		case DAG_BLOCK: {
 			DAGNode* stmt = node->right;
 			while (stmt) {
-				build_tac_from_statement_dag(stmt);
-				stmt = stmt->next;
+				DAGNode* next_stmt = stmt->next;
+				build_tac_from_statement_dag(ctx, stmt);
+				stmt = next_stmt;
 			}
 			break;
 		}
 	}
 }
 
-void build_tac_from_global_dag(DAGNode* node) {
+void build_tac_from_parameter_dag(CompilerContext* ctx, DAGNode* wrapped_param) {
+	if (!wrapped_param) return;
+
+	TACInstruction* result = NULL;
+	
+	DAGNode* current_wrapped_param = wrapped_param;
+	while (current_wrapped_param) {
+		DAGNode* next_wrapped_param = current_wrapped_param->next;
+
+		OperandValue parameter_val = { .label_name = tac_parameter_label(ctx) };
+		Operand* parameter_op = create_operand(ctx, OP_LABEL, parameter_val);
+
+		TACInstruction* param_instruction = build_tac_from_expression_dag(ctx, current_wrapped_param->right);
+		result = create_tac(ctx, TAC_PARAM, parameter_op, param_instruction->result, NULL, NULL);
+		add_tac_to_table(ctx, result);
+
+		current_wrapped_param = next_wrapped_param;
+	}
+}
+
+void build_tac_from_global_dag(CompilerContext* ctx, DAGNode* node) {
 	if (!node) return;
 
+	printf("In 'build_tac_from_global_dag' for dagnode with type %d\n", node->kind);
+
 	switch (node->kind) {
-		case NODE_NAME: {
-			if (node->type) {
-				if (node->type->kind == TYPE_FUNCTION) {
-					char* virtual_function_name = tac_function_name(node->value.name);
-					TACInstruction* tac_function = create_tac(TAC_NAME, virtual_function_name, NULL, NULL, NULL, node->symbol);
-					add_tac_to_table(tac_function);
+		case DAG_NAME: {
+			if (node->symbol) {
+				if (node->symbol->type) {
+					if (node->symbol->type->kind == TYPE_FUNCTION) {
+						printf("\033[31mBUILDING TACS FOR FUNCTION '%s'\033[0m\n", node->value.name);
+						OperandValue func_val = { .sym = node->symbol };
+						Operand* func_op = create_operand(ctx, OP_SYMBOL, func_val);
+						TACInstruction* tac_function = create_tac(ctx, TAC_NAME, func_op, NULL, NULL, NULL);
+						add_tac_to_table(ctx, tac_function);
 
-					build_tac_from_parameter_dag(node->type->params);
-					build_tac_from_statement_dag(node->right);
-
-				}
+						build_tac_from_parameter_dag(ctx, node->params);
+						build_tac_from_statement_dag(ctx, node->right);
+						printf("\033[31mFINISHED BUILDING TACS FOR FUNCTION '%s'\033[0m\n", node->value.name);
+					}
+				} 
 			}
+			break;
 		}
 	}
 }
 
-TACTable* build_tacs(DAGNode* node) {
+TACTable* build_tacs(CompilerContext* ctx, DAGNode* node) {
 	if (!node) return NULL;
 
-	init_tac_table();
-	init_tac_context_stack();
-
+	init_tac_table(ctx);
+	init_tac_context_stack(ctx);
+	printf("About to process dags and create tacs\n");
 	DAGNode* current = node;
 	while (current) {
 		DAGNode* next = current->next;
-		build_tac_from_global_dag(current);
+		printf("About to process dag with type %d\n", current->kind);
+		build_tac_from_global_dag(ctx, current);
 		current = next;
 	}
+
+	emit_tac_instructions();
+
 	return tac_table;
 }
 
-void free_tac_context(TACContext* context) {
-	if (!context) return;
-	if (context->next_label) free(context->next_label);
-	if (context->end_label) free(context->end_label);
-	if (context->update_label) free(context->update_label); 
-	free(context);
+char* get_tac_op(TACInstruction* tac) {
+	if (!tac) return NULL;
+
+	switch (tac->type) {
+		case TAC_ADD: return "+";
+		case TAC_SUB: return "-";
+		case TAC_MUL: return "*";
+		case TAC_DIV: return "/";
+		case TAC_LESS: return "<";
+		case TAC_GREATER: return ">";
+		case TAC_LESS_EQUAL: return "<=";
+		case TAC_GREATER_EQUAL: return ">=";
+		case TAC_EQUAL: return "==";
+		case TAC_NOT_EQUAL: return "!=";
+		case TAC_NOT: return "!";
+		case TAC_LOGICAL_AND: return "&&";
+		case TAC_LOGICAL_OR: return "||";
+		case TAC_MODULO: return "%";
+	}
 }
 
-void free_tac_context_stack() {
-	for (int i = 0; i < tac_context_stack.capacity; i++) {
-		free_tac_context(tac_context_stack.contexts[i]);
+void emit_tac_instructions() {
+	if (!tac_table || (tac_table && !tac_table->tacs)) return;
+	printf("we have tac table and tac table instructions\n");
+
+	for (int i = 0; i < tac_table->size; i++) {
+		TACInstruction* current = tac_table->tacs[i];
+		switch (current->type) {
+			case TAC_NAME: {
+				printf("\n%s\n", current->result->value.sym->name);
+				break;
+			}
+			case TAC_CHAR:
+			case TAC_BOOL:
+			case TAC_INTEGER: {
+				printf("\t%s = %d\n", current->result->value.label_name, current->op1->value.int_val);
+				break;
+			} 
+
+			case TAC_NOT: {
+				if (current->op1->kind == OP_LABEL) {
+					printf("\t%s = !%s\n", current->result->value.label_name, current->op1->value.label_name);
+				} else if (current->op1->kind == OP_SYMBOL) {
+					printf("\t%s = !%s\n", current->result->value.label_name, current->op1->value.sym->name);
+				}
+			}
+
+			case TAC_ASSIGNMENT: {
+				if (current->result && current->op2) {
+					if (current->result->kind == OP_SYMBOL && current->op2->kind == OP_SYMBOL) {
+						printf("\t%s = %s\n", current->result->value.sym->name, current->op2->value.sym->name);
+					
+					} else if (current->result->kind == OP_SYMBOL && current->op2->kind == OP_LABEL) {
+						printf("\t%s = %s\n", current->result->value.sym->name, current->op2->value.label_name);
+					
+					} else if (current->result->kind == OP_LABEL && current->op2->kind == OP_LABEL) {
+						printf("\t%s = %s\n", current->result->value.label_name, current->op2->value.label_name);
+					
+					} else {
+						printf("\t%s = %d\n", current->result->value.sym->name, current->op2->value.int_val);
+					}					
+				}
+				break;
+			}
+
+			case TAC_IF_FALSE: {
+				if (current->result->kind == OP_SYMBOL && current->op1->kind == OP_LABEL) {
+					printf("\tIF_FALSE %s GOTO %s\n",current->result->value.sym->name, current->op1->value.label_name);
+				} else {
+					printf("\tIF_FALSE %s GOTO %s\n", current->result->value.label_name, current->op1->value.label_name);
+				}
+				break;
+			}
+
+			case TAC_STORE: {
+				if (current->op1->kind == OP_INT_LITERAL) {
+					printf("\t*%s = %d\n", current->result->value.label_name, current->op1->value.int_val);
+				} else if (current->op1->kind == OP_LABEL) {
+					printf("\t*%s = %s\n", current->result->value.label_name, current->op1->value.label_name);
+				}
+				break;
+			}
+
+			case TAC_DEREFERENCE: {
+				printf("\t%s = *%s\n", current->result->value.label_name, current->op1->value.label_name);
+				break;
+			}
+			
+			case TAC_ADD_EQUAL:
+			case TAC_SUB_EQUAL:
+			case TAC_DIV_EQUAL:
+			case TAC_MUL_EQUAL:
+			case TAC_EQUAL:
+			case TAC_NOT_EQUAL:
+			case TAC_MODULO:
+			case TAC_LESS:
+			case TAC_GREATER:
+			case TAC_GREATER_EQUAL:
+			case TAC_LESS_EQUAL:
+			case TAC_LOGICAL_OR:
+			case TAC_LOGICAL_AND:
+			case TAC_ADD:
+			case TAC_SUB:
+			case TAC_MUL:
+			case TAC_DIV: {
+				char* op = get_tac_op(current);
+				if (current->op1->kind == OP_SYMBOL && current->op2->kind == OP_SYMBOL) {
+					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.sym->name, op, current->op2->value.sym->name);
+				
+				} else if (current->op1->kind == OP_SYMBOL && current->op2->kind == OP_LABEL) {
+					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.sym->name, op, current->op2->value.label_name);
+				
+				} else if (current->op2->kind == OP_SYMBOL && current->op1->kind == OP_LABEL) {
+					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.label_name, op, current->op2->value.sym->name);	
+				
+				} else if (current->op1->kind == OP_LABEL && current->op2->kind == OP_LABEL) {
+					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.label_name, op, current->op2->value.label_name);
+				} else if (current->op1->kind == OP_INT_LITERAL && current->op2->kind == OP_LABEL) {
+					printf("\t%s = %d %s %s\n", current->result->value.label_name, current->op1->value.int_val, op, current->op2->value.label_name);
+				} 
+				break;
+			}
+
+			case TAC_LABEL: {
+				printf("\t%s\n", current->result->value.label_name);
+				break;
+			}
+
+			case TAC_GOTO: {
+				printf("\tGOTO %s\n", current->result->value.label_name);
+				break;
+			}
+			case TAC_PARAM: {
+				printf("\tPARAM, %s, %s\n", current->result->value.label_name, current->op1->value.sym->name);
+				break;
+			}
+			case TAC_ARG: {
+				if (current->result->kind == OP_LABEL && current->op1->kind == OP_LABEL) {
+					printf("\tARG, %s, %s\n", current->result->value.label_name, current->op1->value.label_name);
+				
+				} else if (current->result->kind == OP_LABEL && current->op1->kind == OP_SYMBOL) {
+					printf("\tARG %s, %s\n", current->result->value.label_name, current->op1->value.sym->name);
+				}
+				break;
+			}
+
+			case TAC_CALL: {
+				if (current->result->kind == OP_LABEL) {
+					printf("\tCALL %s\n", current->result->value.label_name);
+				} else if (current->result->kind == OP_SYMBOL) {
+					printf("\tCALL %s\n", current->result->value.sym->name);
+				}
+				break;
+			}
+
+			case TAC_RETURN: {
+				if (current->result->kind == OP_SYMBOL) {
+					printf("\tRETURN %s\n", current->result->value.sym->name);
+				} else if (current->result->kind == OP_LABEL) {	
+					printf("\tRETURN %s\n", current->result->value.label_name);
+				} else if (current->result->kind == OP_INT_LITERAL) {
+					printf("\tRETURN %d\n", current->result->value.int_val);
+				} else {
+					printf("\tRETURN\n");
+				}
+				break;
+			}
+		}
 	}
-	free(tac_context_stack.contexts);
-}
-
-void free_tac_instruction(TACInstruction* tac) {
-	if (!tac || (tac && tac->freed)) return;	
-	
-	if (tac->name) {
-		free(tac->name);
-		tac->name = NULL;
-	}
-
-	if (tac->op1) {
-		free(tac->op1);
-		tac->op1 = NULL;
-	}
-	
-	if (tac->op2) {
-		free(tac->op2);
-		tac->op2 = NULL;
-	}
-
-	if (tac->op3) {
-		free(tac->op3);
-		tac->op3 = NULL;
-	}
-
-	if (tac->symbol) { free_symbol(tac->symbol); }
-	tac->freed = true;
-	free(tac);
-}
-
-void free_tac_table(TACTable* tac_table) {
-	if (!tac_table) return;
-
-	free_tac_context_stack();
-
-	for (int i = 0; i < tac_table->capacity; i++) {
-		free_tac_instruction(tac_table->tacs[i]);
-	}
-	free(tac_table->tacs);
-	free(tac_table);
 }

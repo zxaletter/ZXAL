@@ -1,5 +1,4 @@
 #include "lexer.h"
-#include "memallocator.h"
 
 char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
@@ -8,8 +7,9 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"switch", "case", "true", "false"};
 
 
-Lexer* initialize_lexer(FileInfo* info) {
-	Lexer* lexer = malloc(sizeof(Lexer));
+Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {
+	// Lexer* lexer = malloc(sizeof(Lexer));
+	Lexer* lexer = arena_allocate(ctx->lexer_arena, sizeof(Lexer));
 	if (!lexer) {
 		fprintf(stderr, "Error: Failed to allocate space for lexer\n");
 		return NULL;
@@ -21,10 +21,11 @@ Lexer* initialize_lexer(FileInfo* info) {
 	lexer->column = 1;
 	lexer->capacity = INITIAL_TOKEN_CAPACITY;
 	lexer->tokenIdx = 0;
-	lexer->tokens = malloc(sizeof(Token) * lexer->capacity);
+	// lexer->tokens = malloc(sizeof(Token) * lexer->capacity);
+	lexer->tokens = arena_allocate(ctx->lexer_arena, sizeof(Token) * lexer->capacity);
 	if (!lexer->tokens) {
 		printf("Error: Unable to allocate space for tokens\n");
-		free(lexer);
+		// free(lexer);
 		return NULL;
 	}
 	lexer->info = info;
@@ -127,32 +128,52 @@ Token create_int_token(token_t type, int val, int line, int column) {
 	return token;
 }
 
-Token create_string_token(token_t type, char* str, int line, int column) {
+Token create_string_token(CompilerContext* ctx, token_t type, char* str, int line, int column) {
 	Token token = create_token(type, line, column);
-	token.value.str = strdup(str);
+	// token.value.str = strdup(str);
+	token.value.str = arena_allocate(ctx->lexer_arena, strlen(str) + 1);
+	if (!token.value.str) {
+		TokenValue error_val = {
+			.str = NULL
+		};
+
+		Token error_token = {
+			.type = TOKEN_UNKNOWN,
+			.value = error_val,
+			.line = -1,
+			.column = -1,
+		};
+		return error_token;
+	}
+	strcpy(token.value.str, str);
 	return token;
 }
 
-void add_token(Lexer* lexer, Token token) {
+void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 	if (lexer->tokenIdx >= lexer->capacity) {
+		size_t prev_capacity = lexer->capacity * sizeof(Token); 
 		lexer->capacity *= 2;
-		lexer->tokens = realloc(lexer->tokens, lexer->capacity * sizeof(Token));
-		if (!lexer->tokens) {
+		size_t new_capacity = lexer->capacity * sizeof(Token);
+		// lexer->tokens = realloc(lexer->tokens, lexer->capacity * sizeof(Token));
+		void* new_tokens = arena_reallocate(ctx->lexer_arena, lexer->tokens, prev_capacity, new_capacity);
+		if (!new_tokens) {
 			printf("Error: Unable to reallocate 'lexer->tokens' in 'add_token'\n");
 			return;
 		}
+		lexer->tokens = new_tokens;
 	}
 
 	lexer->tokens[lexer->tokenIdx++] = token;
 }
 
-void get_identifier(Lexer* lexer) {
+void get_identifier(CompilerContext* ctx, Lexer* lexer) {
 	while (isalnum(peek_lexer(lexer)) || peek_lexer(lexer) == '_') {
 		advance_lexer(lexer);
 	}
 
 	int length = lexer->end - lexer->start;
-	char* identifier = malloc(length + 1);
+	// char* identifier = malloc(length + 1);
+	char* identifier = arena_allocate(ctx->lexer_arena, length + 1);
 	if (!identifier) return;
 
 	strncpy(identifier, lexer->start, length);
@@ -161,15 +182,15 @@ void get_identifier(Lexer* lexer) {
 	keyword_t key_t = get_keyword_t(identifier);
 	if (key_t != KEYWORD_UNKNOWN) {
 		token_t tok_t = key_t_to_token_t(key_t);
-		add_token(lexer, create_string_token(tok_t, identifier, lexer->line, lexer->column));
+		add_token(ctx, lexer, create_string_token(ctx, tok_t, identifier, lexer->line, lexer->column));
 	} else {
-		add_token(lexer, create_string_token(TOKEN_ID, identifier, lexer->line, lexer->column));
+		add_token(ctx, lexer, create_string_token(ctx, TOKEN_ID, identifier, lexer->line, lexer->column));
 	}
 
-	free(identifier);
+	// free(identifier);
 }	
 
-void get_number(Lexer* lexer) {
+void get_number(CompilerContext* ctx, Lexer* lexer) {
 	bool isNegative = false;
 	if (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer))) {
 		isNegative = true;
@@ -181,7 +202,8 @@ void get_number(Lexer* lexer) {
 	}
 
 	int length = lexer->end - lexer->start;
-	char* text = malloc(length + 1);
+	// char* text = malloc(length + 1);
+	char* text = arena_allocate(ctx->lexer_arena, length + 1);
 	if (!text) return;
 
 	strncpy(text, lexer->start, length);
@@ -192,11 +214,11 @@ void get_number(Lexer* lexer) {
 		number = -number;
 	}
 
-	add_token(lexer, create_int_token(TOKEN_INTEGER, number, lexer->line, lexer->column));
-	free(text);
+	add_token(ctx, lexer, create_int_token(TOKEN_INTEGER, number, lexer->line, lexer->column));
+	// free(text);
 }
 
-void get_delimeters(Lexer* lexer) {
+void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 	char c = advance_lexer(lexer);
 	token_t type = TOKEN_UNKNOWN;
 
@@ -211,7 +233,7 @@ void get_delimeters(Lexer* lexer) {
 		case ':': type = TOKEN_COLON; break;
 		case ',': type = TOKEN_COMMA; break;
 		case '\'': {
-			add_token(lexer, create_char_token(TOKEN_CHAR_LITERAL, peek_lexer(lexer), lexer->line, lexer->column));
+			add_token(ctx, lexer, create_char_token(TOKEN_CHAR_LITERAL, peek_lexer(lexer), lexer->line, lexer->column));
 			advance_lexer(lexer);
 			if (peek_lexer(lexer) != '\'') {
 				printf("Expected matching token '\''.\n");
@@ -222,7 +244,7 @@ void get_delimeters(Lexer* lexer) {
 		}
 	}
 
-	add_token(lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
+	add_token(ctx, lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
 }
 
 bool match(Lexer* lexer, char expected) {
@@ -231,7 +253,7 @@ bool match(Lexer* lexer, char expected) {
 	return true;
 }
 
-void get_operator(Lexer* lexer) {
+void get_operator(CompilerContext* ctx, Lexer* lexer) {
 	char c = advance_lexer(lexer);
 	bool isCompoundOp = false;
 	token_t type = TOKEN_UNKNOWN;
@@ -355,14 +377,15 @@ void get_operator(Lexer* lexer) {
 
 	if (isCompoundOp) {
 		char str_opr[3] = {c, *(lexer->end - 1), '\0'};
-		add_token(lexer, create_string_token(type, str_opr, lexer->line, lexer->column - 2));
+		add_token(ctx, lexer, create_string_token(ctx, type, str_opr, lexer->line, lexer->column - 2));
 	} else {
-		add_token(lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
+		add_token(ctx, lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
 	}
 }
 
-FileInfo* create_info(char* filename, int line_count, char* contents) {
-	FileInfo* info = malloc(sizeof(FileInfo));
+FileInfo* create_info(CompilerContext* ctx, char* filename, int line_count, char* contents) {
+	// FileInfo* info = malloc(sizeof(FileInfo));
+	FileInfo* info = arena_allocate(ctx->lexer_arena, sizeof(FileInfo));
 	if (!info) {
 		perror("Failed to create file info\n");
 		return NULL;
@@ -376,7 +399,7 @@ FileInfo* create_info(char* filename, int line_count, char* contents) {
 	return info;
 }
 
-FileInfo* retrieve_file_contents(char* filename) {
+FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 	FILE* file = fopen(filename, "r");
 	if (!file) {
 		printf("Could not open file\n");
@@ -390,7 +413,8 @@ FileInfo* retrieve_file_contents(char* filename) {
 	
 	fsetpos(file, &position);
 
-	char* buffer = malloc(file_size + 1);
+	// char* buffer = malloc(file_size + 1);
+	char* buffer = arena_allocate(ctx->lexer_arena, file_size + 1);
 	if (!buffer) {
 		printf("Could not allocate buffer\n");
 		fclose(file);
@@ -413,19 +437,20 @@ FileInfo* retrieve_file_contents(char* filename) {
 	}
 	fsetpos(file, &position);
 
-	FileInfo* info = create_info(filename, line_count, buffer);
+	FileInfo* info = create_info(ctx, filename, line_count, buffer);
 	if (!info) {
-		free(buffer);
+		// free(buffer);
 		fclose(file);
 		return NULL;
 	}
 
 	if (line_count > 0) {
-		info->lines = malloc(sizeof(char*) * line_count);
+		// info->lines = malloc(sizeof(char*) * line_count);
+		info->lines = arena_allocate(ctx->lexer_arena, sizeof(char*) * line_count);
 		if (!info->lines) {
 			perror("Failed to allocate space for info->lines\n");
-			free(buffer);
-			free(info);
+			// free(buffer);
+			// free(info);
 			fclose(file);
 			return NULL;
 		}
@@ -439,14 +464,15 @@ FileInfo* retrieve_file_contents(char* filename) {
 		if (buffer[i] == '\n') {
 			if (current_line_index < line_count) {
 				int length = &buffer[i] - line_start;
-				info->lines[current_line_index] = malloc(length + 1);
+				// info->lines[current_line_index] = malloc(length + 1);
+				info->lines[current_line_index] = arena_allocate(ctx->lexer_arena, length + 1);
 				if (!info->lines[current_line_index]) {
-					for (int j = 0; j < current_line_index; j++) {
-						free(info->lines[j]);
-					}
-					free(info->lines);
-					free(info->contents);
-					free(info);
+					// for (int j = 0; j < current_line_index; j++) {
+						// free(info->lines[j]);
+					// }
+					// free(info->lines);
+					// free(info->contents);
+					// free(info);
 					fclose(file);
 					return NULL;
 				}
@@ -462,15 +488,16 @@ FileInfo* retrieve_file_contents(char* filename) {
 
 	if (line_start < (buffer + file_size) && current_line_index < line_count) {
 		long line_length = (buffer + file_size) - line_start;
-		info->lines[current_line_index] = malloc(line_length + 1);
+		// info->lines[current_line_index] = malloc(line_length + 1);
+		info->lines[current_line_index] = arena_allocate(ctx->lexer_arena, line_length + 1);
 		if (!info->lines[current_line_index]) {
 			perror("Failed to allocate memory for the last line\n");
-			for (int j = 0; j < current_line_index; j++) {
-				free(info->lines[j]);
-			}
-			free(info->lines);
-			free(info->contents);
-			free(info);
+			// for (int j = 0; j < current_line_index; j++) {
+			// 	free(info->lines[j]);
+			// }
+			// free(info->lines);
+			// free(info->contents);
+			// free(info);
 			fclose(file);
 			return NULL;
 		}
@@ -483,10 +510,10 @@ FileInfo* retrieve_file_contents(char* filename) {
 	return info;
 }
 
-Lexer* lex(char* filename) {
-	FileInfo* info = retrieve_file_contents(filename);
+Lexer* lex(CompilerContext* ctx, char* filename) {
+	FileInfo* info = retrieve_file_contents(ctx, filename);
 
-	Lexer* lexer = initialize_lexer(info);
+	Lexer* lexer = initialize_lexer(ctx, info);
 	if (!lexer) return NULL;
 
 	while (!lexer_at_end(lexer)) {
@@ -497,126 +524,126 @@ Lexer* lex(char* filename) {
 		lexer->start = lexer->end;
 
 		if (isalpha(peek_lexer(lexer))) {
-			get_identifier(lexer);
+			get_identifier(ctx, lexer);
 		} else if (isdigit(peek_lexer(lexer)) || (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer)))) {
-			get_number(lexer);
+			get_number(ctx, lexer);
 		} else if (strchr("=+-*/<!&>|%", peek_lexer(lexer))) {
-			get_operator(lexer);
+			get_operator(ctx, lexer);
 		} else if (strchr("':()[]{},\";", peek_lexer(lexer))) {
-			get_delimeters(lexer);
+			get_delimeters(ctx, lexer);
 		} else {
 			advance_lexer(lexer);
 		}
 
 	}
 
-	add_token(lexer, create_token(TOKEN_EOF, lexer->line, lexer->column));
+	add_token(ctx, lexer, create_token(TOKEN_EOF, lexer->line, lexer->column));
 	return lexer;
 }
 
-void free_file_info(FileInfo* info) {
-	if (info->contents) {
-		free(info->contents);
-	}
+// void free_file_info(FileInfo* info) {
+// 	if (info->contents) {
+// 		free(info->contents);
+// 	}
 
-	if (info->lines) {
-		for (int i = 0; i < info->line_count; i++) {
-			free(info->lines[i]);
-		}
-		free(info->lines);
-	}
+// 	if (info->lines) {
+// 		for (int i = 0; i < info->line_count; i++) {
+// 			free(info->lines[i]);
+// 		}
+// 		free(info->lines);
+// 	}
 
-	free(info);
-}
+// 	free(info);
+// }
 
-void free_token(Token* token) {
-	if (!token) return;
+// void free_token(Token* token) {
+// 	if (!token) return;
 
-	if (token->type == TOKEN_ARROW || 
-		token->type == TOKEN_ADD_EQUAL ||
-		token->type == TOKEN_SUB_EQUAL ||
-		token->type == TOKEN_DIV_EQUAL ||
-		token->type == TOKEN_MUL_EQUAL ||
-		token->type == TOKEN_LESS_EQUAL ||
-		token->type == TOKEN_GREATER_EQUAL ||
-		token->type == TOKEN_NOT_EQUAL ||
-		token->type == TOKEN_EQUAL ||
-		token->type == TOKEN_INCREMENT ||
-		token->type == TOKEN_DECREMENT ||
-		token->type == TOKEN_INT_KEYWORD ||
-		token->type == TOKEN_CHAR_KEYWORD ||
-		token->type == TOKEN_BOOL_KEYWORD ||
-		token->type == TOKEN_VOID_KEYWORD ||
-		token->type == TOKEN_STRUCT_KEYWORD ||
-		token->type == TOKEN_ENUM_KEYWORD ||
-		token->type == TOKEN_FOR_KEYWORD ||
-		token->type == TOKEN_WHILE_KEYWORD ||
-		token->type == TOKEN_CONTINUE_KEYWORD ||
-		token->type == TOKEN_BREAK_KEYWORD ||
-		token->type == TOKEN_FUNCTION_KEYWORD ||
-		token->type == TOKEN_RETURN_KEYWORD ||
-		token->type == TOKEN_SWITCH_KEYWORD ||
-		token->type == TOKEN_CASE_KEYWORD ||
-		token->type == TOKEN_TRUE_KEYWORD ||
-		token->type == TOKEN_FALSE_KEYWORD ||
-		token->type == TOKEN_LET_KEYWORD ||
-		token->type == TOKEN_ID ||
-		token->type == TOKEN_LOGICAL_OR ||
-		token->type == TOKEN_LOGICAL_AND 
-	) {
-		free(token->value.str);
-	}
+// 	if (token->type == TOKEN_ARROW || 
+// 		token->type == TOKEN_ADD_EQUAL ||
+// 		token->type == TOKEN_SUB_EQUAL ||
+// 		token->type == TOKEN_DIV_EQUAL ||
+// 		token->type == TOKEN_MUL_EQUAL ||
+// 		token->type == TOKEN_LESS_EQUAL ||
+// 		token->type == TOKEN_GREATER_EQUAL ||
+// 		token->type == TOKEN_NOT_EQUAL ||
+// 		token->type == TOKEN_EQUAL ||
+// 		token->type == TOKEN_INCREMENT ||
+// 		token->type == TOKEN_DECREMENT ||
+// 		token->type == TOKEN_INT_KEYWORD ||
+// 		token->type == TOKEN_CHAR_KEYWORD ||
+// 		token->type == TOKEN_BOOL_KEYWORD ||
+// 		token->type == TOKEN_VOID_KEYWORD ||
+// 		token->type == TOKEN_STRUCT_KEYWORD ||
+// 		token->type == TOKEN_ENUM_KEYWORD ||
+// 		token->type == TOKEN_FOR_KEYWORD ||
+// 		token->type == TOKEN_WHILE_KEYWORD ||
+// 		token->type == TOKEN_CONTINUE_KEYWORD ||
+// 		token->type == TOKEN_BREAK_KEYWORD ||
+// 		token->type == TOKEN_FUNCTION_KEYWORD ||
+// 		token->type == TOKEN_RETURN_KEYWORD ||
+// 		token->type == TOKEN_SWITCH_KEYWORD ||
+// 		token->type == TOKEN_CASE_KEYWORD ||
+// 		token->type == TOKEN_TRUE_KEYWORD ||
+// 		token->type == TOKEN_FALSE_KEYWORD ||
+// 		token->type == TOKEN_LET_KEYWORD ||
+// 		token->type == TOKEN_ID ||
+// 		token->type == TOKEN_LOGICAL_OR ||
+// 		token->type == TOKEN_LOGICAL_AND 
+// 	) {
+// 		free(token->value.str);
+// 	}
 
-}
-void free_duplicate_token(Token* token) {
-	if (!token) return;
+// }
+// void free_duplicate_token(Token* token) {
+// 	if (!token) return;
 
-	if (token->type == TOKEN_ARROW || 
-		token->type == TOKEN_ADD_EQUAL ||
-		token->type == TOKEN_SUB_EQUAL ||
-		token->type == TOKEN_DIV_EQUAL ||
-		token->type == TOKEN_MUL_EQUAL ||
-		token->type == TOKEN_LESS_EQUAL ||
-		token->type == TOKEN_GREATER_EQUAL ||
-		token->type == TOKEN_NOT_EQUAL ||
-		token->type == TOKEN_EQUAL ||
-		token->type == TOKEN_INCREMENT ||
-		token->type == TOKEN_DECREMENT ||
-		token->type == TOKEN_INT_KEYWORD ||
-		token->type == TOKEN_CHAR_KEYWORD ||
-		token->type == TOKEN_BOOL_KEYWORD ||
-		token->type == TOKEN_VOID_KEYWORD ||
-		token->type == TOKEN_STRUCT_KEYWORD ||
-		token->type == TOKEN_ENUM_KEYWORD ||
-		token->type == TOKEN_FOR_KEYWORD ||
-		token->type == TOKEN_WHILE_KEYWORD ||
-		token->type == TOKEN_CONTINUE_KEYWORD ||
-		token->type == TOKEN_BREAK_KEYWORD ||
-		token->type == TOKEN_FUNCTION_KEYWORD ||
-		token->type == TOKEN_RETURN_KEYWORD ||
-		token->type == TOKEN_SWITCH_KEYWORD ||
-		token->type == TOKEN_CASE_KEYWORD ||
-		token->type == TOKEN_TRUE_KEYWORD ||
-		token->type == TOKEN_FALSE_KEYWORD ||
-		token->type == TOKEN_LET_KEYWORD ||
-		token->type == TOKEN_ID ||
-		token->type == TOKEN_LOGICAL_OR ||
-		token->type == TOKEN_LOGICAL_AND 
-	) {
-		free(token->value.str);
-	}
+// 	if (token->type == TOKEN_ARROW || 
+// 		token->type == TOKEN_ADD_EQUAL ||
+// 		token->type == TOKEN_SUB_EQUAL ||
+// 		token->type == TOKEN_DIV_EQUAL ||
+// 		token->type == TOKEN_MUL_EQUAL ||
+// 		token->type == TOKEN_LESS_EQUAL ||
+// 		token->type == TOKEN_GREATER_EQUAL ||
+// 		token->type == TOKEN_NOT_EQUAL ||
+// 		token->type == TOKEN_EQUAL ||
+// 		token->type == TOKEN_INCREMENT ||
+// 		token->type == TOKEN_DECREMENT ||
+// 		token->type == TOKEN_INT_KEYWORD ||
+// 		token->type == TOKEN_CHAR_KEYWORD ||
+// 		token->type == TOKEN_BOOL_KEYWORD ||
+// 		token->type == TOKEN_VOID_KEYWORD ||
+// 		token->type == TOKEN_STRUCT_KEYWORD ||
+// 		token->type == TOKEN_ENUM_KEYWORD ||
+// 		token->type == TOKEN_FOR_KEYWORD ||
+// 		token->type == TOKEN_WHILE_KEYWORD ||
+// 		token->type == TOKEN_CONTINUE_KEYWORD ||
+// 		token->type == TOKEN_BREAK_KEYWORD ||
+// 		token->type == TOKEN_FUNCTION_KEYWORD ||
+// 		token->type == TOKEN_RETURN_KEYWORD ||
+// 		token->type == TOKEN_SWITCH_KEYWORD ||
+// 		token->type == TOKEN_CASE_KEYWORD ||
+// 		token->type == TOKEN_TRUE_KEYWORD ||
+// 		token->type == TOKEN_FALSE_KEYWORD ||
+// 		token->type == TOKEN_LET_KEYWORD ||
+// 		token->type == TOKEN_ID ||
+// 		token->type == TOKEN_LOGICAL_OR ||
+// 		token->type == TOKEN_LOGICAL_AND 
+// 	) {
+// 		free(token->value.str);
+// 	}
 
-	free(token);
-}
-void free_lexer(Lexer* lexer) {
-	for (int i = 0; lexer->tokens[i].type != TOKEN_EOF; i++) {
-		free_token(&lexer->tokens[i]);
-	}
+// 	free(token);
+// }
+// void free_lexer(Lexer* lexer) {
+// 	for (int i = 0; lexer->tokens[i].type != TOKEN_EOF; i++) {
+// 		free_token(&lexer->tokens[i]);
+// 	}
 
-	free_file_info(lexer->info);
-	free(lexer->tokens);
-	free(lexer);
-}
+// 	free_file_info(lexer->info);
+// 	free(lexer->tokens);
+// 	free(lexer);
+// }
 
 void print_tokens(Token* tokens) {
 	if (!tokens) return;

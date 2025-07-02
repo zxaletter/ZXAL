@@ -5,6 +5,7 @@
 #define CONTEXT_CAPACITY 10
 
 #include "Lexer/lexer.h"
+#include "compilercontext.h"
 
 typedef enum {
 	EXPECTED_LEFT_PARENTHESES,
@@ -68,20 +69,20 @@ typedef struct ContextStack {
 
 bool is_context_stack_empty();
 bool context_lookup(context_t context);
-void push_context(context_t context);
+void push_context(CompilerContext* ctx, context_t context);
 void pop_context();
-void init_context();
-ContextStack* create_context();
+// void init_context();
+ContextStack* create_context(CompilerContext* ctx);
 void free_context_stack();
 
-void log_error(Token* tok, FileInfo* info, error_t error);
-void init_error_table();
-void add_error_to_error_table(Error* err);
-void create_error(error_t type, char* message, Token* token, FileInfo* info);
-void display_error(Error* error);
-void emit_errors();
+void log_error(CompilerContext* ctx, Token* tok, FileInfo* info, error_t error);
+void init_error_table(CompilerContext* ctx);
+void add_error_to_error_table(CompilerContext* ctx, Error* err);
+void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info);
+void display_error(CompilerContext* ctx, Error* error);
+void emit_errors(CompilerContext* ctx);
 
-ErrorTable create_error_table();
+ErrorTable create_error_table(CompilerContext* ctx);
 void free_error(Error* error);
 void free_error_table();
 

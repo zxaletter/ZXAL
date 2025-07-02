@@ -1,24 +1,35 @@
 #include "auxiliaries.h"
 #include "symbols.h"
-#include "memallocator.h"
+#include "bumpallocator.h"
 
-Node* params_copy(Node* params) {
+Node* params_copy(CompilerContext* ctx, Node* params) {
 	if (!params) return NULL;
-
+	printf("here in param copy\n");
 	Node* head = NULL;
 	Node* current = NULL;
-	Node* duplicate_param = NULL;
-	Node* duplicate_wrapped_param = NULL;
 	Node* current_wrapped_param = params;
-
+	printf("Further down in params copy\n");
 	while (current_wrapped_param) {
+		printf("in params copy loop\n");
 		Node* next_current_wrapped_param = current_wrapped_param->next;
-		
-		char* identifier = current_wrapped_param->right->value.name ? current_wrapped_param->right->value.name : NULL;
+		printf("now im here\n");
+		char* identifier = current_wrapped_param->right->value.name;
+		printf("Got '%s' in params copy\n", identifier);
 		struct type* type = current_wrapped_param->right->t;
-		duplicate_param = create_string_node(NODE_NAME, identifier, NULL, NULL, NULL, NULL, type);
-		duplicate_wrapped_param = create_node(NODE_PARAM, NULL, duplicate_param, NULL, NULL, NULL);
+		printf("here in params_copy\n");
+		Node* duplicate_param = create_string_node(ctx, NODE_NAME, identifier, NULL, NULL, NULL, NULL, type);
+		if (duplicate_param) { 
+			printf("Successfully created duplicate param\n");
+		} else {
+			printf("Received NULL duplicate param\n");
+		}
 
+		Node* duplicate_wrapped_param = create_node(ctx, NODE_PARAM, NULL, duplicate_param, NULL, NULL, NULL);
+		if (duplicate_wrapped_param) {
+			printf("Successfully created duplicate wrapped param\n");
+		} else {
+			printf("Received NULL duplicate wrapped param\n");
+		}
 		if (duplicate_wrapped_param) {
 			if (!head) {
 				head = duplicate_wrapped_param;
@@ -34,7 +45,7 @@ Node* params_copy(Node* params) {
 		}
 		current_wrapped_param = next_current_wrapped_param;
 	}
-
+	printf("About to return params\n");
 	return head;
 }
 
@@ -74,9 +85,9 @@ bool type_equals(struct type* a, struct type* b) {
 	return false;
 }
 
-struct type* type_create(Arena* arena, data_t kind, struct type* subtype, Node* params) {
+struct type* type_create(CompilerContext* ctx, data_t kind, struct type* subtype, Node* params) {
 	// struct type* type = malloc(sizeof(struct type));
-	struct type* type = arena_allocate(arena, sizeof(struct type));
+	struct type* type = arena_allocate(ctx->type_arena, sizeof(struct type));
 	if (!type) {
 		perror("Unable to allocate space for type\n");
 		return NULL;
@@ -84,86 +95,91 @@ struct type* type_create(Arena* arena, data_t kind, struct type* subtype, Node* 
 
 	type->kind = kind;
 	type->type_free = false;
-	type->subtype = NULL;
-	type->params = NULL;
+	type->subtype = subtype;
+	type->params = params;
+	type->is_a_copy = false;
 
-	if (subtype) {
-		type->subtype = type_copy(subtype);
-		if (!type->subtype) {
-			perror("Unable to copy subtype\n");
-			// free(type);
-			return NULL;
-		}
-	}
+	// if (subtype) {
+		// type->subtype = subtype;
+		// if (!type->subtype) {
+		// 	perror("Unable to copy subtype\n");
+		// 	// free(type);
+		// 	return NULL;
+		// }
+	// }
 
-	if (params) {
-		type->params = params_copy(params);
-		if (!type->params) {
-			// if (type->subtype) free_type(type->subtype);
-			// free(type);
-			return NULL;
-		}
-	}
+	// if (params) {
+	// 	type->params = params_copy(ctx, params);
+	// 	if (!type->params) {
+	// 		// if (type->subtype) free_type(type->subtype);
+	// 		// free(type);
+	// 		return NULL;
+	// 	}
+	// }
 
 	return type;
 }
 
-struct type* type_copy(Arena* arena, struct type* original_type) {
+struct type* type_copy(CompilerContext* ctx, struct type* original_type) {
 	if (!original_type) return NULL;
-
+	printf("Here in type_copy\n");
 	// struct type* duplicate_type = malloc(sizeof(struct type));
-	struct type* duplicate_type = arena_allocate(arena, sizeof(struct type));
+	if (original_type->is_a_copy) {
+		return original_type;
+	}
+
+	struct type* duplicate_type = arena_allocate(ctx->type_arena, sizeof(struct type));
 	if (!duplicate_type) {
 		perror("In 'type_copy', unable to allocate space for type\n");
 		return NULL;
 	}
 
+	duplicate_type->is_a_copy = true;
 	duplicate_type->kind = original_type->kind;
 	duplicate_type->type_free = false;
 	duplicate_type->subtype = NULL;
-	duplicate_type->params = NULL;
+	duplicate_type->params = original_type->params;
 
 	if (original_type->subtype) {
-		duplicate_type->subtype = type_copy(original_type->subtype);
+		duplicate_type->subtype = type_copy(ctx, original_type->subtype);
 		if (!duplicate_type->subtype) {
 			// free(duplicate_type);
 			return NULL;
 		}
 	}
 
-	if (original_type->params) {
-		duplicate_type->params = params_copy(original_type->params);
-		if (!duplicate_type->params) {
-			// if (duplicate_type->subtype) free_type(duplicate_type->subtype);
-			// free(duplicate_type);
-			return NULL;
-		}
-	}
-
+	// if (original_type->params) {
+	// 	duplicate_type->params = params_copy(ctx, original_type->params);
+	// 	if (!duplicate_type->params) {
+	// 		// if (duplicate_type->subtype) free_type(duplicate_type->subtype);
+	// 		// free(duplicate_type);
+	// 		return NULL;
+	// 	}
+	// }
+	// printf("bout to return type with kind %d\n", duplicate_type->kind);
 	return duplicate_type;
 }
 
-struct type* typecheck_expression(Arena* arena,Node* node) {
+struct type* typecheck_expression(CompilerContext* ctx, Node* node) {
 	if (!node) return;
 
-	printf("In typecheck expression\n");
 	struct type* lt = NULL;
 	struct type* rt = NULL;
 	struct type* result = NULL;
 
 	switch (node->type) {
 		case NODE_BOOL: {
-			result = type_create(arena, TYPE_BOOL, NULL, NULL);
+			result = type_create(ctx, TYPE_BOOL, NULL, NULL);
 			break;
 		}
 
 		case NODE_CHAR: {
-			result = type_create(arena, TYPE_CHAR, NULL, NULL);
+			result = type_create(ctx, TYPE_CHAR, NULL, NULL);
 			break;
 		}
 
 		case NODE_INTEGER: {
-			result = type_create(arena, TYPE_INTEGER, NULL, NULL);
+			result = type_create(ctx, TYPE_INTEGER, NULL, NULL);
 			break;
 		}
 
@@ -176,62 +192,76 @@ struct type* typecheck_expression(Arena* arena,Node* node) {
 			printf("NODE HAS TYPE %d\n", node->type);
 			printf("LEFT NODE HAS TYPE %d\n", node->left->type);
 			printf("RIGHT NODE HAS TYPE %d\n", node->right->type);
-			lt = typecheck_expression(node->left);
-			rt = typecheck_expression(node->right);
-			if (!lt) {printf("left type is NULL\n");}
-			if (!rt) { printf("right type is NULL\n");}
-			if (!lt || !rt || lt->kind != TYPE_INTEGER || rt->kind != TYPE_INTEGER) {
-				printf("Comparison requires integer types\n");
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
-			} else {
-				result = type_create(arena, TYPE_BOOL, NULL, NULL);
+			lt = typecheck_expression(ctx, node->left);
+			rt = typecheck_expression(ctx, node->right);
+			printf("Back from\n");
+			if (!lt || !rt) {
+				printf("LEFT OR RIGHT TYPE IS NULL for %d\n", node->type);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
+			}
+			if (lt->kind == rt->kind) {
+				if (lt->kind == TYPE_INTEGER ||
+					lt->kind == TYPE_CHAR ||
+					lt->kind == TYPE_BOOL) {
+
+					result = type_create(ctx, TYPE_BOOL, NULL, NULL);
+				} else {
+					printf("May only compare int, char, and bool types\n");
+					result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
+				}
 			}
 			break;
 		}
 
+		case NODE_MODULO:
+		case NODE_ADD_EQUAL:
+		case NODE_SUB_EQUAL:
+		case NODE_MUL_EQUAL:
+		case NODE_DIV_EQUAL:
 		case NODE_ADD:
 		case NODE_SUB:
 		case NODE_MUL:
 		case NODE_DIV: {
-			lt = typecheck_expression(node->left);
-			rt = typecheck_expression(node->right);
+			printf("\033[31mIn node case with type %d\033[0m\n", node->type);
+			lt = typecheck_expression(ctx, node->left);
+			rt = typecheck_expression(ctx, node->right);
 
 			if (!lt || !rt || lt->kind != TYPE_INTEGER || rt->kind != TYPE_INTEGER) {
 				printf("Error: Arithmetic expression require integer types\n");
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} 
 			else { 
-				result = type_create(arena, TYPE_INTEGER, NULL, NULL); 
+				result = type_create(ctx, TYPE_INTEGER, NULL, NULL); 
 			} 
+			printf("\033[31mLeaving node case with type %d\033[0m\n", node->type);
 			break;
 		}
 
 		case NODE_LOGICAL_OR:
 		case NODE_LOGICAL_AND: {
-			lt = typecheck_expression(node->left);
-			rt = typecheck_expression(node->right);
+			lt = typecheck_expression(ctx, node->left);
+			rt = typecheck_expression(ctx, node->right);
 
 			if (!lt || !rt || lt->kind != TYPE_BOOL || rt->kind != TYPE_BOOL) {
 				printf("May only use '&&' or '||' for boolean types\n");
 				printf("lt kind is %d and right type kind is %d\n", lt->kind, rt->kind);
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else {
-				result = type_create(arena, TYPE_BOOL, NULL, NULL);
+				result = type_create(ctx, TYPE_BOOL, NULL, NULL);
 			}
-			if (result && result->kind == TYPE_BOOL) {
-				printf("LEAVING NODE_LOGICAL_AND/NODE_LOGICAL_OR with type of result %d\n", result->kind);
-			}
+			
 			break;
 		}
 
 		case NODE_NOT: {
-			rt = typecheck_expression(node->right);
+			// printf("IN NODE_NOT CASE\n");
+			rt = typecheck_expression(ctx, node->right);
 
 			if (!rt || rt->kind != TYPE_BOOL) {
 				printf("May only apply '!' to boolean types -> rt kind is %d\n", rt->kind);
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else {
-				result = type_create(arena, TYPE_BOOL, NULL, NULL);
+				result = type_create(ctx, TYPE_BOOL, NULL, NULL);
 			}
 
 			break;
@@ -239,12 +269,12 @@ struct type* typecheck_expression(Arena* arena,Node* node) {
 
 		case NODE_DECREMENT:
 		case NODE_INCREMENT: {
-			lt = typecheck_expression(node->left);
+			lt = typecheck_expression(ctx, node->left);
 			if (!lt || lt->kind != TYPE_INTEGER) {
 				printf("Error: Increment/decrement requires integer type\n");
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			}
-			result = type_create(arena, TYPE_INTEGER, NULL, NULL);
+			result = type_create(ctx, TYPE_INTEGER, NULL, NULL);
 			break;
 		}
 
@@ -253,50 +283,63 @@ struct type* typecheck_expression(Arena* arena,Node* node) {
 				printf("Attempting to call '%s' even though '%s' is not a function.\n",
 					node->left->value.name ? node->left->value.name : "N/A", node->left->value.name ? node->left->value.name : "N/A");
 				printf("Left node type is %d and left node symbol type is %d\n", node->left->t->kind, node->left->symbol->type->kind);
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			}
-			result = type_copy(arena, node->left->t->subtype);
-			if (result) {
-				printf("IN NODE CALL and result has type %d\n", result->kind);
-			}
+			// result = type_copy(ctx, node->left->t->subtype);
+			result = type_create(ctx, node->left->t->subtype->kind, NULL, NULL);
 			break; 
 
 		}
 
 		case NODE_NAME: {
-			result = type_copy(arena, node->t);
-			printf("heelo\n");
-			if (result) {
-				printf("LEAVING NODE_NAME case for '%s'\n", node->value.name ? node->value.name : "N/A");
-				printf("Result has type %d\n", result->kind);
-			}
+			printf("\033[32mIn node name case processing '%s'\033[0m\n", node->value.name);
+			if (node->symbol) {
+				if (node->symbol->type) {
+					if (node->symbol->type->kind == TYPE_ARRAY || node->symbol->type->kind == TYPE_FUNCTION) {
+						result = type_create(ctx, node->symbol->type->kind, node->symbol->type->subtype, NULL);
+					} else {
+						printf("\033[32m'%s' has type %d\033[0m\n", node->value.name, node->t->kind);
+						result = type_create(ctx, node->symbol->type->kind, NULL, NULL);
+					}
+				}
+			} else {
+				printf("\033[32mUnfortunately, '%s' does not have a symbol\033[0m\n", node->value.name);
+			}		
 			break;
 		}
 
 		case NODE_AUG:
 		case NODE_DEF:
 		case NODE_DECL: {
-			result = typecheck_expression(node->left);
+			result = typecheck_expression(ctx, node->left);
 			break;
 		}
 
 		case NODE_SUBSCRIPT: {
-			printf("IN NODE_SUBSCRIPT CASE\n");
-			lt = typecheck_expression(node->left);
-			rt = typecheck_expression(node->right);
-
+			lt = typecheck_expression(ctx, node->left);
+			rt = typecheck_expression(ctx, node->right);
+			
 			if (!lt || lt->kind != TYPE_ARRAY) {
-				printf("Left operand of subscript must be an array\n");
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				if (!lt) printf("\033[31mleft type of node subscript is NULL\033[0m\n");
+				printf("Left operand of subscript node must be an array\n");
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else if (!rt || rt->kind != TYPE_INTEGER) {
 				printf("right operand of subscript must be an integer type\n");
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else {
-				result = type_copy(arena, lt->subtype);
+				// result = type_copy(ctx, lt->subtype);
+				// printf("left type and right type in NODE_SUBSCRIPT case are both valid\n");
+				if (!lt->subtype) {
+					printf("left type has no subtype\n");
+				}
+				// printf("Left type has type %d\n", lt->kind);
+				result = type_create(ctx, lt->subtype->kind, NULL, NULL);
+				// printf("HELLo\n");
 			}
-			if (result->kind != TYPE_UNKNOWN) {
-				printf("LEAVING NODE_SUBSCRIPT CASE with result type is %d\n", result->kind);
-			}
+			// if (result->kind != TYPE_UNKNOWN) {
+			// 	printf("LEAVING NODE_SUBSCRIPT CASE with result type is %d\n", result->kind);
+			// }
+			// printf("HELLLLLLLO\n");
 			break;
 		}
 	}
@@ -306,7 +349,7 @@ struct type* typecheck_expression(Arena* arena,Node* node) {
 	return result;
 }
 
-void typecheck_statement(Node* node) {
+void typecheck_statement(CompilerContext* ctx, Node* node) {
 	if (!node) return;
 
 	struct type* lt = NULL;
@@ -318,12 +361,12 @@ void typecheck_statement(Node* node) {
 			printf("IN TYPECHECK STATEMENT->NODE ASSIGNMENT CASE\n");
 			if (node->right->type == NODE_ARRAY_LIST) {
 				printf("in regular case\n");
-				lt = typecheck_expression(node->left);
+				lt = typecheck_expression(ctx, node->left);
 				if (!lt) return;
 
 				if (lt->subtype) {
-					Node* array_elements = node->right;
-					Node* element = array_elements->right;
+					Node* array_list = node->right;
+					Node* element = array_list->right;
 					while (element) {
 						struct type* element_type = element->t;
 						if (!type_equals(lt->subtype, element_type)) {
@@ -335,16 +378,16 @@ void typecheck_statement(Node* node) {
 				}
 			} else {
 				printf("In else case\n");
-				lt = typecheck_expression(node->left);
+				lt = typecheck_expression(ctx, node->left);
 				if (!lt) { printf("IN NODE_ASSIGNMENT-> left type is NULL\n"); }
-				rt = typecheck_expression(node->right);
+				rt = typecheck_expression(ctx, node->right);
 				if (!rt) { printf("IN NODE_ASSIGNMENT-> right type is NULL\n"); }
 				if (!lt || !rt || !type_equals(lt, rt)) {
 					printf("Error: type mismatch in assignment\n");
 					printf("Left type is %d and right type is \n", lt->kind);
-					result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+					result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 				} else {
-					result = type_copy(arena, lt);
+					// result = type_copy(ctx, lt);
 				}
 			}
 			printf("LEAVING NODE ASSIGNMENT CASE IN TYPECHECK STATEMENT\n");
@@ -354,18 +397,19 @@ void typecheck_statement(Node* node) {
 		case NODE_ELSE: {
 			printf("IN TYPECHECK STATEMENT->NODE ELSE CASE\n");
 			if (node->right) {
-				typecheck_statement(node->right);
+				typecheck_statement(ctx, node->right);
 			}
 			break;
 		} 
 
 		case NODE_RETURN: {
 			printf("IN TYPECHECK STATEMENT->NODE RETURN CASE\n");
-			rt = typecheck_expression(node->right);
-			if (!rt || !type_equals(arena, rt, node->t)) {
-				result = type_create(arena, TYPE_UNKNOWN, NULL, NULL);
+			rt = typecheck_expression(ctx, node->right);
+			if (!rt || !type_equals(rt, node->t)) {
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else {
-				result = type_copy(arena, rt);
+				// result = type_copy(ctx, rt);
+				result = type_create(ctx, rt->kind, NULL, NULL);
 			}
 			break;
 		}
@@ -379,7 +423,7 @@ void typecheck_statement(Node* node) {
 				Node* stmt = node->right;
 				while (stmt) {
 					Node* stmt_next = stmt->next;
-					typecheck_statement(stmt);
+					typecheck_statement(ctx, stmt);
 					stmt = stmt_next;
 				}
 			}
@@ -390,7 +434,7 @@ void typecheck_statement(Node* node) {
 		case NODE_DECREMENT: {
 			printf("In typecheck statement-> NODE INCREMENT OR DECREMENT CASE\n");
 			if (node->left) {
-				typecheck_expression(node->left);
+				typecheck_expression(ctx, node->left);
 			}
 			break;
 		}
@@ -398,9 +442,10 @@ void typecheck_statement(Node* node) {
 		case NODE_IF:
 		case NODE_ELSE_IF:
 		case NODE_WHILE: {
+			printf("\033[31mENTERING CONTROL FLOW NODE WITH TYPE %d\033[0m\n", node->type);
 			if (node->left) {
-				printf("Here in while/else if/if\n");
-				result = typecheck_expression(node->left);
+				printf("Here in %d statement\n", node->type);
+				result = typecheck_expression(ctx, node->left);
 
 				if (!result || result->kind != TYPE_BOOL) {
 					printf("Condition in while/else if/ if must be boolean type\n");
@@ -410,11 +455,10 @@ void typecheck_statement(Node* node) {
 			if (result && result->kind == TYPE_BOOL) {
 				printf("LEAVING condition in while/else if/if\n");
 			}
-			printf("MID\n");
 			if (node->right) {
-				typecheck_statement(node->right);
+				typecheck_statement(ctx, node->right);
 			}
-			printf("End of while/else if/if\n");
+			printf("\033[31mLeaving Control flow node with TYPE %d\033[0m\n", node->type);
 			break;
 		} 
 	
@@ -424,21 +468,21 @@ void typecheck_statement(Node* node) {
 				printf("type of node->left in for is %d\n", node->left->type);
 				if (node->left->left) { printf("type of left child of node->left is %d\n", node->left->left->type); }
 				if (node->left->right) { printf("type of right child of node->left is %d\n", node->left->right->type); }
-				typecheck_statement(node->left);
+				typecheck_statement(ctx, node->left);
 			}
 
 			Node* condition = node->left->next;
 			if (condition) {
-				typecheck_expression(condition);
+				typecheck_expression(ctx, condition);
 			}
 
 			Node* update = condition->next;
 			if (update) {
-				typecheck_expression(update);
+				typecheck_expression(ctx, update);
 			}
 
 			if (node->right) {
-				typecheck_statement(node->right);
+				typecheck_statement(ctx, node->right);
 			}
 			break;
 		}
@@ -460,17 +504,17 @@ void typecheck_params(Node* params) {
 	}
 }
 
-void typecheck_globals(Node* node) {
+void typecheck_globals(CompilerContext* ctx, Node* node) {
 	if (!node) return;
 
 	switch (node->type) {
 		case NODE_ASSIGNMENT: {
 			if (node->left) {
-				typecheck_expression(node->left);
+				typecheck_expression(ctx, node->left);
 			}
 
 			if (node->right) {
-				typecheck_expression(node->right);
+				typecheck_expression(ctx, node->right);
 			}
 
 			break;
@@ -479,21 +523,20 @@ void typecheck_globals(Node* node) {
 		case NODE_NAME: {
 			if (node->t) {
 				if (node->t->kind == TYPE_FUNCTION) {
-					printf("About to typecheck function '%s'\n", node->value.name);
-					if (node->left) {
-						Node* param = node->left;
-						while (param) {
-							Node* next_param = param->next;
-							printf("About to typecheck param: '%s'\n", param->right->value.name ? param->right->value.name : 
-								"N/A");
-							typecheck_params(param);
-							param = next_param;
+					printf("\033[31mABOUT TO TYPECHECK FUNCTION '%s'\033[0m\n", node->value.name);
+					if (node->t->params) {
+						Node* wrapped_param = node->t->params;
+						while (wrapped_param) {
+							Node* next_wrapped_param = wrapped_param->next;
+							typecheck_params(wrapped_param);
+							wrapped_param = next_wrapped_param;
 						}
 					}
 
 					if (node->right) {
-						typecheck_statement(node->right);
+						typecheck_statement(ctx, node->right);
 					}
+					printf("\033[31mFINISHED TYPECHECKING FUNCTION '%s'\033[0m\n", node->value.name);
 				}
 			}
 			break;
@@ -501,14 +544,13 @@ void typecheck_globals(Node* node) {
 	}
 }
 
-void typecheck_tree(Node* root) {
-	if (!root) return;
-
+void typecheck_tree(CompilerContext* ctx, Node* root) {
+	if (!ctx || !root) return;
 
 	Node* node = root;
 	while (node) {
 		Node* next = node->next;
-		typecheck_globals(node);
+		typecheck_globals(ctx, node);
 		node = next;
 	}
 }

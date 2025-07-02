@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include "compilercontext.h"
 
 #define KEYWORDS 19
 #define INITIAL_TOKEN_CAPACITY 250
@@ -145,23 +146,22 @@ char advance_lexer(Lexer* lexer);
 bool lexer_at_end(Lexer* lexer);
 bool skip_lexer_whitespace(Lexer* lexer);
 
-void get_identifier(Lexer* lexer);
-void get_number(Lexer* lexer);
-void get_operator(Lexer* lexer);
-void get_delimeters(Lexer* lexer);
+void get_identifier(CompilerContext* ctx, Lexer* lexer);
+void get_number(CompilerContext* ctx, Lexer* lexer);
+void get_operator(CompilerContext* ctx, Lexer* lexer);
+void get_delimeters(CompilerContext* ctx, Lexer* lexer);
 bool match(Lexer* lexer, char expected);
 
 Token create_token(token_t type, int line, int column);
 Token create_char_token(token_t type, char c, int line, int column);
 Token create_int_token(token_t type, int val, int line, int column);
-Token create_string_token(token_t type, char* str, int line, int column);
-void add_token(Lexer* lexer, Token token);
+Token create_string_token(CompilerContext* ctx, token_t type, char* str, int line, int column);
+void add_token(CompilerContext* ctx, Lexer* lexer, Token token);
 
-FileInfo* create_info(char* filename, int line_count, char* contents);
-FileInfo* retrieve_file_contents(char* filename);
-char* get_file_contents(FILE* file);
-Lexer* initialze_lexer(FileInfo* info);
-Lexer* lex(char* filename);
+FileInfo* create_info(CompilerContext* ctx, char* filename, int line_count, char* contents);
+FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename);
+Lexer* initialze_lexer(CompilerContext* ctx, FileInfo* info);
+Lexer* lex(CompilerContext* ctx, char* filename);
 
 void print_tokens(Token* tokens);
 void free_token(Token* tokens);
