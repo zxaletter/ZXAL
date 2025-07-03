@@ -18,8 +18,6 @@ Arena* create_arena(arena_t type) {
 	return A;
 }
 
-
-
 MemoryBlock* create_memory_block(size_t req_size) {
 	MemoryBlock* mem_block = malloc(sizeof(MemoryBlock));
 	if (!mem_block) {

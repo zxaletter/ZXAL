@@ -1,25 +1,17 @@
 #include "cfg.h"
 
-FunctionList function_list;
+FunctionList* function_list = NULL;
 TACLabelEntries tac_entries;
 TACLeaders leaders_list;
 
 FunctionList create_function_list(CompilerContext* ctx) {
-	FunctionInfo** infos = arena_allocate(ctx->ir_arena, sizeof(FunctionInfo*) * INIT_FUNCTION_LIST_CAPACITY);
-	if (!infos) {
-		FunctionList dummy_list = {
-			.size = 0,
-			.capacity = 0,
-			.infos = NULL
-		};
-		return dummy_list;
-	}
+	FunctionList* list = arena_allocate(ctx->ir_arena, sizeof(FunctionList));
+	if (!list) return NULL;
 
-	FunctionList new_func_list = {
-		.size = 0,
-		.capacity = INIT_FUNCTION_LIST_CAPACITY,
-		.infos = infos
-	};
+	list->sizee = 0;
+	list->capacity = INIT_FUNCTION_LIST_CAPACITY;
+	list->infos = arena_allocate(ctx->ir_arena, sizeof(FunctionInfo*) * list->capacity); 
+	if (!list->infos) return NULL;
 	return new_func_list;
 }
 
@@ -38,17 +30,17 @@ FunctionInfo* create_function_info(CompilerContext* ctx, TACInstruction* instruc
 bool add_function_info_to_list(CompilerContext* ctx, FunctionInfo* info) {
 	if (!info) return false;
 
-	if (list.size >= list.capacity) {
-		int prev_capacity = list.capacity;
-		list.capacity *= 2;
-		int new_capacity = list.capacity;
-		void* new_infos = arena_reallocate(ctx->ir_arena, list.infos, prev_capacity, new_capacity);
+	if (function_list.size >= function_list.capacity) {
+		int prev_capacity = function_list.capacity;
+		function_list.capacity *= 2;
+		int new_capacity = function_list.capacity;
+		void** new_infos = arena_reallocate(ctx->ir_arena, function_list.infos, prev_capacity, new_capacity);
 		if (!new_infos) {
 			return false;
 		}
-		list.infos = new_infos;
+		function_list->infos = new_infos;
 	}
-	list.infos[list.size++] = info;
+	function_list->infos[function_list->size++] = info;
 	return true;
 }
 
@@ -100,19 +92,19 @@ TACLabel* create_label_entry(CompilerContext* ctx, TACInstruction* instruction, 
 bool add_label_to_entries(CompilerContext* ctx, TACLabel* label) {
 	if (!label) return false;
 
-	if (entries.size >= entries.capacity) {
-		int prev_capacity = entries.capacity;
+	if (tac_entries.size >= tac_entries.capacity) {
+		int prev_capacity = tac_entries.capacity;
 		
-		entries.capacity *= 2;
-		int new_capacity = entries.capacity;
-		void* new_labels = arena_reallocate(ctx->ir_arena, entries.labels, prev_capacity, new_capacity);
+		tac_entries.capacity *= 2;
+		int new_capacity = tac_entries.capacity;
+		void** new_labels = arena_reallocate(ctx->ir_arena, tac_entries.labels, prev_capacity, new_capacity);
 		if (!new_labels) {
 			printf("Error: unable to reallocate space for new labels\n");
 			return false;
 		}
-		entries.labels = new_labels;
+		tac_entries.labels = new_labels;
 	}
-	entries.labels[entries.size++] = label;
+	tac_entries.labels[tac_entries.size++] = label;
 	return true;
 }
 
@@ -138,7 +130,7 @@ TACLeaders create_tac_leaders(CompilerContext* ctx) {
 bool add_leader_to_leader_list(CompilerContext* ctx, int index) {
 	if (index < 0) return false;
 
-	if (leader_list.size >= leaders_list.capacity) {
+	if (leaders_list.size >= leaders_list.capacity) {
 		int prev_capacity = leaders_list.capacity;
 
 		leaders_list.capacity *= 2;
@@ -172,6 +164,24 @@ CFG* create_cfg(CompilerContext* ctx) {
 		return NULL;
 	}
 	return cfg;
+}
+
+bool add_block_to_cfg(CompilerContext* ctx, CFG* cfg, BasicBlock* block) {
+	if (!block) return false;
+
+	if (cfg->num_blocks >= cfg->blocks_capacity) {
+		int prev_capacity = cfg->blocks_capacity;
+
+		cfg->blocks_capacity *= 2;
+		int new_capacity = cfg->blocks_capacity;
+		void** new_blocks = arena_reallocate(ctx->ir_arena, cfg->all_blocks, prev_capacity, new_capacity);
+		if (!new_blocks) {
+			return false;
+		} 
+		cfg->all_blocks = new_blocks;
+	}
+	cfg->all_blocks[cfg->num_blocks++] = block;
+	return true; 
 }
 
 BasicBlock* create_basic_block(CompilerContext* ctx) {
@@ -216,29 +226,6 @@ bool found_function(TACInstruction* instruction) {
 	return false;
 }
 
-bool store_label(CompilerContext* ctx, TACInstruction* instruction, int tac_index) {
-	if (!instruction) return false;
-
-	switch (instruction->type) {
-		case TAC_IF_FALSE: {
-			TACLabel* new_label_entry = create_label_entry(ctx, instruction->op1->value.label_name, tac_index);
-			if (!add_label_to_entries(ctx, new_label_entry)) return false; 
-			break;
-		}
-		case TAC_LABEL:
-		case TAC_GOTO: {
-			TACLabel* new_label_entry = create_label_entry(ctx, instruction->result->value.label_name, tac_index);
-			if (!add_label_to_entries(ctx, new_label_entry)) return false;
-			break;
-		}
-		default: {
-			printf("Unknown tac instruction type\n");
-			break;
-		}
-	}
-	return true;
-}
-
 bool add_instruction_to_block(CompilerContext* ctx, BasicBlock* block, TACInstruction* instruction) {
 	if (!block || !instruction) return false;
 
@@ -248,7 +235,7 @@ bool add_instruction_to_block(CompilerContext* ctx, BasicBlock* block, TACInstru
 		block->num_instructions_capacity *= 2;
 		int new_capacity = block->num_instructions_capacity;
 
-		void* new_instructions = arena_reallocate(ctx->ir_arena, block->instructions, prev_capacity, new_capacity);
+		void** new_instructions = arena_reallocate(ctx->ir_arena, block->instructions, prev_capacity, new_capacity);
 		if (!new_instructions) return false;
 
 		block->instructions = new_instructions;
@@ -257,39 +244,26 @@ bool add_instruction_to_block(CompilerContext* ctx, BasicBlock* block, TACInstru
 	return true;
 }
 
-void build_function_cfg(CompilerContext* ctx, TACTable* instructions, FunctionInfo* info) {
-	if (!info) return;
-
-	info->cfg = create_cfg(ctx);
-	if (!info->cfg) return;
-
-	BasicBlock* block = info->cfg->head;
-	if (!add_instruction_to_block(ctx, block, instructions[info->tac_start_index])) return;
-	
-	for (int i = info->tac_start_index + 1; i < info->tac_end_index; i++) {
-		switch (instructions->tacs[i]->type) {
-			case TAC_IF_FALSE: {
-
-				break;
-			}
-
-			default: {
-
-			}
-		}
-	}	
-}
-
 void mark_function_boundaries(CompilerContext* ctx, TACTable* instructions) {
+	int tac_start_index = 0;
+	int tac_end_index = 0;
 	int i = 0;
 	while (instructions->tacs[i] && i < instructions->size) {
 		if (found_function(instructions->tacs[i])) {
 			TACInstruction* func_tac = instructions->tacs[i];
-			int tac_start_index = i;
+			
+			tac_start_index = i;
 			int j = i + 1;
+			
 			while (!found_function(instructions->tacs[j]) && j < instructions->size) { j++; }
-			int tac_end_index = j - 1;
-		
+			
+			bool is_last_instruction = (j == instructions->size) ? true : false;
+			if (is_last_instruction) {
+				tac_end_index = j;
+			} else {
+				tac_end_index = j - 1;
+			}
+
 			FunctionInfo* func_info = create_function_info(ctx, func_tac, tac_start_index, tac_end_index);
 			if (!add_function_info_to_list(ctx, func_info)) return;
 			i = tac_end_index + 1;
@@ -319,60 +293,411 @@ void mark_labels(CompilerContext* ctx, TACTable* instructions) {
 	}
 }
 
+int find_label_index(TACTable* instructions, char* target_name, int current_index) {
+	if (!target_name) return -1;
+
+	for (int i = current_index; i < instructions->size; i++) {
+		if (!instructions->tacs[i]->result) continue;
+		if (instructions->tacs[i]->result->kind != OP_LABEL) continue;
+		if (!instructions->tacs[i]->result->value.label_name) continue;
+		if (strcmp(target_name, instructions->tacs[i]->result->value.label_name) == 0) {
+			printf("\033[31mFound label index: %d\033[0m\n", i);
+			return i;
+		}
+	}	
+
+	return -1;
+}
+
 void find_leaders(CompilerContext* ctx, TACTable* instructions) {
 	int i = 0;
 
-	while (list.infos[i] && i < list.size) {
-		int start = list.infos[i]->tac_start_index;
-		int end = list.infos[i]->tac_end_index;
+	while (function_list.infos[i] && i < function_list.size) {
+		int start = function_list.infos[i]->tac_start_index; // function name index 
+		int end = function_list.infos[i]->tac_end_index;
 
-		add_leader(ctx, start + 1);
-		while (instructions->tacs[start + 2] && ( start + 2 <= end )) {
-			switch (instructions->tacs[start + 2]) {
-				case TAC_IF_FALSE:				
-				case TAC_GOTO:
-				case TAC_LABEL: {
-					add_leader(ctx, start + 1);
+		add_leader_to_leader_list(ctx, start + 1);
+		int current_index = start + 2;
+		while (instructions->tacs[current_index] && ( current_index <= end )) {
+			switch (instructions->tacs[current_index]->type) {
+				case TAC_IF_FALSE: {
+					add_leader_to_leader_list(ctx, current_index + 1 );
+					int label_start = find_label_index(instructions, instructions->tacs[current_index]->op1->value.label_name, current_index + 1);
+					if (label_start != -1) {
+						add_leader_to_leader_list(ctx, label_start);
+					}
 					break;
+				}
+
+				case TAC_LABEL: {
+					add_leader_to_leader_list(ctx, current_index);
+					break;
+				}
+
+				case TAC_GOTO: {
+					int label_start = find_label_index(instructions, instructions->tacs[start + 2]->result->value.label_name, current_index + 1);
+					if (label_start != -1) {
+						add_leader_to_leader_list(ctx, label_start);
+					}
+					break;
+				}
+
+				case TAC_RETURN: {
+					add_leader_to_leader_list(ctx, current_index + 1);
 				}
 				default: break;
 			}
 
-			start++;
+			current_index++;
 		}		
 		i++;
 	}
 }
 
-void build_cfg(CompilerContext* ctx, TACTable* instructions) {
+bool index_is_leader(int index) {
+	for (int i = 0; i < leaders_list.size; i++) {
+		if (index == leaders_list.leaders[i]) return true;
+	}
+	return false;
+}
+
+bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions) {
+	for (int i = 0; i < function_list.size; i++) {
+		FunctionInfo* info = function_list.infos[i];
+		info->cfg = create_cfg(ctx);
+
+		if (!info->cfg) {
+			return false;
+		}
+
+		BasicBlock* block = info->cfg->head;
+
+		int start = info->tac_start_index;
+		int end = info->tac_end_index;
+
+		int leader_offset = start + 1;
+		int remaining_instructions_offset = start + 2;
+		add_instruction_to_block(ctx, block, instructions->tacs[leader_offset]);
+
+		while (instructions->tacs[remaining_instructions_offset] && remaining_instructions_offset <= end) {			
+			if (!index_is_leader(remaining_instructions_offset)) {
+				add_instruction_to_block(ctx, block, instructions->tacs[remaining_instructions_offset]);
+			} else {
+				if (!add_block_to_cfg(ctx, info->cfg, block)) {
+					return false;
+				}
+
+				BasicBlock* new_block = create_basic_block(ctx);
+				block = new_block;
+				add_instruction_to_block(ctx, block, instructions->tacs[remaining_instructions_offset]);
+			}
+			remaining_instructions_offset++;
+		}
+
+		if (!add_block_to_cfg(ctx, info->cfg, block)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+BasicBlock* find_matching_label_block(CFG* cfg, int starting_search_index, TACInstruction* instruction) {
+	for (int i = starting_search_index; i < cfg->num_blocks; i++) {
+		BasicBlock* current_block = cfg->all_blocks[i];
+		if (!current_block->instructions[0]->result) continue;
+		if (!current_block->instructions[0]->result->value.label_name) continue;
+		if (strcmp(instruction->result->value.label_name, current_block->instructions[0]->result->value.label_name) == 0) {
+			return current_block;
+		}
+	}
+	return NULL;
+}
+
+void add_edges(CFG* cfg, int index, BasicBlock* block) {
+	if (!block) return;
+	cfg->all_blocks[index]->successors[cfg->all_blocks[index]->num_successors++] = block;
+	block->predecessors[block->num_predecessors++] = cfg->all_blocks[index];
+}
+
+void link_function_cfgs() {
+	for (int i = 0; i < function_list.size; i++) {
+		FunctionInfo* info = function_list.infos[i];
+		CFG* cfg = info->cfg;
+
+		if (!cfg) return;
+
+		for (int j = 0; j < cfg->num_blocks; j++) {
+			TACInstruction* last_instruction_in_current_block = cfg->all_blocks[j]->instructions[cfg->all_blocks[j]->num_instructions - 1];
+			if (!last_instruction_in_current_block) continue;
+
+			switch (last_instruction_in_current_block->type) {
+				case TAC_GOTO: {
+					BasicBlock* matching_block = find_matching_label_block(cfg, j + 1, last_instruction_in_current_block);
+					add_edges(cfg, j, matching_block);
+					break;
+				}
+
+				case TAC_IF_FALSE: {
+					BasicBlock* matching_block = find_matching_label_block(cfg, j + 1, last_instruction_in_current_block);
+					add_edges(cfg, j, matching_block);
+					add_edges(cfg, j, cfg->all_blocks[j + 1]);
+					break;
+				}
+				
+				case TAC_RETURN: {
+					break;
+				}
+
+				default: {
+					add_edges(cfg, j, cfg->all_blocks[j + 1]);
+					break;
+				}
+			}
+		}
+	}
+}
+
+LivenessTable* create_liveness_table(CompilerContext* ctx) {
+	LivenessTable* live_table = arena_allocate(ctx->ir_arena, sizeof(LivenessTable));
+	if (!live_table) {
+		perror("In 'create_liveness_table', unable to allocate space and initialize live table\n");
+		return NULL;
+	}
+	live_table->size = 0;
+	live_table->capacity = INIT_LIVENESS_TABLE_CAPACITY;
+	live_table->liveness_infos = arena_allocate(ctx->ir_arena, sizeof(LivenessInfo*) * live_table->capacity);
+	if (!live_table->liveness_infos) {
+		perror("In 'create_liveness_table', unable to allocate space for liveness infos\n");
+		return NULL;
+	}
+	printf("About to return live table\n");
+	return live_table;
+}
+
+LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool is_live, int next_use) {
+	LivenessInfo* live_info = arena_allocate(ctx->ir_arena, sizeof(LivenessInfo));
+	if (!live_info) return NULL;
+
+	live_info->var = var;
+	live_info->is_live = is_live;
+	live_info->next_use = next_use;
+	return live_info;
+}
+// live analysis functions
+unsigned int hash_variable(BasicBlock* block, char* name) { 
+	unsigned int hash = 0;
+
+	while (*name) {
+		hash = (hash << 1) + *name++;
+	}
+	return hash % block->table->capacity;
+}
+
+bool bind_or_update_live_info_to_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* info, unsigned int hash_key) {
+	if (!table || !info) return false;
+
+	if (table->size >= table->capacity) {
+		int prev_capacity = table->capacity;
+
+		table->capacity *= 2;
+		int new_capacity = table->capacity;
+		void** new_liveness_infos = arena_reallocate(ctx->ir_arena, table->liveness_infos, prev_capacity, new_capacity);
+		if (!new_liveness_infos) {
+			return false;
+		}
+		table->liveness_infos = new_liveness_infos;
+	}
+	
+	if (table->liveness_infos[hash_key]) {
+		table->liveness_infos[hash_key] = info;
+	} else {
+		table->liveness_infos[hash_key] = info;
+		table->size++;
+	}
+	return true;
+}
+
+void set_operand_live_info(Operand* op, LivenessInfo* live_info) {
+	op->is_live = live_info->is_live;
+	op->next_use = live_info->next_use;
+}
+
+void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, Operand* operand, operand_role role, int instruction_index) {
+	if (!block || !operand) return;
+
+	switch (operand->kind) {
+		case OP_SYMBOL: {
+			if (!operand->value.sym) return;
+			if (!operand->value.sym->name) return;
+
+			LiveInfoVar var = {
+				.symbol = operand->value.sym
+			};
+
+			LivenessInfo* live_info = NULL;
+
+			switch (role) {
+				case OP_RESULT: live_info = create_liveness_info(ctx, var, false, -1); break;
+				case OP_USE: live_info = create_liveness_info(ctx, var, true, instruction_index); break;
+			}
+
+			if (!live_info) return;
+
+			int hash_index = hash_variable(block, operand->value.sym->name);
+			bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
+			set_operand_live_info(operand, live_info);
+			break;
+		}
+
+		case OP_LABEL: {
+			if (!operand->value.label_name) return;
+
+			LiveInfoVar var = {
+				.label_name = operand->value.label_name
+			};
+
+			LivenessInfo* live_info = NULL;
+
+			switch (role) {
+				case OP_RESULT: live_info = create_liveness_info(ctx, var, false, -1); break;
+				case OP_USE: live_info = create_liveness_info(ctx, var, true, instruction_index); break;
+			}
+
+			if (!live_info) return;
+			
+			int hash_index = hash_variable(block, operand->value.label_name);
+			bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
+			set_operand_live_info(operand, live_info);
+			break;
+		}
+	}
+}
+
+void attach_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, int instruction_index) {
+	if (!block) return;
+
+	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->result, OP_RESULT, instruction_index);
+	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->op1, OP_USE, instruction_index);
+	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->op2, OP_USE, instruction_index);
+	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->op3, OP_USE, instruction_index);
+}
+
+void live_analysis(CompilerContext* ctx) {
+	for (int i = 0; i < function_list.size; i++) {
+		FunctionInfo* info = function_list.infos[i];
+		CFG* cfg = info->cfg;
+
+		for (int j = 0; j < cfg->num_blocks; j++) {
+			BasicBlock* current_block = cfg->all_blocks[j];
+			int k = current_block->num_instructions;
+			while (current_block->instructions[k - 1] && k >= 0) {
+				attach_liveness_and_next_use(ctx, current_block, k - 1);
+				k--;
+			}
+		}
+	}
+}
+// 
+
+void operand_contain_nonvirtual_variable(CompilerContext* ctx, BasicBlock* block, Operand* op) {
+	if (!op) return false;
+
+	switch (op->kind) {
+		case OP_SYMBOL: {
+			LiveInfoVar var = { .symbol = op->value.sym }; 
+			LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
+			if (!live_info) {
+				printf("In 'operand_contain_nonvirtual_variable', unable to create live info\n");
+				return;
+			}
+			int live_info_key = hash_variable(block, live_info->var.symbol->name);
+			bind_or_update_live_info_to_table(ctx, block->table, live_info, live_info_key);
+			break;
+		}
+
+		default: break;
+	}
+}
+
+void instruction_contains_nonvirtual_variables(CompilerContext* ctx, BasicBlock* block, int current_index) {
+	if (!block) return;
+
+	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->result);
+	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op1);
+	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op2);
+	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op3);
+}
+
+bool store_nonvirtual_variables(CompilerContext* ctx) {
+	for (int i = 0; i < function_list.size; i++) {
+		FunctionInfo* info = function_list.infos[i];
+		CFG* cfg = info->cfg;
+
+		for (int j = 0; j < cfg->num_blocks; j++) {
+			BasicBlock* current_block = cfg->all_blocks[j];	
+			current_block->table = create_liveness_table(ctx);
+			if (!current_block->table) return false;
+
+			for (int k = 0; k < current_block->num_instructions; k++) {
+				instruction_contains_nonvirtual_variables(
+					ctx, 
+					current_block,
+					k
+				);
+			}
+		}
+	}
+}
+
+FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 	if (!instructions) return;
 
 	function_list = create_function_list(ctx);
 	tac_entries = create_tac_label_entries(ctx);
 	leaders_list = create_tac_leaders(ctx);
-	if (!function_list.infos || !tac_entries.labels || !leaders_list.leaders) return;
+	if (!function_list || !tac_entries.labels || !leaders_list.leaders) return;
 	
 	mark_function_boundaries(ctx, instructions);
 	mark_labels(ctx, instructions);
 	find_leaders(ctx, instructions);
+	make_function_cfgs(ctx, instructions);
+	link_function_cfgs();
 
-
-	for (int k = 0; k < list->size; k++) {
-		build_function_cfg(ctx, instructions, list->infos[k]);
-	}
+	if (!store_nonvirtual_variables(ctx)) return; 
 	
+	live_analysis(ctx);
+
 	emit_function_infos();
-	emit_leaders();
+	// emit_leaders();
+	emit_blocks();
+
+	return function_list;
 }
 
 void emit_function_infos() {
-	for (int i = 0; i < list.size; i++) {
-		printf("Function name: \033[32m%s\033[0m -> Start Index: %d -> End Index: %d\n", list.infos[i]->name, list.infos[i]->tac_start_index, list.infos[i]->tac_end_index);
+	for (int i = 0; i < function_list.size; i++) {
+		printf("Function name: \033[32m%s\033[0m -> Start Index: %d -> End Index: %d\n", function_list.infos[i]->name, function_list.infos[i]->tac_start_index, function_list.infos[i]->tac_end_index);
 	}
 }
 
 void emit_leaders() {
 	for (int i = 0; i < leaders_list.size; i++) {
 		printf("Leader index: \033[32m%d\033[0m\n", leaders_list.leaders[i]);
+	}
+}
+
+void emit_blocks() {
+	for (int i = 0; i < function_list.size; i++) {
+		printf("\nFunction: \033[32m%s\033[0m\n", function_list.infos[i]->name);
+		if (function_list.infos[i]->cfg) {
+			for (int j = 0; j < function_list.infos[i]->cfg->num_blocks; j++) {
+				printf("\tBlock %d:\n", j);
+				BasicBlock* current_block = function_list.infos[i]->cfg->all_blocks[j];
+				for (int k = 0; k < current_block->num_instructions; k++) {
+					printf("\t\tTAC type %d\n", current_block->instructions[k]->type);
+				}
+
+			}			
+		}
 	}
 }

@@ -9,6 +9,11 @@
 #define INITIAL_TACCONTEXT_CAPACITY 100
 
 typedef enum {
+	OP_RESULT,
+	OP_USE
+} operand_role;
+
+typedef enum {
 	OP_SYMBOL,
 	OP_INT_LITERAL,
 	OP_LABEL,
@@ -24,6 +29,8 @@ typedef union {
 typedef struct {
 	operand_t kind;
 	OperandValue value;
+	bool is_live;
+	int next_use;
 } Operand;
 
 typedef enum {
@@ -53,27 +60,24 @@ typedef enum {
 	TAC_LOGICAL_AND,
 	TAC_LOGICAL_OR,
 
-	// TAC_DEF,
-	// TAC_DECL, 
-	// TAC_AUG, 
-	TAC_NAME, // 26
+	
+	TAC_NAME, // 23
 	TAC_BLOCK,
 	TAC_ASSIGNMENT,
-	TAC_ARG, // 29
+	TAC_ARG, // 26
 	TAC_PARAM,
 	TAC_CALL,
-	// TAC_ARRAY_DECL,
 	TAC_STORE,
 	TAC_DEREFERENCE, 
 
-	TAC_IF, // 35
+	TAC_IF, // 31
 	TAC_ELSE_IF,
-	TAC_ELSE, // 37
+	TAC_ELSE, // 33
 	TAC_FOR,
 	TAC_WHILE,
-	TAC_BREAK, // 40
+	TAC_BREAK, // 36
 	TAC_RETURN,
-	TAC_CONTINUE, // 42
+	TAC_CONTINUE, // 38
 
 	TAC_IF_FALSE,
 	TAC_GOTO,

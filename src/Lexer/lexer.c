@@ -4,7 +4,7 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
 							"else", "for", "while",
 						    "continue", "break", "return",
-							"switch", "case", "true", "false"};
+							"switch", "case", "true", "false", "str"};
 
 
 Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {

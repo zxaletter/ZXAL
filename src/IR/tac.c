@@ -679,8 +679,8 @@ void build_tac_from_statement_dag(CompilerContext* ctx, DAGNode* node) {
 			};
 			Operand* if_true_op = create_operand(ctx, OP_LABEL, if_true_val);
 
-			TACInstruction* if_true_tac = create_tac(ctx, TAC_LABEL, if_true_op, NULL, NULL, NULL);
-			add_tac_to_table(ctx, if_true_tac);
+			// TACInstruction* if_true_tac = create_tac(ctx, TAC_LABEL, if_true_op, NULL, NULL, NULL);
+			// add_tac_to_table(ctx, if_true_tac);
 			build_tac_from_statement_dag(ctx, node->right);
 			TACInstruction* goto_tac = create_tac(ctx, TAC_GOTO, end_op, NULL, NULL, NULL);
 			add_tac_to_table(ctx, goto_tac);
@@ -745,8 +745,8 @@ void build_tac_from_statement_dag(CompilerContext* ctx, DAGNode* node) {
 				}
 			} 
 
-			TACInstruction* else_if_condition_true_tac = create_tac(ctx, TAC_LABEL, condition_true_op, NULL, NULL, NULL);
-			add_tac_to_table(ctx, else_if_condition_true_tac);
+			// TACInstruction* else_if_condition_true_tac = create_tac(ctx, TAC_LABEL, condition_true_op, NULL, NULL, NULL);
+			// add_tac_to_table(ctx, else_if_condition_true_tac);
 			build_tac_from_statement_dag(ctx, node->right);
 			TACInstruction* goto_tac = create_tac(ctx, TAC_GOTO, retrieved_end_op, NULL, NULL, NULL);
 			add_tac_to_table(ctx, goto_tac);

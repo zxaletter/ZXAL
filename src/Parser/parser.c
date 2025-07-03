@@ -14,61 +14,6 @@ Parser initialize_parser(Token* tokens) {
 	return parser;
 }
 
-// void init_node_table() {
-// 	node_table = create_node_table();
-// 	if (node_table.nodes == NULL) {
-// 		printf("In 'init_node_table', nodes are NULL.\n");
-// 		exit(EXIT_FAILURE);
-// 	}	
-// }
-
-// NodeTable create_node_table(Arena* arena) {
-// 	// Node** nodes = calloc(NUM_NODES, sizeof(Node*));
-// 	Node** nodes = arena_allocate(arena, NUM_NODES * sizeof(Node*));
-// 	if (!nodes) {
-// 		NodeTable failed_node_table = {
-// 			.size = 0,
-// 			.capacity = 0,
-// 			.node_index = 0,
-// 			.nodes = NULL
-// 		};
-// 		return failed_node_table;
-// 	}
-
-// 	NodeTable new_node_table = {
-// 		.size = 0,
-// 		.capacity = NUM_NODES,
-// 		.node_index = 0,
-// 		.nodes = nodes
-// 	};
-// 	return new_node_table;
-// }
-
-// void add_node_to_node_table(Node* node) {
-// 	if (!node) return;
-
-// 	if (node_table.size >= node_table.capacity) {
-// 		node_table.capacity *= 2;
-// 		// node_table.nodes = realloc(node_table.nodes, sizeof(Node*) * node_table.capacity);
-// 		node_table.nodes = arena_allocate(ast_arena, sizeof(Node*) node_table.capacity);
-// 		if (!node_table.nodes) {
-// 			emit_errors();
-// 			free_node_table();
-// 			free_error_table();
-// 			exit(EXIT_FAILURE);
-// 		}
-// 	}
-// 	node_table.nodes[node_table.node_index++] = node;
-// 	node_table.size++;
-// }
-
-// void free_node_table() {
-// 	for (int i = 0; i < node_table.capacity; i++) {
-// 		free_node(node_table.nodes[i]);
-// 	}
-// 	free(node_table.nodes);
-// }
-
 void init_error_table(CompilerContext* ctx) {
 	error_table = create_error_table(ctx);
 	if (error_table.errors == NULL) {
@@ -90,8 +35,6 @@ ErrorTable create_error_table(CompilerContext* ctx) {
 		};
 		return failed_error_table;
 	}
-
-	memset(errors, 0, sizeof(Error*) * ERROR_CAPACITY);
 
 	ErrorTable new_error_table = {
 		.size = 0,
@@ -121,20 +64,6 @@ void add_error_to_error_table(CompilerContext* ctx, Error* err) {
 	error_table.errors[error_table.error_index++] = err;
 	error_table.size++;
 }
-
-// void free_error(Error* error) {
-// 	if (!error) return;
-// 	if (error->message) free(error->message);
-// 	free_duplicate_token(error->token);
-// 	free(error);
-// }
-
-// void free_error_table() {
-// 	for (int i = 0; i < error_table.capacity; i++) {
-// 		free_error(error_table.errors[i]);
-// 	}
-// 	free(error_table.errors);
-// }
 
 Token* copy_token(CompilerContext* ctx, Token* original_token) {
 	// Token* copy_token = malloc(sizeof(Token));
@@ -908,6 +837,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) != TOKEN_INT_KEYWORD &&
 				peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
 				peek_token_type(parser) != TOKEN_BOOL_KEYWORD &&
+				peek_token_type(parser) != TOKEN_STR_KEYWORD &&
 				peek_token_type(parser) != TOKEN_STRUCT_KEYWORD) {
 
 				Token tok = peek_token(parser);
@@ -1696,6 +1626,7 @@ bool valid_function_return_type(token_t type) {
 		case TOKEN_CHAR_KEYWORD: return true;
 		case TOKEN_BOOL_KEYWORD: return true;
 		case TOKEN_STRUCT_KEYWORD: return true;
+		case TOKEN_STR_KEYWORD: return true;
 		case TOKEN_VOID_KEYWORD: return true;
 		default: return false;
 	}
@@ -1744,7 +1675,7 @@ Node* parse_function(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 				return NULL;
 			}
 		}
-		advance_parser(parser); // consume '}'
+		advance_parser(parser);
 		return NULL;
 	}
 

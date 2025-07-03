@@ -8,7 +8,7 @@
 #include <ctype.h>
 #include "compilercontext.h"
 
-#define KEYWORDS 19
+#define KEYWORDS 20
 #define INITIAL_TOKEN_CAPACITY 250
 extern char* keyword[KEYWORDS];
 
@@ -75,7 +75,8 @@ typedef enum {
 	TOKEN_PERIOD, 
 
 	TOKEN_UNKNOWN, // 59
-	TOKEN_EOF 
+	TOKEN_EOF,
+	TOKEN_STR_KEYWORD
 } token_t;
 
 typedef union {
@@ -129,6 +130,7 @@ typedef enum {
 	KEYWORD_CASE,
 	KEYWORD_TRUE,
 	KEYWORD_FALSE,
+	KEYWORD_STR,
 	KEYWORD_UNKNOWN
 } keyword_t;
 
