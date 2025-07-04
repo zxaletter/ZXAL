@@ -1,13 +1,13 @@
 CC = gcc
 CFLAGS = -g -Isrc
 
-DIRS = src/Lexer src/Parser src/Semantics src/IR
+DIRS = src/Lexer src/Parser src/Semantics src/IR src/RegAlloc
 
-SOURCES = $(shell find $(DIRS) -name "*.c") src/IR/cfg.c src/IR/tac.c src/IR/dag.c src/Semantics/types.c src/main.c src/bumpallocator.c src/compilercontext.c
+SOURCES = $(shell find $(DIRS) -name "*.c") src/RegAlloc/regalloc.c src/IR/cfg.c src/IR/tac.c src/IR/dag.c src/Semantics/types.c src/main.c src/bumpallocator.c src/compilercontext.c
 
 OUTPUT = program
 
-INCLUDES = -I src -I src/Lexer -I src/Parser -I src/Semantics -I src/IR 
+INCLUDES = -I src -I src/Lexer -I src/Parser -I src/Semantics -I src/IR -I src/RegAlloc
 
 all: $(OUTPUT)
 

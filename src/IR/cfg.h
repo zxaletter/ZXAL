@@ -87,6 +87,9 @@ typedef struct {
 	FunctionInfo** infos;
 } FunctionList;
 
+bool is_operand_label_or_symbol(Operand* op);
+void emit_liveness_info(TACInstruction* instruction);
+
 void emit_blocks();
 void emit_leaders();
 
@@ -96,14 +99,14 @@ int find_label_index(TACTable* instructions, char* target_name, int current_inde
 LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool is_live, int next_use);
 LivenessTable* create_liveness_table(CompilerContext* ctx);
 
-unsigned int hash_variable(BasicBlock* block, char* name);
+int hash_variable(BasicBlock* block, char* name);
 void set_operand_live_info(Operand* op, LivenessInfo* info);
 bool bind_or_update_live_info_to_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* info, unsigned int hash_key);
 void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, Operand* op, operand_role role, int instruction_index);
 void attach_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, int instruction_index);
 void operand_contain_nonvirtual_variable(CompilerContext* ctx, BasicBlock* block, Operand* op);
 void instruction_contains_nonvirtual_variables(CompilerContext* ctx, BasicBlock* block, int current_index);
-bool store_nonvirtual_variables(CompilerContext* ctx);
+void store_nonvirtual_variables(CompilerContext* ctx);
 void live_analysis(CompilerContext* ctx);
 
 void add_leader(CompilerContext* ctx, int leader_idx);

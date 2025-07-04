@@ -39,7 +39,7 @@ MemoryBlock* create_memory_block(size_t req_size) {
 
 void* arena_allocate(Arena* A, size_t req_size) {
 	if (!A || req_size == 0) return NULL;
-
+    		
 	uintptr_t current_address = (uintptr_t)A->current_block->p + A->current_block->offset;
 	size_t padding = (BYTE_ALIGNMENT - (current_address % BYTE_ALIGNMENT)) % BYTE_ALIGNMENT; 
 	size_t total_needed = req_size + padding;

@@ -485,8 +485,8 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, DAGNode* nod
 			};
 			Operand* res = create_operand(ctx, OP_SYMBOL, res_value);
 			TACInstruction* tac_assignment = create_tac(ctx, TAC_ASSIGNMENT, res, NULL, op_dagnode_operand, NULL);
+			result = tac_assignment;		
 			add_tac_to_table(ctx, tac_assignment);
-		
 			break;
 		}
 

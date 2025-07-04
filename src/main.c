@@ -3,6 +3,7 @@
 #include "IR/dag.h"
 #include "IR/tac.h"
 #include "IR/cfg.h"
+#include "RegAlloc/regalloc.h"
 // #include "Codegen/codegen.h"
 #include "compilercontext.h" 
 #include "auxiliaries.h"
@@ -57,7 +58,7 @@ int main(int argc, char** argv) {
 	DAGNode* dag_root = build_DAG(ctx, ast_root);
 	TACTable* tac_table = build_tacs(ctx, dag_root);
 	FunctionList* function_list = build_cfg(ctx, tac_table);
-	reg_alloc(ctx, function_list)
+	// reg_alloc(ctx, function_list);
 	free_compiler_context(ctx);
 	return 0;
 }

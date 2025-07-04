@@ -4,15 +4,15 @@ FunctionList* function_list = NULL;
 TACLabelEntries tac_entries;
 TACLeaders leaders_list;
 
-FunctionList create_function_list(CompilerContext* ctx) {
+FunctionList* create_function_list(CompilerContext* ctx) {
 	FunctionList* list = arena_allocate(ctx->ir_arena, sizeof(FunctionList));
 	if (!list) return NULL;
 
-	list->sizee = 0;
+	list->size = 0;
 	list->capacity = INIT_FUNCTION_LIST_CAPACITY;
 	list->infos = arena_allocate(ctx->ir_arena, sizeof(FunctionInfo*) * list->capacity); 
 	if (!list->infos) return NULL;
-	return new_func_list;
+	return list;
 }
 
 FunctionInfo* create_function_info(CompilerContext* ctx, TACInstruction* instruction, int tac_start_index, int tac_end_index) {
@@ -30,11 +30,12 @@ FunctionInfo* create_function_info(CompilerContext* ctx, TACInstruction* instruc
 bool add_function_info_to_list(CompilerContext* ctx, FunctionInfo* info) {
 	if (!info) return false;
 
-	if (function_list.size >= function_list.capacity) {
-		int prev_capacity = function_list.capacity;
-		function_list.capacity *= 2;
-		int new_capacity = function_list.capacity;
-		void** new_infos = arena_reallocate(ctx->ir_arena, function_list.infos, prev_capacity, new_capacity);
+	if (function_list->size >= function_list->capacity) {
+		int prev_capacity = function_list->capacity;
+		
+		function_list->capacity *= 2;
+		int new_capacity = function_list->capacity;
+		void** new_infos = arena_reallocate(ctx->ir_arena, function_list->infos, prev_capacity, new_capacity);
 		if (!new_infos) {
 			return false;
 		}
@@ -54,6 +55,7 @@ TACLabelEntries create_tac_label_entries(CompilerContext* ctx) {
 		};
 		return dummy_entries;
 	}
+
 	TACLabelEntries new_label_entries = {
 		.size = 0,
 		.capacity = INIT_TAC_LABEL_ENTRIES_CAPACITY,
@@ -312,9 +314,9 @@ int find_label_index(TACTable* instructions, char* target_name, int current_inde
 void find_leaders(CompilerContext* ctx, TACTable* instructions) {
 	int i = 0;
 
-	while (function_list.infos[i] && i < function_list.size) {
-		int start = function_list.infos[i]->tac_start_index; // function name index 
-		int end = function_list.infos[i]->tac_end_index;
+	while (function_list->infos[i] && i < function_list->size) {
+		int start = function_list->infos[i]->tac_start_index; // function name index 
+		int end = function_list->infos[i]->tac_end_index;
 
 		add_leader_to_leader_list(ctx, start + 1);
 		int current_index = start + 2;
@@ -362,8 +364,8 @@ bool index_is_leader(int index) {
 }
 
 bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions) {
-	for (int i = 0; i < function_list.size; i++) {
-		FunctionInfo* info = function_list.infos[i];
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
 		info->cfg = create_cfg(ctx);
 
 		if (!info->cfg) {
@@ -420,8 +422,8 @@ void add_edges(CFG* cfg, int index, BasicBlock* block) {
 }
 
 void link_function_cfgs() {
-	for (int i = 0; i < function_list.size; i++) {
-		FunctionInfo* info = function_list.infos[i];
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
 		CFG* cfg = info->cfg;
 
 		if (!cfg) return;
@@ -457,6 +459,8 @@ void link_function_cfgs() {
 	}
 }
 
+
+// live analysis functions
 LivenessTable* create_liveness_table(CompilerContext* ctx) {
 	LivenessTable* live_table = arena_allocate(ctx->ir_arena, sizeof(LivenessTable));
 	if (!live_table) {
@@ -470,7 +474,6 @@ LivenessTable* create_liveness_table(CompilerContext* ctx) {
 		perror("In 'create_liveness_table', unable to allocate space for liveness infos\n");
 		return NULL;
 	}
-	printf("About to return live table\n");
 	return live_table;
 }
 
@@ -483,9 +486,11 @@ LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool i
 	live_info->next_use = next_use;
 	return live_info;
 }
-// live analysis functions
-unsigned int hash_variable(BasicBlock* block, char* name) { 
-	unsigned int hash = 0;
+
+int hash_variable(BasicBlock* block, char* name) { 
+	if (!name) return -1; 
+
+	int hash = 0;
 
 	while (*name) {
 		hash = (hash << 1) + *name++;
@@ -544,8 +549,10 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* b
 			if (!live_info) return;
 
 			int hash_index = hash_variable(block, operand->value.sym->name);
-			bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
-			set_operand_live_info(operand, live_info);
+			if (hash_index != -1) {
+				set_operand_live_info(operand, live_info);
+				bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
+			}
 			break;
 		}
 
@@ -566,8 +573,10 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* b
 			if (!live_info) return;
 			
 			int hash_index = hash_variable(block, operand->value.label_name);
-			bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
-			set_operand_live_info(operand, live_info);
+			if (hash_index != -1) {
+				set_operand_live_info(operand, live_info);
+				bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
+			}
 			break;
 		}
 	}
@@ -576,23 +585,26 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* b
 void attach_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, int instruction_index) {
 	if (!block) return;
 
-	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->result, OP_RESULT, instruction_index);
-	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->op1, OP_USE, instruction_index);
-	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->op2, OP_USE, instruction_index);
-	determine_operand_liveness_and_next_use(ctx, block, block->instructions[instruction_index]->op3, OP_USE, instruction_index);
+
+	TACInstruction* current_instruction = block->instructions[instruction_index];
+	if (!current_instruction) return;
+
+	determine_operand_liveness_and_next_use(ctx, block, current_instruction->result, OP_RESULT, instruction_index);
+	determine_operand_liveness_and_next_use(ctx, block, current_instruction->op1, OP_USE, instruction_index);
+	determine_operand_liveness_and_next_use(ctx, block, current_instruction->op2, OP_USE, instruction_index);
+	determine_operand_liveness_and_next_use(ctx, block, current_instruction->op3, OP_USE, instruction_index);
 }
 
 void live_analysis(CompilerContext* ctx) {
-	for (int i = 0; i < function_list.size; i++) {
-		FunctionInfo* info = function_list.infos[i];
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
 		CFG* cfg = info->cfg;
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
 			BasicBlock* current_block = cfg->all_blocks[j];
-			int k = current_block->num_instructions;
-			while (current_block->instructions[k - 1] && k >= 0) {
-				attach_liveness_and_next_use(ctx, current_block, k - 1);
-				k--;
+
+			for (int k = current_block->num_instructions; k >= 0; k--) {
+				attach_liveness_and_next_use(ctx, current_block, k);
 			}
 		}
 	}
@@ -600,7 +612,7 @@ void live_analysis(CompilerContext* ctx) {
 // 
 
 void operand_contain_nonvirtual_variable(CompilerContext* ctx, BasicBlock* block, Operand* op) {
-	if (!op) return false;
+	if (!op) return;
 
 	switch (op->kind) {
 		case OP_SYMBOL: {
@@ -611,7 +623,12 @@ void operand_contain_nonvirtual_variable(CompilerContext* ctx, BasicBlock* block
 				return;
 			}
 			int live_info_key = hash_variable(block, live_info->var.symbol->name);
-			bind_or_update_live_info_to_table(ctx, block->table, live_info, live_info_key);
+			set_operand_live_info(op, live_info);
+			char* live_state = (op->is_live) ? "true" : "false";
+			printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
+					op->value.sym->name,
+					live_state,
+					op->next_use); 
 			break;
 		}
 
@@ -628,15 +645,15 @@ void instruction_contains_nonvirtual_variables(CompilerContext* ctx, BasicBlock*
 	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op3);
 }
 
-bool store_nonvirtual_variables(CompilerContext* ctx) {
-	for (int i = 0; i < function_list.size; i++) {
-		FunctionInfo* info = function_list.infos[i];
+void store_nonvirtual_variables(CompilerContext* ctx) {
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
 		CFG* cfg = info->cfg;
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
 			BasicBlock* current_block = cfg->all_blocks[j];	
 			current_block->table = create_liveness_table(ctx);
-			if (!current_block->table) return false;
+			if (!current_block->table) return;
 
 			for (int k = 0; k < current_block->num_instructions; k++) {
 				instruction_contains_nonvirtual_variables(
@@ -644,6 +661,125 @@ bool store_nonvirtual_variables(CompilerContext* ctx) {
 					current_block,
 					k
 				);
+			}
+		}
+	}
+
+	printf("\n\n");
+	printf("\033[31mLast Liveness check\033[0m\n");
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
+		CFG* cfg = info->cfg;
+
+		for (int j = 0; j < cfg->num_blocks; j++) {
+			BasicBlock* current_block = cfg->all_blocks[j];
+
+			for (int k = 0; k < current_block->num_instructions; k++) {
+				emit_liveness_info(current_block->instructions[k]);
+			}
+		}
+	}
+}
+
+bool is_operand_label_or_symbol(Operand* op) {
+	if (!op) return false;
+
+	switch (op->kind) {
+		case OP_SYMBOL: return true;
+		case OP_LABEL: return true;
+		default: return false;
+	}
+}
+
+void emit_liveness_info(TACInstruction* instruction) {
+	if (!instruction) return;
+
+	char* live_state = NULL;
+
+	if (is_operand_label_or_symbol(instruction->result)) {
+		switch (instruction->result->kind) {
+			case OP_SYMBOL: {
+				live_state = (instruction->result->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
+					instruction->result->value.sym->name,
+					live_state,
+					instruction->result->next_use);
+				break;
+			}
+
+			case OP_LABEL: {
+				live_state = (instruction->result->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
+					instruction->result->value.label_name,
+					live_state,
+					instruction->result->next_use);
+				break;
+			}
+		}
+	}
+
+	if (is_operand_label_or_symbol(instruction->op1)) {
+		switch (instruction->op1->kind) {
+			case OP_SYMBOL: {
+				live_state = (instruction->op1->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
+					instruction->op1->value.sym->name,
+					live_state,
+					instruction->op1->next_use);
+				break;
+			}
+
+			case OP_LABEL: {
+				live_state = (instruction->op1->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
+					instruction->op1->value.label_name,
+					live_state,
+					instruction->op1->next_use);
+				break;
+			}
+		}
+	}
+
+	if (is_operand_label_or_symbol(instruction->op2)) {
+		switch (instruction->op2->kind) {
+			case OP_SYMBOL: {
+				live_state = (instruction->op2->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
+					instruction->op2->value.sym->name,
+					live_state,
+					instruction->op2->next_use);
+				break;
+			}
+
+			case OP_LABEL: {
+				live_state = (instruction->op2->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n}",
+					instruction->op2->value.label_name,
+					live_state,
+					instruction->op2->next_use);
+				break;
+			}
+		}
+	}
+
+	if (is_operand_label_or_symbol(instruction->op3)) {
+		switch (instruction->op3->kind) {
+			case OP_SYMBOL: {
+				live_state = (instruction->op3->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n}",
+					instruction->op3->value.sym->name,
+					live_state,
+					instruction->op3->next_use);
+				break;
+			}
+
+			case OP_LABEL: {
+				live_state = (instruction->op3->is_live) ? "true" : "false";
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n}",
+					instruction->op3->value.label_name,
+					live_state,
+					instruction->op3->next_use);
+				break;
 			}
 		}
 	}
@@ -663,20 +799,20 @@ FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 	make_function_cfgs(ctx, instructions);
 	link_function_cfgs();
 
-	if (!store_nonvirtual_variables(ctx)) return; 
+	store_nonvirtual_variables(ctx); 
 	
 	live_analysis(ctx);
 
-	emit_function_infos();
+	// emit_function_infos();
 	// emit_leaders();
-	emit_blocks();
+	// emit_blocks();
 
 	return function_list;
 }
 
 void emit_function_infos() {
-	for (int i = 0; i < function_list.size; i++) {
-		printf("Function name: \033[32m%s\033[0m -> Start Index: %d -> End Index: %d\n", function_list.infos[i]->name, function_list.infos[i]->tac_start_index, function_list.infos[i]->tac_end_index);
+	for (int i = 0; i < function_list->size; i++) {
+		printf("Function name: \033[32m%s\033[0m -> Start Index: %d -> End Index: %d\n", function_list->infos[i]->name, function_list->infos[i]->tac_start_index, function_list->infos[i]->tac_end_index);
 	}
 }
 
@@ -687,12 +823,12 @@ void emit_leaders() {
 }
 
 void emit_blocks() {
-	for (int i = 0; i < function_list.size; i++) {
-		printf("\nFunction: \033[32m%s\033[0m\n", function_list.infos[i]->name);
-		if (function_list.infos[i]->cfg) {
-			for (int j = 0; j < function_list.infos[i]->cfg->num_blocks; j++) {
+	for (int i = 0; i < function_list->size; i++) {
+		printf("\nFunction: \033[32m%s\033[0m\n", function_list->infos[i]->name);
+		if (function_list->infos[i]->cfg) {
+			for (int j = 0; j < function_list->infos[i]->cfg->num_blocks; j++) {
 				printf("\tBlock %d:\n", j);
-				BasicBlock* current_block = function_list.infos[i]->cfg->all_blocks[j];
+				BasicBlock* current_block = function_list->infos[i]->cfg->all_blocks[j];
 				for (int k = 0; k < current_block->num_instructions; k++) {
 					printf("\t\tTAC type %d\n", current_block->instructions[k]->type);
 				}
