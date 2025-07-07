@@ -12,6 +12,7 @@
 #define INIT_TAC_LABEL_ENTRIES_CAPACITY 100
 #define INIT_LEADERS_CAPACITY 100
 #define INIT_LIVENESS_TABLE_CAPACITY 50
+#define INIT_OP_SET_CAPACITY 50
 
 typedef struct {
 	char* name;
@@ -47,6 +48,18 @@ typedef struct {
 	int capacity;
 } LivenessTable;
 
+typedef enum {
+	SETS_EQAUL,
+	MIN_OUT_SET,
+	MIN_IN_SET
+} set_t;
+
+typedef struct {
+	Operand** elements;
+	int size;
+	int capacity;
+} OperandSet;
+
 typedef struct BasicBlock BasicBlock;
 typedef struct BasicBlock {
 	int num_instructions;
@@ -58,10 +71,16 @@ typedef struct BasicBlock {
 	int num_successors_capacity;
 	
 	bool visited;
+	int id;
 	
 	TACInstruction** instructions;
 	BasicBlock** predecessors;
 	BasicBlock** successors;
+
+	OperandSet* use_set;
+	OperandSet* def_set;
+	OperandSet* in_set;
+	OperandSet* out_set;
 
 	LivenessTable* table;
 
@@ -72,6 +91,7 @@ typedef struct {
 	int num_blocks;
 	int blocks_capacity;
 	BasicBlock** all_blocks;
+	LivenessTable* table;
 } CFG;
 
 typedef struct {
@@ -87,24 +107,45 @@ typedef struct {
 	FunctionInfo** infos;
 } FunctionList;
 
+LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key);
+void init_operand_liveinfo(CompilerContext* ctx, CFG* cfg, Operand* operand);
+void init_instruction_liveinfo(CompilerContext* ctx, CFG* cfg, TACInstruction* instruction);
+void init_liveinfo_state(CompilerContext* ctx, CFG* cfg);
+bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info);
+
+void union_sets(CompilerContext* ctx, OperandSet* dest, OperandSet* src);
+bool sets_equal(OperandSet* set1, OperandSet* set2);
+OperandSet* difference_sets(CompilerContext* ctx, OperandSet* set1, OperandSet* set2);
+OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
+bool contains_operand(OperandSet* op_set, Operand* operand);
+void populate_and_use_defs(CompilerContext* ctx, BasicBlock* block);
+bool init_block_sets(CompilerContext* ctx, BasicBlock* block);
+
+
+void add_to_op_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand);
+void populate_and_use_defs(CompilerContext* ctx, BasicBlock* block);
+OperandSet* create_operand_set(CompilerContext* ctx);
+bool init_block_sets(CompilerContext* ctx, BasicBlock* block);
 bool is_operand_label_or_symbol(Operand* op);
 void emit_liveness_info(TACInstruction* instruction);
 
 void emit_blocks();
 void emit_leaders();
 
-BasicBlock* find_matching_label_block(CFG* cfg, int starting_search_index, TACInstruction* instruction);
+BasicBlock* find_matching_label_block(CFG* cfg, char* target_name);
 int find_label_index(TACTable* instructions, char* target_name, int current_index);
 
 LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool is_live, int next_use);
 LivenessTable* create_liveness_table(CompilerContext* ctx);
 
-int hash_variable(BasicBlock* block, char* name);
-void set_operand_live_info(Operand* op, LivenessInfo* info);
-bool bind_or_update_live_info_to_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* info, unsigned int hash_key);
-void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, Operand* op, operand_role role, int instruction_index);
-void attach_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, int instruction_index);
-void operand_contain_nonvirtual_variable(CompilerContext* ctx, BasicBlock* block, Operand* op);
+void determine_next_use(CompilerContext* ctx, CFG* cfg);
+
+int hash_variable(LivenessTable* table, char* name);
+
+void determine_instruction_liveness_info(CompilerContext* ctx, CFG* cfg, BasicBlock* block, int current_index);
+void determine_operand_liveness_and_next_use(CompilerContext* ctx, CFG* cfg, BasicBlock* block, Operand* op, operand_role role, int instruction_index);
+
+void operand_contain_variable(CompilerContext* ctx, Operand* op);
 void instruction_contains_nonvirtual_variables(CompilerContext* ctx, BasicBlock* block, int current_index);
 void store_nonvirtual_variables(CompilerContext* ctx);
 void live_analysis(CompilerContext* ctx);
@@ -116,10 +157,11 @@ void find_leaders(CompilerContext* ctx, TACTable* instructions);
 
 bool found_label(TACInstruction* instruction);
 bool found_leader(TACInstruction* instruction);
-void add_edges(CFG* cfg, int index, BasicBlock* block);
+
+void add_edges(CompilerContext* ctx, CFG* cfg, int index, BasicBlock* block);
 bool add_label_to_entries(CompilerContext* ctx, TACLabel* label);
 bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions);
-void link_function_cfgs();
+void link_function_cfgs(CompilerContext* ctx);
 TACLeaders crete_tac_leaders(CompilerContext* ctx);
 TACLabel* create_label_entry(CompilerContext* ctx, TACInstruction* instruction, int tac_index);
 TACLabelEntries create_tac_label_entries(CompilerContext* ctx);

@@ -3,7 +3,7 @@
 #include "IR/dag.h"
 #include "IR/tac.h"
 #include "IR/cfg.h"
-#include "RegAlloc/regalloc.h"
+// #include "RegAlloc/regalloc.h"
 // #include "Codegen/codegen.h"
 #include "compilercontext.h" 
 #include "auxiliaries.h"
@@ -45,13 +45,13 @@ int main(int argc, char** argv) {
 	}
 
 	char* filename = argv[1];
-	char* output = make_output_string(ctx, filename);
 
-
+	printf("now here\n");
 	Lexer* lexer = lex(ctx, filename);
+	printf("im here\n");
 	print_tokens(lexer->tokens);
 
-	Node* ast_root = parse(ctx, lexer->tokens, lexer->info);
+	Node* ast_root = parse(ctx, lexer);
 	resolve_tree(ctx, ast_root);
 	typecheck_tree(ctx, ast_root);
 	
@@ -59,6 +59,9 @@ int main(int argc, char** argv) {
 	TACTable* tac_table = build_tacs(ctx, dag_root);
 	FunctionList* function_list = build_cfg(ctx, tac_table);
 	// reg_alloc(ctx, function_list);
+	
+
+	// char* output = make_output_string(ctx, filename);
 	free_compiler_context(ctx);
 	return 0;
 }

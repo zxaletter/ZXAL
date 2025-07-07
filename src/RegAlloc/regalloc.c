@@ -38,11 +38,12 @@ bool store_idealized_asm_instruction(CompilerContext* ctx, IdealizedASMInstructi
 	return true;
 }
 
-IdealizedASMInstruction create_idealized_asm_instruction(idealized_asm_instruction_t kind, 
-	VirtualRegister dest, VirtualRegister src1, VirtualRegister src2) {
+IdealizedASMInstruction create_idealized_asm_instruction(OpCode op, char* function_name, 
+	VirtualRegister* dest, VirtualRegister* src1, VirtualRegister* src2) {
 	
 	IdealizedASMInstruction instruction = {
-		.kind = kind,
+		.op = op,
+		.function_name = function_name,
 		.dest = dest,
 		.src1 = src1,
 		.src2 = src2
@@ -59,25 +60,23 @@ char* create_virtual_register_name(CompilerContext* ctx) {
 	return virtual_register_name;
 }
 
-VirtualRegister create_virtual_register(CompilerContext* ctx, Operand* op) {
-	VirtualRegister dummy_vreg = {
-		.name = NULL,
-		.operand = NULL
-	};
-
-	if (!op) return dummy_vreg;
+VirtualRegister* create_virtual_register(CompilerContext* ctx, Operand* operand) {
+	VirtualRegister* vreg = arena_allocate(ctx->ir_arena, sizeof(VirtualRegister));
+	if (!vreg) {
+		perror("In 'create_virtual_register', unable to allocate space for virtual register\n");
+		return NULL;
+	}
 
 	char* virtual_register_name = create_virtual_register_name(ctx);
-	if (!virtual_register_name) return dummy_vreg;
+	if (!virtual_register_name) NULL;
 	
-	VirtualRegister vreg = {
-		.name = virtual_register_name,
-		.operand = op
-	};
+
+	vreg->name = virtual_register_name;
+	vreg->operand = operand;
 	return vreg;
 }
 
-idealized_asm_instruction_t get_idealized_asm_instruction_type(TACInstruction* tac) {
+OpCode get_op_code(TACInstruction* tac) {
 	switch (tac->type) {
 		case TAC_ADD: return ADD;
 		case TAC_SUB: return SUB;
@@ -86,28 +85,87 @@ idealized_asm_instruction_t get_idealized_asm_instruction_type(TACInstruction* t
 	}
 }
 
-void create_idealized_asm_for_tac_instruction(CompilerContext* ctx, TACInstruction* tac) {
+VirtualRegister* create_idealized_asm_for_tac_instruction(CompilerContext* ctx, TACInstruction* tac) {
+	if (!tac) return;
+
+	VirtualRegister* result = NULL;
+
 	switch (tac->type) {
 		case TAC_ADD:
 		case TAC_SUB:
 		case TAC_MUL:
 		case TAC_DIV: {
-			VirtualRegister dest = create_virtual_register(ctx, tac->result);
-			VirtualRegister src1 = create_virtual_register(ctx, tac->op1);
-			VirtualRegister src2 = create_virtual_register(ctx, tac->op2);
+			VirtualRegister* src1 = create_idealized_asm_for_tac_instruction(ctx, tac->op1);
+			VirtualRegister* src2 = create_idealized_asm_for_tac_instruction(ctx, tac->op2);
+			
+			VirtualRegister* dest = create_virtual_register(ctx, tac->result);
+			OpCode op = get_op_code(tac);
 
-			idealized_asm_instruction_t kind = get_idealized_asm_instruction_type(tac);
-
-			IdealizedASMInstruction arithmetic_instruction = create_idealized_asm_instruction(kind, dest, src1, src2);
+			IdealizedASMInstruction arithmetic_instruction = create_idealized_asm_instruction(op, NULL, dest, src1, src2);
 			if (!store_idealized_asm_instruction(ctx, arithmetic_instruction)) return;
+			result = dest;
+			break;
+		}
+
+		case TAC_INTEGER:
+		case TAC_BOOL:
+		case TAC_CHAR: {
+
+			VirtualRegister* src1 = create_virtual_register(ctx, tac->op1);
+
+			
+			VirtualRegister* dest = create_virtual_register(ctx, tac->result);
+			IdealizedASMInstruction mov_instruction = create_idealized_asm_instruction(MOV, NULL, dest, src1, NULL);
+			if (!store_idealized_asm_instruction(ctx, mov_instruction)) return;
+			result = dest;
 			break;
 		}
 	}
+
+	return result;
 }
 
 void create_idealized_asm_for_block(CompilerContext* ctx, BasicBlock* block) {
 	for (int i = 0; i < block->num_instructions; i++) {
 		create_idealized_asm_for_tac_instruction(ctx, block->instructions[i]);
+	}
+}
+
+char* get_idealized_asm_instruction_type_name(OpCode op) {
+	switch (op) {
+		case ADD: return "ADD";
+		case SUB: return "SUB";
+		case MUL: return "MUL";
+		case DIV: return "DIV";
+	}
+}
+
+void emit_idealized_asm_instructions() {
+	for (int i = 0; i < asm_instruction_list.size; i++) {
+		IdealizedASMInstruction current_instruction = asm_instruction_list.instructions[i];
+		switch (current_instruction.op) {
+			case ADD: 
+			case SUB: 
+			case MUL: 
+			case DIV: {
+				char* idealized_asm_instruction_type_name = get_idealized_asm_instruction_type_name(current_instruction.op);
+				printf("\t%s %s, %s, %s\n",
+					idealized_asm_instruction_type_name,
+					current_instruction.dest->name,
+					current_instruction.src1->name,
+					current_instruction.src2->name);
+
+
+				break;
+			}
+
+			case MOV: {
+				printf("\tMOV %s, %s\n",
+					current_instruction.dest->name,
+					current_instruction.src1->name);
+				break;
+			}
+		}
 	}
 }
 
@@ -117,6 +175,10 @@ void create_idealized_asm_for_functions(CompilerContext* ctx, FunctionList* func
 	}
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
+		
+		IdealizedASMInstruction function_name = create_idealized_asm_instruction(LABEL, info->name, NULL, NULL, NULL);
+		store_idealized_asm_instruction(ctx, function_name);
+
 		CFG* cfg = info->cfg;
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
@@ -133,5 +195,7 @@ void reg_alloc(CompilerContext* ctx, FunctionList* function_list) {
 	if (!asm_instruction_list.instructions) return;
 
 	create_idealized_asm_for_functions(ctx, function_list);
+	emit_idealized_asm_instructions();
+
 	// create_interference_graph();
 }

@@ -3,6 +3,7 @@
 FunctionList* function_list = NULL;
 TACLabelEntries tac_entries;
 TACLeaders leaders_list;
+static int block_id = 0;
 
 FunctionList* create_function_list(CompilerContext* ctx) {
 	FunctionList* list = arena_allocate(ctx->ir_arena, sizeof(FunctionList));
@@ -35,7 +36,13 @@ bool add_function_info_to_list(CompilerContext* ctx, FunctionInfo* info) {
 		
 		function_list->capacity *= 2;
 		int new_capacity = function_list->capacity;
-		void** new_infos = arena_reallocate(ctx->ir_arena, function_list->infos, prev_capacity, new_capacity);
+		void** new_infos = arena_reallocate(
+			ctx->ir_arena, 
+			function_list->infos, 
+			prev_capacity * sizeof(FunctionInfo*), 
+			new_capacity * sizeof(FunctionInfo*)
+		);
+
 		if (!new_infos) {
 			return false;
 		}
@@ -99,7 +106,13 @@ bool add_label_to_entries(CompilerContext* ctx, TACLabel* label) {
 		
 		tac_entries.capacity *= 2;
 		int new_capacity = tac_entries.capacity;
-		void** new_labels = arena_reallocate(ctx->ir_arena, tac_entries.labels, prev_capacity, new_capacity);
+		void** new_labels = arena_reallocate(
+			ctx->ir_arena, 
+			tac_entries.labels, 
+			prev_capacity * sizeof(TACLabel*), 
+			new_capacity * sizeof(TACLabel*)
+		);
+		
 		if (!new_labels) {
 			printf("Error: unable to reallocate space for new labels\n");
 			return false;
@@ -137,7 +150,13 @@ bool add_leader_to_leader_list(CompilerContext* ctx, int index) {
 
 		leaders_list.capacity *= 2;
 		int new_capacity = leaders_list.capacity;
-		void* new_leaders = arena_reallocate(ctx->ir_arena, leaders_list.leaders, prev_capacity, new_capacity);
+		void* new_leaders = arena_reallocate(
+			ctx->ir_arena, 
+			leaders_list.leaders, 
+			prev_capacity * sizeof(int), 
+			new_capacity * sizeof(int)
+		);
+		
 		if (!new_leaders) return false;
 
 		leaders_list.leaders = new_leaders;
@@ -176,7 +195,13 @@ bool add_block_to_cfg(CompilerContext* ctx, CFG* cfg, BasicBlock* block) {
 
 		cfg->blocks_capacity *= 2;
 		int new_capacity = cfg->blocks_capacity;
-		void** new_blocks = arena_reallocate(ctx->ir_arena, cfg->all_blocks, prev_capacity, new_capacity);
+		void** new_blocks = arena_reallocate(
+			ctx->ir_arena, 
+			cfg->all_blocks, 
+			prev_capacity * sizeof(BasicBlock*), 
+			new_capacity * sizeof(BasicBlock*)
+		);
+		
 		if (!new_blocks) {
 			return false;
 		} 
@@ -193,6 +218,7 @@ BasicBlock* create_basic_block(CompilerContext* ctx) {
 		return NULL;
 	}
 
+	basic_block->id = block_id++;
 	basic_block->visited = false;
 	basic_block->num_instructions = 0;
 	basic_block->num_successors = 0;
@@ -237,7 +263,13 @@ bool add_instruction_to_block(CompilerContext* ctx, BasicBlock* block, TACInstru
 		block->num_instructions_capacity *= 2;
 		int new_capacity = block->num_instructions_capacity;
 
-		void** new_instructions = arena_reallocate(ctx->ir_arena, block->instructions, prev_capacity, new_capacity);
+		void** new_instructions = arena_reallocate(
+			ctx->ir_arena, 
+			block->instructions, 
+			prev_capacity * sizeof(TACInstruction*), 
+			new_capacity * sizeof(TACInstruction*)
+		);
+
 		if (!new_instructions) return false;
 
 		block->instructions = new_instructions;
@@ -403,30 +435,70 @@ bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions) {
 	return true;
 }
 
-BasicBlock* find_matching_label_block(CFG* cfg, int starting_search_index, TACInstruction* instruction) {
-	for (int i = starting_search_index; i < cfg->num_blocks; i++) {
+BasicBlock* find_matching_label_block(CFG* cfg,  char* target_name) {
+	for (int i = 0; i < cfg->num_blocks; i++) {
 		BasicBlock* current_block = cfg->all_blocks[i];
-		if (!current_block->instructions[0]->result) continue;
-		if (!current_block->instructions[0]->result->value.label_name) continue;
-		if (strcmp(instruction->result->value.label_name, current_block->instructions[0]->result->value.label_name) == 0) {
-			return current_block;
+		if (current_block->num_instructions > 0) {
+			TACInstruction* first = current_block->instructions[0];
+			if (first->type == TAC_LABEL &&
+				first->result &&
+				first->result->value.label_name &&
+				strcmp(first->result->value.label_name, target_name) == 0) {
+				return current_block;
+			}
 		}
 	}
 	return NULL;
 }
 
-void add_edges(CFG* cfg, int index, BasicBlock* block) {
-	if (!block) return;
+void add_edges(CompilerContext* ctx, CFG* cfg, int index, BasicBlock* block) {
+	if (!block || index >= cfg->num_blocks) return;
+
+	if (cfg->all_blocks[index]->num_successors >= cfg->all_blocks[index]->num_successors_capacity) {
+		int prev_capacity = cfg->all_blocks[index]->num_successors_capacity;
+
+		cfg->all_blocks[index]->num_successors_capacity *= 2;
+		int new_capacity = cfg->all_blocks[index]->num_successors_capacity;
+		void** reallocated_successors = arena_reallocate(ctx->ir_arena, 
+			cfg->all_blocks[index]->successors, 
+			prev_capacity * sizeof(BasicBlock*), 
+			new_capacity * sizeof(BasicBlock*)
+		);
+
+		if (!reallocated_successors) {
+			perror("In 'add_edges', unable to reallocate space for successors\n");
+			return;
+		}
+		cfg->all_blocks[index]->successors = reallocated_successors;
+	}
+
+	if (block->num_predecessors >= block->num_predecessors_capacity) {
+		int prev_capacity = block->num_predecessors_capacity;
+
+		block->num_predecessors_capacity *= 2;
+		int new_capacity = block->num_predecessors_capacity;
+		void ** reallocated_predecessors = arena_reallocate(
+			ctx->ir_arena, 
+			block->predecessors, 
+			prev_capacity * sizeof(BasicBlock*), 
+			new_capacity * sizeof(BasicBlock*)
+		);
+
+		if (!reallocated_predecessors) return;
+
+		block->predecessors = reallocated_predecessors;
+	}
+
 	cfg->all_blocks[index]->successors[cfg->all_blocks[index]->num_successors++] = block;
 	block->predecessors[block->num_predecessors++] = cfg->all_blocks[index];
 }
 
-void link_function_cfgs() {
+void link_function_cfgs(CompilerContext* ctx) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
 		CFG* cfg = info->cfg;
 
-		if (!cfg) return;
+		if (!cfg) continue;
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
 			TACInstruction* last_instruction_in_current_block = cfg->all_blocks[j]->instructions[cfg->all_blocks[j]->num_instructions - 1];
@@ -434,15 +506,23 @@ void link_function_cfgs() {
 
 			switch (last_instruction_in_current_block->type) {
 				case TAC_GOTO: {
-					BasicBlock* matching_block = find_matching_label_block(cfg, j + 1, last_instruction_in_current_block);
-					add_edges(cfg, j, matching_block);
+					BasicBlock* matching_block = find_matching_label_block(cfg, last_instruction_in_current_block->result->value.label_name);
+					if (matching_block) {
+						add_edges(ctx, cfg, j, matching_block);
+					}
 					break;
 				}
 
-				case TAC_IF_FALSE: {
-					BasicBlock* matching_block = find_matching_label_block(cfg, j + 1, last_instruction_in_current_block);
-					add_edges(cfg, j, matching_block);
-					add_edges(cfg, j, cfg->all_blocks[j + 1]);
+				case TAC_IF_FALSE: {					
+					if (j + 1 < cfg->num_blocks) {
+						add_edges(ctx, cfg, j, cfg->all_blocks[j + 1]);
+					}
+					
+					BasicBlock* matching_block = find_matching_label_block(cfg, last_instruction_in_current_block->op1->value.label_name);
+					if (matching_block) {
+						add_edges(ctx, cfg, j, matching_block);
+					}
+
 					break;
 				}
 				
@@ -451,7 +531,10 @@ void link_function_cfgs() {
 				}
 
 				default: {
-					add_edges(cfg, j, cfg->all_blocks[j + 1]);
+					if (j + 1 < cfg->num_blocks) {
+						add_edges(ctx, cfg, j, cfg->all_blocks[j + 1]);
+					}
+
 					break;
 				}
 			}
@@ -459,22 +542,22 @@ void link_function_cfgs() {
 	}
 }
 
-
-// live analysis functions
+/////////////////////////////////////////////////////
+// live analysis functions 
 LivenessTable* create_liveness_table(CompilerContext* ctx) {
-	LivenessTable* live_table = arena_allocate(ctx->ir_arena, sizeof(LivenessTable));
-	if (!live_table) {
-		perror("In 'create_liveness_table', unable to allocate space and initialize live table\n");
-		return NULL;
-	}
-	live_table->size = 0;
-	live_table->capacity = INIT_LIVENESS_TABLE_CAPACITY;
-	live_table->liveness_infos = arena_allocate(ctx->ir_arena, sizeof(LivenessInfo*) * live_table->capacity);
-	if (!live_table->liveness_infos) {
-		perror("In 'create_liveness_table', unable to allocate space for liveness infos\n");
-		return NULL;
-	}
-	return live_table;
+	LivenessTable* table = arena_allocate(ctx->ir_arena, sizeof(LivenessTable));
+	if (!table) return NULL;
+
+	table->size = 0;
+	table->capacity = INIT_LIVENESS_TABLE_CAPACITY;
+	table->liveness_infos = arena_allocate(
+		ctx->ir_arena, 
+		table->capacity * sizeof(LivenessInfo*)
+	);
+
+	if (!table->liveness_infos) return NULL;
+
+	return table;
 }
 
 LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool is_live, int next_use) {
@@ -487,112 +570,387 @@ LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool i
 	return live_info;
 }
 
-int hash_variable(BasicBlock* block, char* name) { 
-	if (!name) return -1; 
-
-	int hash = 0;
-
-	while (*name) {
-		hash = (hash << 1) + *name++;
-	}
-	return hash % block->table->capacity;
-}
-
-bool bind_or_update_live_info_to_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* info, unsigned int hash_key) {
-	if (!table || !info) return false;
+bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info) {
+	if (!live_info) return false;
 
 	if (table->size >= table->capacity) {
 		int prev_capacity = table->capacity;
 
 		table->capacity *= 2;
 		int new_capacity = table->capacity;
-		void** new_liveness_infos = arena_reallocate(ctx->ir_arena, table->liveness_infos, prev_capacity, new_capacity);
-		if (!new_liveness_infos) {
-			return false;
-		}
-		table->liveness_infos = new_liveness_infos;
+		void** new_live_infos = arena_reallocate(
+			ctx->ir_arena,
+			table->liveness_infos,
+			prev_capacity * sizeof(LivenessInfo*),
+			new_capacity * sizeof(LivenessInfo*)
+		);
+
+		if (!new_live_infos) return false;
+
+		table->liveness_infos = new_live_infos;
 	}
-	
-	if (table->liveness_infos[hash_key]) {
-		table->liveness_infos[hash_key] = info;
-	} else {
-		table->liveness_infos[hash_key] = info;
-		table->size++;
+
+	table->liveness_infos[table->size++] = live_info;
+	return true;
+
+}
+
+OperandSet* create_operand_set(CompilerContext* ctx) {
+	OperandSet* op_set = arena_allocate(ctx->ir_arena, sizeof(OperandSet));
+	if (!op_set) return NULL;
+
+	op_set->size = 0;
+	op_set->capacity = INIT_OP_SET_CAPACITY;
+	op_set->elements = arena_allocate(ctx->ir_arena, sizeof(Operand*) * op_set->capacity);
+	if (!op_set->elements) {
+		perror("In 'create_op_set', unable to allocate space and initialize op set elements\n");
+		return NULL;
+	}
+	return op_set;
+}
+
+bool init_block_sets(CompilerContext* ctx, BasicBlock* block) {
+	if (!block) return false;
+
+	block->use_set = create_operand_set(ctx);
+	block->def_set = create_operand_set(ctx);
+	block->in_set = create_operand_set(ctx);
+	block->out_set = create_operand_set(ctx);
+
+	if (!block->use_set || !block->def_set ||
+		!block->in_set || !block->out_set) {
+		return false;
 	}
 	return true;
 }
 
-void set_operand_live_info(Operand* op, LivenessInfo* live_info) {
-	op->is_live = live_info->is_live;
-	op->next_use = live_info->next_use;
+void add_to_operand_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand) {
+	if (!op_set || !operand) return;
+
+	if (op_set->size >= op_set->capacity) {
+		int prev_capacity = op_set->capacity;
+
+		op_set->capacity *= 2;
+		int new_capacity = op_set->capacity;
+		void** new_elements = arena_reallocate(
+			ctx->ir_arena,
+			op_set->elements,
+			prev_capacity * sizeof(Operand*),
+			new_capacity * sizeof(Operand*)
+		);
+
+		if (!new_elements) {
+			perror("In 'add_to_operand_set', unable to reallocate space for new elements\n");
+			return;
+		}
+		op_set->elements = new_elements;
+	}
+	op_set->elements[op_set->size++] = operand;
 }
 
-void determine_operand_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, Operand* operand, operand_role role, int instruction_index) {
-	if (!block || !operand) return;
+void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
+	if (!block) return;
 
-	switch (operand->kind) {
-		case OP_SYMBOL: {
-			if (!operand->value.sym) return;
-			if (!operand->value.sym->name) return;
+	for (int i = 0; i < block->num_instructions; i++) {
+		TACInstruction* tac = block->instructions[i];
+		if (!tac) return;
 
-			LiveInfoVar var = {
-				.symbol = operand->value.sym
-			};
-
-			LivenessInfo* live_info = NULL;
-
-			switch (role) {
-				case OP_RESULT: live_info = create_liveness_info(ctx, var, false, -1); break;
-				case OP_USE: live_info = create_liveness_info(ctx, var, true, instruction_index); break;
+		switch (tac->type) {
+			case TAC_ADD:
+			case TAC_SUB:
+			case TAC_MUL:
+			case TAC_DIV:
+			case TAC_ADD_EQUAL:
+			case TAC_SUB_EQUAL:
+			case TAC_MUL_EQUAL:
+			case TAC_DIV_EQUAL:
+			case TAC_MODULO:
+			case TAC_LESS:
+			case TAC_GREATER:
+			case TAC_LESS_EQUAL:
+			case TAC_GREATER_EQUAL:
+			case TAC_EQUAL:
+			case TAC_NOT_EQUAL:
+			case TAC_LOGICAL_OR:
+			case TAC_LOGICAL_AND: {
+				add_to_operand_set(ctx, block->use_set, tac->op1);
+				add_to_operand_set(ctx, block->use_set, tac->op2);
+				add_to_operand_set(ctx, block->def_set, tac->result);
+				break;
 			}
 
-			if (!live_info) return;
-
-			int hash_index = hash_variable(block, operand->value.sym->name);
-			if (hash_index != -1) {
-				set_operand_live_info(operand, live_info);
-				bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
+			case TAC_CHAR:
+			case TAC_BOOL:
+			case TAC_INTEGER: {
+				add_to_operand_set(ctx, block->def_set, tac->result);
+				break;
 			}
-			break;
+
+			case TAC_STORE: {
+				add_to_operand_set(ctx, block->use_set, tac->result);
+				add_to_operand_set(ctx, block->use_set, tac->op1);
+				break;
+			}
+
+			case TAC_PARAM:
+			case TAC_ARG: {
+				add_to_operand_set(ctx, block->use_set, tac->op1);
+				break;
+			}
+
+			case TAC_DEREFERENCE: 
+			case TAC_NOT: {
+				add_to_operand_set(ctx, block->use_set, tac->op1);
+				add_to_operand_set(ctx, block->def_set, tac->result);
+				break;
+			}
+
+			case TAC_ASSIGNMENT: {
+				if (tac->op2 && tac->op2->kind == OP_RETURN) {
+					add_to_operand_set(ctx, block->def_set, tac->result);
+				} else {
+					add_to_operand_set(ctx, block->use_set, tac->op2);
+					add_to_operand_set(ctx, block->def_set, tac->result);
+				}
+				break;
+			}
 		}
+	}
 
-		case OP_LABEL: {
-			if (!operand->value.label_name) return;
+}
 
-			LiveInfoVar var = {
-				.label_name = operand->value.label_name
-			};
+bool contains_operand(OperandSet* op_set, Operand* operand) {
+	if (!op_set || !operand) return false;
 
-			LivenessInfo* live_info = NULL;
+	for (int i = 0; i < op_set->size; i++) {
+		if (op_set->elements[i] == operand) return true;
+	}
 
-			switch (role) {
-				case OP_RESULT: live_info = create_liveness_info(ctx, var, false, -1); break;
-				case OP_USE: live_info = create_liveness_info(ctx, var, true, instruction_index); break;
-			}
+	return false;
+}
 
-			if (!live_info) return;
-			
-			int hash_index = hash_variable(block, operand->value.label_name);
-			if (hash_index != -1) {
-				set_operand_live_info(operand, live_info);
-				bind_or_update_live_info_to_table(ctx, block->table, live_info, hash_index);
-			}
-			break;
+void union_sets(CompilerContext* ctx, OperandSet* dest, OperandSet* src) {
+	for (int i = 0; i < src->size; i++) {
+		if (!contains_operand(dest, src->elements[i])) {
+			add_to_operand_set(ctx, dest, src->elements[i]);
 		}
 	}
 }
 
-void attach_liveness_and_next_use(CompilerContext* ctx, BasicBlock* block, int instruction_index) {
-	if (!block) return;
+bool sets_equal(OperandSet* set1, OperandSet* set2) {
+	if (set1->size != set2->size) return false;
+
+	for (int i = 0; i < set1->size; i++) {
+		if (!contains_operand(set2, set1->elements[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+OperandSet* difference_sets(CompilerContext* ctx, OperandSet* set1, OperandSet* set2) {
+	if (!set1 || !set2) return NULL;
+
+	OperandSet* diff_set = create_operand_set(ctx);
+	for (int i = 0; i < set1->size; i++) {
+		if (!contains_operand(set2, set1->elements[i])) {
+			add_to_operand_set(ctx, diff_set, set1->elements[i]);
+		}
+	}
+
+	return diff_set;
+}
+
+OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set) {
+	if (!original_set) return NULL;
+
+	OperandSet* copy = create_operand_set(ctx);
+	for (int i = 0; i < original_set->size; i++) {
+		copy->elements[i] = original_set->elements[i];
+	}
+	copy->size = original_set->size;
+	return copy;
+}
+
+void fixed_point_iteration(CompilerContext* ctx, CFG* cfg) {
+	bool changed = true;
+	while (changed) {
+		changed = false;
+
+		for (int i = cfg->num_blocks - 1; i >= 0; i--) {
+			BasicBlock* current_block = cfg->all_blocks[i];
+			
+			current_block->out_set->size = 0;
+
+			for (int j = 0;j < current_block->num_successors; j++) {			
+				BasicBlock* successor = current_block->successors[j];
+				union_sets(ctx, current_block->out_set, successor->in_set);
+			}
+
+			OperandSet* old_in = copy_set(ctx, current_block->in_set);
+
+			OperandSet* out_minus_def = difference_sets(ctx, current_block->out_set, current_block->def_set);
+			current_block->in_set->size = 0;
+			union_sets(ctx, current_block->in_set, current_block->use_set);
+			union_sets(ctx, current_block->in_set, out_minus_def);
+
+			if (!sets_equal(old_in, current_block->in_set)) {
+				changed = true;
+			}
+		}		
+	}
+}
 
 
-	TACInstruction* current_instruction = block->instructions[instruction_index];
-	if (!current_instruction) return;
+int hash_variable(LivenessTable* table, char* name) {
+	if (!table || !name) return -1;
 
-	determine_operand_liveness_and_next_use(ctx, block, current_instruction->result, OP_RESULT, instruction_index);
-	determine_operand_liveness_and_next_use(ctx, block, current_instruction->op1, OP_USE, instruction_index);
-	determine_operand_liveness_and_next_use(ctx, block, current_instruction->op2, OP_USE, instruction_index);
-	determine_operand_liveness_and_next_use(ctx, block, current_instruction->op3, OP_USE, instruction_index);
+	unsigned int hash = 0;
+	while (*name) {
+		hash = (hash << 1) + *name++;
+	}
+	return hash % table->capacity;
+
+}
+
+
+LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key) {
+	if (!table || hash_key == -1) return NULL;
+
+	return table->liveness_infos[hash_key];
+}
+
+void determine_operand_liveness_and_next_use(CompilerContext* ctx, CFG* cfg, 
+	BasicBlock* block, Operand* operand, operand_role role, int current_index) {
+
+	switch (operand->kind) {
+		case OP_SYMBOL: {
+			LiveInfoVar var = {.symbol = operand->value.sym};
+
+			int hash_key = hash_variable(cfg->table, operand->value.sym->name);	
+
+			LivenessInfo* stored_info = NULL;
+			switch (role) {	
+				case OP_RESULT: {
+					stored_info = retrieve_livenessinfo(block->table, hash_key); 
+					if (stored_info) {
+						stored_info->is_live = false;
+					}
+					break;
+				}
+				case OP_USE: {
+					stored_info = retrieve_livenessinfo(block->table, hash_key); 
+					if (!stored_info) {
+						LivenessInfo* new_info = create_liveness_info(ctx, var, false, -1);
+						add_liveinfo_to_liveness_table(ctx, block->table, new_info);	
+						stored_info = new_info;
+					} else {
+						stored_info->next_use = current_index;
+						stored_info->is_live = true;
+					}
+
+					operand->next_use = stored_info->next_use;
+					operand->is_live = true; 
+
+					
+					break;
+				}
+			}
+
+			break;
+		}
+
+		case OP_BINARY:
+		case OP_UNARY:
+		case OP_STORE: {
+			if (!operand->value.label_name) return;
+
+			LiveInfoVar var = {.label_name = operand->value.label_name};
+
+			int hash_key = hash_variable(cfg->table, operand->value.label_name);
+			
+
+			LivenessInfo* stored_info = NULL;
+			switch (role) {
+				case OP_RESULT: {
+					stored_info = retrieve_livenessinfo(block->table, hash_key); 
+					if (stored_info) {
+						stored_info->is_live = false;
+					}
+					break;
+				case OP_USE: {
+					stored_info = retrieve_livenessinfo(block->table, hash_key); 
+					if (!stored_info) {
+						LivenessInfo* new_info = create_liveness_info(ctx, var, false, -1);
+						add_liveinfo_to_liveness_table(ctx, block->table, new_info);
+						stored_info = new_info;
+					} else {
+						stored_info->next_use = current_index;
+						stored_info->is_live = true;
+					} 
+					operand->next_use = stored_info->next_use;
+					operand->is_live = true;
+					
+					stored_info->next_use = current_index;
+					stored_info->is_live = true;
+					break;
+				} 
+			}
+
+			break;
+		}
+
+		default: break;
+	}
+	}
+}
+
+void determine_instruction_liveness_info(CompilerContext* ctx, CFG* cfg, BasicBlock* current_block, int current_index) {
+	if (!current_block) return;
+
+	TACInstruction* current_instruction = current_block->instructions[current_index];
+	
+	determine_operand_liveness_and_next_use(ctx, cfg, current_block, current_instruction->result, OP_RESULT, current_index);
+	determine_operand_liveness_and_next_use(ctx, cfg, current_block, current_instruction->op1, OP_USE, current_index);
+	determine_operand_liveness_and_next_use(ctx, cfg, current_block, current_instruction->op2, OP_USE, current_index);
+	determine_operand_liveness_and_next_use(ctx, cfg, current_block, current_instruction->op3, OP_USE, current_index);
+}
+
+
+void determine_next_use(CompilerContext* ctx, CFG* cfg) {
+	for (int i = cfg->num_blocks - 1; i >= 0; i--) {
+		BasicBlock* current_block = cfg->all_blocks[i];
+		current_block->table = create_liveness_table(ctx);
+		if (!current_block->table) return;
+
+		for (int j = 0; j < current_block->out_set->size; j++) {
+			Operand* op = current_block->out_set->elements[j];
+			if (!op) continue;
+
+			switch (op->kind) {
+				case OP_SYMBOL: {
+					LiveInfoVar var = {.symbol = op->value.sym};
+					LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
+					add_liveinfo_to_liveness_table(ctx, current_block->table, live_info);
+					break;
+				}
+
+				case OP_UNARY:
+				case OP_BINARY:
+				case OP_STORE: {
+					LiveInfoVar var = {.label_name = op->value.label_name};
+					LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
+					add_liveinfo_to_liveness_table(ctx, current_block->table, live_info);
+					break;
+				}
+			}
+		}
+
+		for (int k = current_block->num_instructions - 1; k>= 0; k--) {
+			determine_instruction_liveness_info(ctx, cfg, current_block, k);
+		}
+		
+	}
 }
 
 void live_analysis(CompilerContext* ctx) {
@@ -602,91 +960,26 @@ void live_analysis(CompilerContext* ctx) {
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
 			BasicBlock* current_block = cfg->all_blocks[j];
+			if (!init_block_sets(ctx, current_block)) return;
 
-			for (int k = current_block->num_instructions; k >= 0; k--) {
-				attach_liveness_and_next_use(ctx, current_block, k);
-			}
-		}
-	}
-}
-// 
-
-void operand_contain_nonvirtual_variable(CompilerContext* ctx, BasicBlock* block, Operand* op) {
-	if (!op) return;
-
-	switch (op->kind) {
-		case OP_SYMBOL: {
-			LiveInfoVar var = { .symbol = op->value.sym }; 
-			LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
-			if (!live_info) {
-				printf("In 'operand_contain_nonvirtual_variable', unable to create live info\n");
-				return;
-			}
-			int live_info_key = hash_variable(block, live_info->var.symbol->name);
-			set_operand_live_info(op, live_info);
-			char* live_state = (op->is_live) ? "true" : "false";
-			printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-					op->value.sym->name,
-					live_state,
-					op->next_use); 
-			break;
+			populate_use_and_def_sets(ctx, current_block);
 		}
 
-		default: break;
+		fixed_point_iteration(ctx, cfg);
+		determine_next_use(ctx, cfg);
 	}
 }
-
-void instruction_contains_nonvirtual_variables(CompilerContext* ctx, BasicBlock* block, int current_index) {
-	if (!block) return;
-
-	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->result);
-	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op1);
-	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op2);
-	operand_contain_nonvirtual_variable(ctx, block, block->instructions[current_index]->op3);
-}
-
-void store_nonvirtual_variables(CompilerContext* ctx) {
-	for (int i = 0; i < function_list->size; i++) {
-		FunctionInfo* info = function_list->infos[i];
-		CFG* cfg = info->cfg;
-
-		for (int j = 0; j < cfg->num_blocks; j++) {
-			BasicBlock* current_block = cfg->all_blocks[j];	
-			current_block->table = create_liveness_table(ctx);
-			if (!current_block->table) return;
-
-			for (int k = 0; k < current_block->num_instructions; k++) {
-				instruction_contains_nonvirtual_variables(
-					ctx, 
-					current_block,
-					k
-				);
-			}
-		}
-	}
-
-	printf("\n\n");
-	printf("\033[31mLast Liveness check\033[0m\n");
-	for (int i = 0; i < function_list->size; i++) {
-		FunctionInfo* info = function_list->infos[i];
-		CFG* cfg = info->cfg;
-
-		for (int j = 0; j < cfg->num_blocks; j++) {
-			BasicBlock* current_block = cfg->all_blocks[j];
-
-			for (int k = 0; k < current_block->num_instructions; k++) {
-				emit_liveness_info(current_block->instructions[k]);
-			}
-		}
-	}
-}
+/// END
+//////////////////////////////////////
 
 bool is_operand_label_or_symbol(Operand* op) {
 	if (!op) return false;
 
 	switch (op->kind) {
 		case OP_SYMBOL: return true;
-		case OP_LABEL: return true;
+		case OP_BINARY: return true;
+		case OP_UNARY: return true;
+		case OP_STORE: return true;
 		default: return false;
 	}
 }
@@ -707,14 +1000,17 @@ void emit_liveness_info(TACInstruction* instruction) {
 				break;
 			}
 
-			case OP_LABEL: {
+			case OP_BINARY:
+			case OP_UNARY:
+			case OP_STORE: {
 				live_state = (instruction->result->is_live) ? "true" : "false";
 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-					instruction->result->value.label_name,
+					instruction->result->value.label_name, 
 					live_state,
 					instruction->result->next_use);
 				break;
 			}
+
 		}
 	}
 
@@ -753,7 +1049,7 @@ void emit_liveness_info(TACInstruction* instruction) {
 
 			case OP_LABEL: {
 				live_state = (instruction->op2->is_live) ? "true" : "false";
-				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n}",
+				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
 					instruction->op2->value.label_name,
 					live_state,
 					instruction->op2->next_use);
@@ -797,12 +1093,24 @@ FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 	mark_labels(ctx, instructions);
 	find_leaders(ctx, instructions);
 	make_function_cfgs(ctx, instructions);
-	link_function_cfgs();
+	link_function_cfgs(ctx);
 
-	store_nonvirtual_variables(ctx); 
-	
+	// store_nonvirtual_variables(ctx); 
 	live_analysis(ctx);
+	printf("\n\n");
+	printf("\033[31mLast Liveness check\033[0m\n");
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
+		CFG* cfg = info->cfg;
 
+		for (int j = 0; j < cfg->num_blocks; j++) {
+			BasicBlock* current_block = cfg->all_blocks[j];
+
+			for (int k = 0; k < current_block->num_instructions; k++) {
+				emit_liveness_info(current_block->instructions[k]);
+			}
+		}
+	}
 	// emit_function_infos();
 	// emit_leaders();
 	// emit_blocks();

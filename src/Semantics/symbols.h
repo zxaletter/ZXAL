@@ -15,6 +15,8 @@ typedef enum {
 
 typedef struct Symbol {
 	symbol_t kind;
+	int symbol_id;
+	
 	bool symbol_free;
 	bool bind_symbol;
 	char* name;

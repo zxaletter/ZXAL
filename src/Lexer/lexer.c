@@ -151,11 +151,17 @@ Token create_string_token(CompilerContext* ctx, token_t type, char* str, int lin
 
 void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 	if (lexer->tokenIdx >= lexer->capacity) {
-		size_t prev_capacity = lexer->capacity * sizeof(Token); 
+		size_t prev_capacity = lexer->capacity; 
 		lexer->capacity *= 2;
 		size_t new_capacity = lexer->capacity * sizeof(Token);
 		// lexer->tokens = realloc(lexer->tokens, lexer->capacity * sizeof(Token));
-		void* new_tokens = arena_reallocate(ctx->lexer_arena, lexer->tokens, prev_capacity, new_capacity);
+		void* new_tokens = arena_reallocate(
+			ctx->lexer_arena, 
+			lexer->tokens, 
+			prev_capacity * sizeof(Token), 
+			new_capacity * sizeof(Token)
+		);
+		
 		if (!new_tokens) {
 			printf("Error: Unable to reallocate 'lexer->tokens' in 'add_token'\n");
 			return;
@@ -167,6 +173,7 @@ void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 }
 
 void get_identifier(CompilerContext* ctx, Lexer* lexer) {
+	printf("in get identifier\n");
 	while (isalnum(peek_lexer(lexer)) || peek_lexer(lexer) == '_') {
 		advance_lexer(lexer);
 	}
@@ -191,6 +198,7 @@ void get_identifier(CompilerContext* ctx, Lexer* lexer) {
 }	
 
 void get_number(CompilerContext* ctx, Lexer* lexer) {
+	printf("in get number\n");
 	bool isNegative = false;
 	if (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer))) {
 		isNegative = true;
@@ -219,6 +227,7 @@ void get_number(CompilerContext* ctx, Lexer* lexer) {
 }
 
 void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
+	printf("in get delimeters\n");
 	char c = advance_lexer(lexer);
 	token_t type = TOKEN_UNKNOWN;
 
@@ -248,12 +257,14 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 }
 
 bool match(Lexer* lexer, char expected) {
+	printf("in match\n");
 	if (peek_lexer(lexer) != expected) return false;
 	advance_lexer(lexer);
 	return true;
 }
 
 void get_operator(CompilerContext* ctx, Lexer* lexer) {
+	printf("in get operator\n");
 	char c = advance_lexer(lexer);
 	bool isCompoundOp = false;
 	token_t type = TOKEN_UNKNOWN;
@@ -385,6 +396,7 @@ void get_operator(CompilerContext* ctx, Lexer* lexer) {
 
 FileInfo* create_info(CompilerContext* ctx, char* filename, int line_count, char* contents) {
 	// FileInfo* info = malloc(sizeof(FileInfo));
+	printf("in create info\n");
 	FileInfo* info = arena_allocate(ctx->lexer_arena, sizeof(FileInfo));
 	if (!info) {
 		perror("Failed to create file info\n");
@@ -467,12 +479,6 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 				// info->lines[current_line_index] = malloc(length + 1);
 				info->lines[current_line_index] = arena_allocate(ctx->lexer_arena, length + 1);
 				if (!info->lines[current_line_index]) {
-					// for (int j = 0; j < current_line_index; j++) {
-						// free(info->lines[j]);
-					// }
-					// free(info->lines);
-					// free(info->contents);
-					// free(info);
 					fclose(file);
 					return NULL;
 				}
@@ -492,12 +498,7 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 		info->lines[current_line_index] = arena_allocate(ctx->lexer_arena, line_length + 1);
 		if (!info->lines[current_line_index]) {
 			perror("Failed to allocate memory for the last line\n");
-			// for (int j = 0; j < current_line_index; j++) {
-			// 	free(info->lines[j]);
-			// }
-			// free(info->lines);
-			// free(info->contents);
-			// free(info);
+			
 			fclose(file);
 			return NULL;
 		}
@@ -512,7 +513,7 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 
 Lexer* lex(CompilerContext* ctx, char* filename) {
 	FileInfo* info = retrieve_file_contents(ctx, filename);
-
+	printf("in lexer\n");
 	Lexer* lexer = initialize_lexer(ctx, info);
 	if (!lexer) return NULL;
 
@@ -536,114 +537,12 @@ Lexer* lex(CompilerContext* ctx, char* filename) {
 		}
 
 	}
-
+	printf("at the end about to add eof token\n");
 	add_token(ctx, lexer, create_token(TOKEN_EOF, lexer->line, lexer->column));
+	printf("About to return lexer\n");
 	return lexer;
+
 }
-
-// void free_file_info(FileInfo* info) {
-// 	if (info->contents) {
-// 		free(info->contents);
-// 	}
-
-// 	if (info->lines) {
-// 		for (int i = 0; i < info->line_count; i++) {
-// 			free(info->lines[i]);
-// 		}
-// 		free(info->lines);
-// 	}
-
-// 	free(info);
-// }
-
-// void free_token(Token* token) {
-// 	if (!token) return;
-
-// 	if (token->type == TOKEN_ARROW || 
-// 		token->type == TOKEN_ADD_EQUAL ||
-// 		token->type == TOKEN_SUB_EQUAL ||
-// 		token->type == TOKEN_DIV_EQUAL ||
-// 		token->type == TOKEN_MUL_EQUAL ||
-// 		token->type == TOKEN_LESS_EQUAL ||
-// 		token->type == TOKEN_GREATER_EQUAL ||
-// 		token->type == TOKEN_NOT_EQUAL ||
-// 		token->type == TOKEN_EQUAL ||
-// 		token->type == TOKEN_INCREMENT ||
-// 		token->type == TOKEN_DECREMENT ||
-// 		token->type == TOKEN_INT_KEYWORD ||
-// 		token->type == TOKEN_CHAR_KEYWORD ||
-// 		token->type == TOKEN_BOOL_KEYWORD ||
-// 		token->type == TOKEN_VOID_KEYWORD ||
-// 		token->type == TOKEN_STRUCT_KEYWORD ||
-// 		token->type == TOKEN_ENUM_KEYWORD ||
-// 		token->type == TOKEN_FOR_KEYWORD ||
-// 		token->type == TOKEN_WHILE_KEYWORD ||
-// 		token->type == TOKEN_CONTINUE_KEYWORD ||
-// 		token->type == TOKEN_BREAK_KEYWORD ||
-// 		token->type == TOKEN_FUNCTION_KEYWORD ||
-// 		token->type == TOKEN_RETURN_KEYWORD ||
-// 		token->type == TOKEN_SWITCH_KEYWORD ||
-// 		token->type == TOKEN_CASE_KEYWORD ||
-// 		token->type == TOKEN_TRUE_KEYWORD ||
-// 		token->type == TOKEN_FALSE_KEYWORD ||
-// 		token->type == TOKEN_LET_KEYWORD ||
-// 		token->type == TOKEN_ID ||
-// 		token->type == TOKEN_LOGICAL_OR ||
-// 		token->type == TOKEN_LOGICAL_AND 
-// 	) {
-// 		free(token->value.str);
-// 	}
-
-// }
-// void free_duplicate_token(Token* token) {
-// 	if (!token) return;
-
-// 	if (token->type == TOKEN_ARROW || 
-// 		token->type == TOKEN_ADD_EQUAL ||
-// 		token->type == TOKEN_SUB_EQUAL ||
-// 		token->type == TOKEN_DIV_EQUAL ||
-// 		token->type == TOKEN_MUL_EQUAL ||
-// 		token->type == TOKEN_LESS_EQUAL ||
-// 		token->type == TOKEN_GREATER_EQUAL ||
-// 		token->type == TOKEN_NOT_EQUAL ||
-// 		token->type == TOKEN_EQUAL ||
-// 		token->type == TOKEN_INCREMENT ||
-// 		token->type == TOKEN_DECREMENT ||
-// 		token->type == TOKEN_INT_KEYWORD ||
-// 		token->type == TOKEN_CHAR_KEYWORD ||
-// 		token->type == TOKEN_BOOL_KEYWORD ||
-// 		token->type == TOKEN_VOID_KEYWORD ||
-// 		token->type == TOKEN_STRUCT_KEYWORD ||
-// 		token->type == TOKEN_ENUM_KEYWORD ||
-// 		token->type == TOKEN_FOR_KEYWORD ||
-// 		token->type == TOKEN_WHILE_KEYWORD ||
-// 		token->type == TOKEN_CONTINUE_KEYWORD ||
-// 		token->type == TOKEN_BREAK_KEYWORD ||
-// 		token->type == TOKEN_FUNCTION_KEYWORD ||
-// 		token->type == TOKEN_RETURN_KEYWORD ||
-// 		token->type == TOKEN_SWITCH_KEYWORD ||
-// 		token->type == TOKEN_CASE_KEYWORD ||
-// 		token->type == TOKEN_TRUE_KEYWORD ||
-// 		token->type == TOKEN_FALSE_KEYWORD ||
-// 		token->type == TOKEN_LET_KEYWORD ||
-// 		token->type == TOKEN_ID ||
-// 		token->type == TOKEN_LOGICAL_OR ||
-// 		token->type == TOKEN_LOGICAL_AND 
-// 	) {
-// 		free(token->value.str);
-// 	}
-
-// 	free(token);
-// }
-// void free_lexer(Lexer* lexer) {
-// 	for (int i = 0; lexer->tokens[i].type != TOKEN_EOF; i++) {
-// 		free_token(&lexer->tokens[i]);
-// 	}
-
-// 	free_file_info(lexer->info);
-// 	free(lexer->tokens);
-// 	free(lexer);
-// }
 
 void print_tokens(Token* tokens) {
 	if (!tokens) return;

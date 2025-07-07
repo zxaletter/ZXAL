@@ -15,8 +15,26 @@ typedef enum {
 
 typedef enum {
 	OP_SYMBOL,
+	OP_BINARY,
+	OP_UNARY,
+	OP_ARG,
 	OP_INT_LITERAL,
 	OP_LABEL,
+	
+	// for function calls, ints, bools, and chars
+	OP_STORE, 
+	// e.g. int x = 1;
+	//      => t_i = 1
+	//      
+	//      CALL f
+	//      => t_j = _RET
+	//      where _RET is the return value of f,
+ 	//      provided f returns a value.
+ 	//      if the CALL f instruction is isolated, 
+ 	//  	we don't emit t_j = _RET
+ 	//
+
+	OP_RETURN, // for _RET for functions call
 	OP_UNKNOWN
 } operand_t;
 
@@ -86,6 +104,7 @@ typedef enum {
 
 typedef struct {
 	tac_t type;
+	int id;
 	Operand* result;
 	Operand* op1;
 	Operand* op2;

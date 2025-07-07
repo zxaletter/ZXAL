@@ -5,11 +5,10 @@ ErrorTable error_table;
 NodeTable node_table;
 
 
-Parser initialize_parser(Token* tokens) {
+Parser initialize_parser(Lexer* lexer) {
 	Parser parser = {
-		.size = 0,
-		.capacity = 0,
-		.end = tokens
+		.end = lexer->tokens,
+		.info = lexer->info
 	};
 	return parser;
 }
@@ -453,7 +452,7 @@ node_t get_op_kind(Token* token) {
 	}
 }
 
-Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 	Node* node = NULL;
 
 	switch (peek_token_type(parser)) {
@@ -483,7 +482,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
 				advance_parser(parser);
 				
-				Node* args = parse_args(ctx, parser, info);
+				Node* args = parse_args(ctx, parser);
 				// struct type* t = type_create(ctx, TYPE_FUNCTION, NULL, NULL);
 				// if (!t) {
 				// 	printf("In 'parse_factor', unable to create TYPE_FUNCTION.\n");
@@ -508,7 +507,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 					Token tok = peek_token(parser);
 					// printf("Current token type is %d\n", peek_token_type(parser));
-					log_error(ctx, &tok, info, EXPECTED_RIGHT_PARENTHESES);
+					log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
 				}
 				// free(t);
 				advance_parser(parser);
@@ -517,7 +516,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 			} else if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
 				advance_parser(parser);
 				
-				Node* expr_node = parse_logical_or(ctx, parser, info);
+				Node* expr_node = parse_logical_or(ctx, parser);
 				if (!expr_node) {
 					printf("In case 'TOKEN_ID' in 'parse_factor', received NULL expression node.\n");
 					// free_node(identifier_node);
@@ -527,7 +526,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_RIGHT_BRACKET);
+					log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_BRACKET);
 				}
 
 				Node* subscript_node = create_node(ctx, NODE_SUBSCRIPT, identifier_node, expr_node, NULL, NULL, NULL);
@@ -646,7 +645,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 		case TOKEN_LEFT_PARENTHESES: {
 			advance_parser(parser);
-			node = parse_logical_or(ctx, parser, info);
+			node = parse_logical_or(ctx, parser);
 			if (!node) {
 				printf("In case 'TOKEN_LEFT_PARENTHESES' in 'parse_factor', received NULL node after invoking 'parse_logical_or'.\n");
 				return NULL;
@@ -654,7 +653,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_RIGHT_PARENTHESES);
+				log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
 			}
 			advance_parser(parser);
 			break;
@@ -662,7 +661,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 		case TOKEN_LEFT_BRACKET: {
 			advance_parser(parser);
-			node = parse_logical_or(ctx, parser, info);
+			node = parse_logical_or(ctx, parser);
 			if (!node) {
 				printf("In case 'TOKEN_LEFT_BRACKET' in 'parse_factor', received NULL node after invoking 'parse_logical_or'.\n");
 				return NULL;
@@ -670,7 +669,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_RIGHT_BRACKET);
+				log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_BRACKET);
 			}
 			advance_parser(parser);
 			break;
@@ -679,7 +678,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	return node;
 }
 
-Node* parse_unary(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_unary(CompilerContext* ctx, Parser* parser) {
 	Node* unary_op_node = NULL;
 	Node* head = NULL;
 	Node* current = NULL;
@@ -704,7 +703,7 @@ Node* parse_unary(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	}
 
 	if (!head) {
-		Node* next_factor = parse_factor(ctx, parser, info);
+		Node* next_factor = parse_factor(ctx, parser);
 		if (!next_factor) {
 			return NULL;
 		}
@@ -712,13 +711,13 @@ Node* parse_unary(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	}
 
 	if (current) {
-		current->right = parse_factor(ctx, parser, info);
+		current->right = parse_factor(ctx, parser);
 		return head;
 	}
 }
 
-Node* parse_multiplicative(CompilerContext* ctx, Parser* parser, FileInfo* info) {
-	Node* node = parse_unary(ctx, parser, info);
+Node* parse_multiplicative(CompilerContext* ctx, Parser* parser) {
+	Node* node = parse_unary(ctx, parser);
 	if (!node) return NULL;
 
 	while (peek_token_type(parser) == TOKEN_MUL || peek_token_type(parser) == TOKEN_DIV ||
@@ -728,14 +727,14 @@ Node* parse_multiplicative(CompilerContext* ctx, Parser* parser, FileInfo* info)
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_unary(ctx, parser, info);
+		Node* right_child = parse_unary(ctx, parser);
 		node = create_node(ctx, op_kind, node, right_child, NULL, NULL, NULL);
 	}
 	return node;
 }
 
-Node* parse_additive(CompilerContext* ctx, Parser* parser, FileInfo* info) {
-	Node* node = parse_multiplicative(ctx, parser, info);
+Node* parse_additive(CompilerContext* ctx, Parser* parser) {
+	Node* node = parse_multiplicative(ctx, parser);
 	if (!node) return NULL;
 
 	while (peek_token_type(parser) == TOKEN_ADD || peek_token_type(parser) == TOKEN_SUB ||
@@ -744,15 +743,15 @@ Node* parse_additive(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_multiplicative(ctx, parser, info);
+		Node* right_child = parse_multiplicative(ctx, parser);
 		node = create_node(ctx, op_kind, node, right_child, NULL, NULL, NULL);
 	}
 
 	return node;
 }
 
-Node* parse_relational(CompilerContext* ctx, Parser* parser, FileInfo* info) {
-	Node* node = parse_additive(ctx, parser, info);
+Node* parse_relational(CompilerContext* ctx, Parser* parser) {
+	Node* node = parse_additive(ctx, parser);
 	if (!node) return NULL;
 
 	while (peek_token_type(parser) == TOKEN_LESS || peek_token_type(parser) == TOKEN_GREATER ||
@@ -762,44 +761,44 @@ Node* parse_relational(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_additive(ctx, parser, info);
+		Node* right_child = parse_additive(ctx, parser);
 		node = create_node(ctx, op_kind, node, right_child, NULL, NULL, NULL);
 	}
 
 	return node;
 }
 
-Node* parse_logical_and(CompilerContext* ctx,Parser* parser, FileInfo* info) {
-	Node* node = parse_relational(ctx, parser, info);
+Node* parse_logical_and(CompilerContext* ctx,Parser* parser) {
+	Node* node = parse_relational(ctx, parser);
 	if (!node) return NULL;
 
 	while (peek_token_type(parser) == TOKEN_LOGICAL_AND) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_relational(ctx, parser, info);
+		Node* right_child = parse_relational(ctx, parser);
 		node = create_node(ctx, op_kind, node, right_child, NULL, NULL, NULL);
 	}
 
 	return node;
 }
 
-Node* parse_logical_or(CompilerContext* ctx, Parser* parser, FileInfo* info) {
-	Node* node = parse_logical_and(ctx,parser, info);
+Node* parse_logical_or(CompilerContext* ctx, Parser* parser) {
+	Node* node = parse_logical_and(ctx,parser);
 	if (!node) return NULL;
 
 	while (peek_token_type(parser) == TOKEN_LOGICAL_OR) {
 		Token tok = peek_token(parser);
 		node_t op_kind = get_op_kind(&tok);
 		advance_parser(parser);
-		Node* right_child = parse_logical_and(ctx, parser, info);
+		Node* right_child = parse_logical_and(ctx, parser);
 		node = create_node(ctx, op_kind, node, right_child, NULL, NULL, NULL);
 	}
 
 	return node;
 }
 
-Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
+Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 	Node* stmt = NULL;
 	bool special_statement = false;
 
@@ -809,7 +808,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_ID) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
+				log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 				return NULL;
 			}
 
@@ -828,7 +827,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_COLON) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_COLON);
+				log_error(ctx, &tok, parser->info, EXPECTED_COLON);
 				// free(id);
 				return NULL;
 			}
@@ -841,7 +840,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				peek_token_type(parser) != TOKEN_STRUCT_KEYWORD) {
 
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_DATATYPE);	
+				log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);	
 				// free(id);
 				return NULL;
 			}
@@ -866,7 +865,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 					return NULL;
 				}
 
-				Node* expr_node = parse_logical_or(ctx, parser, info);
+				Node* expr_node = parse_logical_or(ctx, parser);
 				if (!expr_node) {
 					// free_type(array_type);
 					// free(id);
@@ -875,7 +874,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 					Token token = peek_token(parser);
-					log_error(ctx, &token, info, EXPECTED_RIGHT_BRACKET);
+					log_error(ctx, &token, parser->info, EXPECTED_RIGHT_BRACKET);
 					// free_node(expr_node);
 					// free_type(array_type);
 					// free(id);
@@ -899,7 +898,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 					advance_parser(parser); // move past '='
 					int element_count = 0;
-					Node* elements = parse_array_list(ctx, parser, info, &element_count);
+					Node* elements = parse_array_list(ctx, parser, &element_count);
 
  					Node* array_list = create_node(ctx, NODE_ARRAY_LIST, NULL, elements, NULL, NULL, NULL);
 					Node* count = create_int_node(ctx, NODE_INTEGER, element_count, NULL, NULL, NULL, NULL, NULL);
@@ -909,7 +908,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 					stmt = create_node(ctx, NODE_ASSIGNMENT, def, array_list, NULL, NULL, NULL);  
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 						Token token = peek_token(parser);
-						log_error(ctx, &token, info, EXPECTED_SEMICOLON);
+						log_error(ctx, &token, parser->info, EXPECTED_SEMICOLON);
 						// return NULL;
 					}
 				}
@@ -917,6 +916,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			} else if (peek_token_type(parser) == TOKEN_SEMICOLON) {
 				Node* decl = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 				stmt = create_node(ctx, NODE_DECL, decl, NULL, NULL, NULL, NULL);
+			
 			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 				printf("in assignment case.\n");
 				Node* assignee = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, t);
@@ -935,7 +935,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				}
 
 				advance_parser(parser);
-				Node* expr_node = parse_logical_or(ctx, parser, info);
+				Node* expr_node = parse_logical_or(ctx, parser);
 				if (!expr_node) {
 					// free_node(def);
 					// free(id);
@@ -964,7 +964,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			if (peek_token_type(parser) == TOKEN_SEMICOLON) {
 				stmt = create_string_node(ctx, NODE_RETURN, NULL, NULL, NULL, NULL, NULL, NULL);
 			} else {				
-				Node* node = parse_logical_or(ctx, parser, info);
+				Node* node = parse_logical_or(ctx, parser);
 				if (node) {
 					printf("got node in return\n");
 				} else {
@@ -979,7 +979,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
+				log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 				
 			}
 
@@ -991,7 +991,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
+				log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 				
 			}
 			stmt = create_node(ctx, NODE_BREAK, NULL, NULL, NULL, NULL, NULL);
@@ -1004,11 +1004,11 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_LEFT_PARENTHESES);
+				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
 				// return NULL;
 			} 
 
-			Node* condition_node = parse_logical_or(ctx, parser, info);
+			Node* condition_node = parse_logical_or(ctx, parser);
 			if (!condition_node) {
 				printf("Error: received null condition node in if statement\n");
 				return NULL;
@@ -1016,12 +1016,12 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
+				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 				// return NULL;
 			}
 
 			advance_parser(parser);
-			Node* if_body = parse_block(ctx, parser, info);
+			Node* if_body = parse_block(ctx, parser);
 			if (!if_body) {
 				printf("Error: received NULL if body\n");
 				return NULL;
@@ -1044,21 +1044,21 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				
 				if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_LEFT_PARENTHESES);
+					log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
 					// return NULL;
 				}			
 
-				Node* condition_node = parse_logical_or(ctx, parser, info);
+				Node* condition_node = parse_logical_or(ctx, parser);
 
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
+					log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 					// return NULL;
 				}		
 
 				advance_parser(parser);
 				
-				Node* body = parse_block(ctx, parser, info);
+				Node* body = parse_block(ctx, parser);
 				stmt = create_node(ctx, NODE_ELSE_IF, condition_node, body, NULL, NULL, NULL);
 				if (!stmt) {
 					printf("Error: Unable to create if statement in PARSE_STATEMENT\n");
@@ -1069,7 +1069,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			} else if (peek_token_type(parser) == TOKEN_LEFT_BRACE) {
 				advance_parser(parser);
 
-				Node* body = parse_block(ctx, parser, info);
+				Node* body = parse_block(ctx, parser);
 				if (!body) {
 					printf("Error: recived NULL body in else TOKEN_ELSE_KEYWORD case\n");
 					return NULL;
@@ -1083,7 +1083,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				return stmt;
 			} else {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
+				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 				// return NULL;
 			}
 		}
@@ -1094,14 +1094,14 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_LEFT_PARENTHESES);
+				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
 				// return NULL;
 			}
 
 			advance_parser(parser);
 
 			if (peek_token_type(parser) == TOKEN_LET_KEYWORD) {
-				Node* initializer = parse_statement(ctx, parser, info);
+				Node* initializer = parse_statement(ctx, parser);
 				if (!initializer) {
 					printf("Error: Initializer is NULL is for loop\n");
 					return NULL;
@@ -1109,7 +1109,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				// printf("IN FOR CASE Current token type is %d\n", peek_token_type(parser));
 				// advance_parser(parser); // skipping ';'
-				Node* condition = parse_logical_or(ctx, parser, info);
+				Node* condition = parse_logical_or(ctx, parser);
 				if (!condition) {
 					printf("Error: Condition in for loop is NULL\n");
 					return NULL;
@@ -1123,13 +1123,13 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
+					log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 					// return NULL;
 				}
 
 				advance_parser(parser);
 
-				Node* update = parse_logical_or(ctx, parser, info);
+				Node* update = parse_logical_or(ctx, parser);
 				if (!update) {
 					printf("Error: Update expression in for loop is NULL\n");
 					return NULL;
@@ -1137,7 +1137,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_RIGHT_PARENTHESES);
+					log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
 					// return NULL;
 				}
 
@@ -1145,12 +1145,12 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
+					log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 					// return NULL;
 				}
 
 				advance_parser(parser);
-				Node* loop_body = parse_block(ctx, parser, info);
+				Node* loop_body = parse_block(ctx, parser);
 				
 				initializer->next = condition;
 				condition->next = update;
@@ -1178,7 +1178,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 					{
 						if (peek_token_type(parser) != TOKEN_INT_KEYWORD) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, info, EXPECTED_INT_KEYWORD);
+							log_error(ctx, &tok, parser->info, EXPECTED_INT_KEYWORD);
 							// return NULL;
 						}
 
@@ -1193,13 +1193,13 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 						if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, info, EXPECTED_ASSIGNMENT);
+							log_error(ctx, &tok, parser->info, EXPECTED_ASSIGNMENT);
 							// return NULL;
 						}
 
 						advance_parser(parser);
 						
-						Node* expr_node = parse_logical_or(ctx, parser, info);
+						Node* expr_node = parse_logical_or(ctx, parser);
 						Node* assignment = create_node(ctx, NODE_ASSIGNMENT, def, expr_node, NULL, NULL, NULL);
 						if (assignment) {
 							printf("Made assignment node\n");
@@ -1207,20 +1207,20 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
+							log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 							// return NULL;
 						}
 
 						advance_parser(parser);
 						
-						Node* condition = parse_logical_or(ctx, parser, info);
+						Node* condition = parse_logical_or(ctx, parser);
 						if (condition) {
 							assignment->next = condition;
 						}
 
 						advance_parser(parser); // skip ';'
 					
-						Node* update = parse_logical_or(ctx, parser, info);
+						Node* update = parse_logical_or(ctx, parser);
 						printf("Update type is %d\n", update->type);
 						if (update) {
 							condition->next = update;
@@ -1228,19 +1228,19 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 						if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, info, EXPECTED_RIGHT_PARENTHESES);
+							log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
 							// return NULL;
 						}
 
 						advance_parser(parser);
 						if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
+							log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 							// return NULL;
 						}
 
 						advance_parser(parser);
-						Node* loop_body = parse_block(ctx, parser, info);
+						Node* loop_body = parse_block(ctx, parser);
 						if (!loop_body) {
 							// free(id);
 							return NULL;
@@ -1252,13 +1252,13 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 					return stmt;
 
 				} else {
-					Node* initializer = parse_statement(ctx, parser, info);
+					Node* initializer = parse_statement(ctx, parser);
 					if (initializer) {
 						printf("\033[1;31mAFTER initializer -> Current token type is: '%d'\033[0m\n", peek_token_type(parser));
 					}
 					advance_parser(parser); // ';'
 
-					Node* condition = parse_logical_or(ctx, parser, info);
+					Node* condition = parse_logical_or(ctx, parser);
 					if (condition) {
 						printf("\033[1;31mAFTER condition -> Current token type is: '%d'\033[0m\n", peek_token_type(parser));
 					}
@@ -1267,7 +1267,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 						return NULL;
 					}
 					advance_parser(parser);
-					Node* update = parse_logical_or(ctx, parser, info);
+					Node* update = parse_logical_or(ctx, parser);
 					if (update) {
 						printf("\033[1;31mAFTER update -> Current token type is: '%d'\033[0m\n", peek_token_type(parser));
 
@@ -1287,7 +1287,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 						return NULL;
 					}
 					advance_parser(parser);
-					Node* loop_body = parse_block(ctx, parser, info);
+					Node* loop_body = parse_block(ctx, parser);
 					stmt = create_node(ctx, NODE_FOR, initializer, loop_body, NULL, NULL, NULL);
 					return stmt;
 
@@ -1300,11 +1300,11 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_LEFT_PARENTHESES);
+				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
 				// return NULL;
 			}
 
-			Node* condition_node = parse_logical_or(ctx, parser, info);
+			Node* condition_node = parse_logical_or(ctx, parser);
 			if (!condition_node) {
 				printf("Error: Received null condition in while \n");
 				return NULL;
@@ -1312,12 +1312,12 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
+				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 				// return NULL;
 			}
 
 			advance_parser(parser);
-			Node* while_body = parse_block(ctx, parser, info);
+			Node* while_body = parse_block(ctx, parser);
 
 			stmt = create_node(ctx, NODE_WHILE, condition_node, while_body, NULL, NULL, NULL);
 			return stmt;
@@ -1385,7 +1385,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			advance_parser(parser);
 
 			if (peek_token_type(parser) == TOKEN_LEFT_BRACKET) {
-				Node* index_node = parse_logical_or(ctx, parser, info);
+				Node* index_node = parse_logical_or(ctx, parser);
 				if (index_node) {
 					printf("got index node\n");
 				}
@@ -1396,14 +1396,14 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_ASSIGNMENT);
+					log_error(ctx, &tok, parser->info, EXPECTED_ASSIGNMENT);
 					printf("Currently not at assignment node\n");
 					// return NULL;
 				}
 
 				advance_parser(parser);
 				
-				Node* expr_node = parse_logical_or(ctx, parser, info);
+				Node* expr_node = parse_logical_or(ctx, parser);
 				Node* aug_expr_node = create_node(ctx, NODE_AUG, expr_node, NULL, NULL, NULL, NULL);
 				Node* aug = create_node(ctx, NODE_AUG, subscript_node, NULL, NULL, NULL, NULL);
 				stmt = create_node(ctx, NODE_ASSIGNMENT, aug, aug_expr_node, NULL, NULL, NULL);
@@ -1411,13 +1411,13 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			} else if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
 				advance_parser(parser);
 				
-				Node* args = parse_args(ctx, parser, info);
+				Node* args = parse_args(ctx, parser);
 				stmt =  create_node(ctx, NODE_CALL, node, args, NULL, NULL, NULL);
 				advance_parser(parser);
 			
 			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
 				advance_parser(parser);
-				Node* expr = parse_logical_or(ctx, parser, info);
+				Node* expr = parse_logical_or(ctx, parser);
 				if (!expr) {
 					printf("Received null expr\n");
 					// free(id);
@@ -1425,6 +1425,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				}
 				Node* def = create_node(ctx, NODE_AUG, node, NULL, NULL, NULL, NULL);
 				stmt = create_node(ctx, NODE_ASSIGNMENT, def, expr, NULL, NULL, NULL);
+			
 			} else if (peek_token_type(parser) == TOKEN_COLON) {
 				advance_parser(parser);
 
@@ -1432,7 +1433,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 					peek_token_type(parser) != TOKEN_CHAR_KEYWORD) {
 
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_DATATYPE);
+					log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
 					// free(id);
 					// return NULL;
 				}
@@ -1444,15 +1445,17 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				advance_parser(parser);
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
+					log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 					// free(id);
 					// return NULL;
 				}
 				Node* decl = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, t);
 				stmt = create_node(ctx, NODE_DECL, decl, NULL, NULL, NULL, NULL);
+			
 			} else if (peek_token_type(parser) == TOKEN_INCREMENT) {
 				stmt = create_node(ctx, NODE_INCREMENT, node, NULL, NULL, NULL, NULL);
 				advance_parser(parser);
+			
 			} else if (peek_token_type(parser) == TOKEN_DECREMENT) {
 				stmt = create_node(ctx, NODE_DECREMENT, node, NULL, NULL, NULL, NULL);
 				advance_parser(parser);
@@ -1467,7 +1470,7 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			Token tok = peek_token(parser);
 			// printf("Current token type is: '%d'\n", tok.type);
-			log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
+			log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 			// return NULL;
 		}	
 		advance_parser(parser);	
@@ -1475,14 +1478,14 @@ Node* parse_statement(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 	return stmt;
 }
 
-Node* parse_block(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_block(CompilerContext* ctx, Parser* parser) {
 	Node* block = create_node(ctx, NODE_BLOCK, NULL, NULL, NULL, NULL, NULL);
 	
 	Node* head = NULL;
 	Node* current = NULL;
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
-		Node* stmt = parse_statement(ctx, parser, info);
+		Node* stmt = parse_statement(ctx, parser);
 
 		if (stmt) {
 			if (!head) {
@@ -1518,7 +1521,7 @@ Node* parse_block(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	return block;
 }
 
-Node* parse_parameters(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_parameters(CompilerContext* ctx, Parser* parser) {
 	Node* head = NULL;
 	Node* current= NULL;
 	Node* node = NULL;
@@ -1527,7 +1530,7 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	while (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 		if (peek_token_type(parser) != TOKEN_ID) {
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
+			log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 		} 
 
 		char* id = NULL;
@@ -1546,7 +1549,7 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 		if (peek_token_type(parser) != TOKEN_COLON) {
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, info, EXPECTED_COLON);
+			log_error(ctx, &tok, parser->info, EXPECTED_COLON);
 		}
 
 		advance_parser(parser);
@@ -1556,7 +1559,7 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 			peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
 
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, info, EXPECTED_DATATYPE);
+			log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
 			// return NULL;
 		}
 
@@ -1583,14 +1586,9 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 		wrapped_param = create_node(ctx, NODE_PARAM, NULL, node, NULL, NULL, NULL);
 		if (!wrapped_param) {
 			printf("Unable to create wrapped param node.\n");
-			// free_node(head);
-			// free_node(node);
-			// free_type(t);
-			// free(id);
 			return NULL;
 		}
 
-		// free(id);
 		
 		if (wrapped_param) {
 			if (!head) {
@@ -1632,11 +1630,11 @@ bool valid_function_return_type(token_t type) {
 	}
 }
 
-Node* parse_function(CompilerContext* ctx, Parser* parser, FileInfo* info) {	
+Node* parse_function(CompilerContext* ctx, Parser* parser) {	
 	advance_parser(parser);
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
+		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 
 		if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
 			int parentheses_count = 1;
@@ -1695,13 +1693,14 @@ Node* parse_function(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	Node* params = NULL;
 	if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_LEFT_PARENTHESES);	
+		log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);	
+		
 		token_t synchronizations[1] = {TOKEN_ID};
 		synchronize(parser, synchronizations, 1);
-		params = parse_parameters(ctx, parser, info);
+		params = parse_parameters(ctx, parser);
 	} else {
 		advance_parser(parser);
-		params = parse_parameters(ctx, parser, info);
+		params = parse_parameters(ctx, parser);
 	}
 
 	// add_node_to_node_table(params);	
@@ -1709,7 +1708,7 @@ Node* parse_function(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 	if (peek_token_type(parser) != TOKEN_ARROW) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_ARROW);
+		log_error(ctx, &tok, parser->info, EXPECTED_ARROW);
 		token_t synchronizations[5] = {TOKEN_INT_KEYWORD, TOKEN_CHAR_KEYWORD, TOKEN_BOOL_KEYWORD, TOKEN_STRUCT_KEYWORD, TOKEN_VOID_KEYWORD};
 		synchronize(parser, synchronizations, 5);
 	}
@@ -1721,7 +1720,7 @@ Node* parse_function(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 	if (!valid_function_return_type(type)) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_DATATYPE);
+		log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
 		token_t synchronizations[1] = {TOKEN_LEFT_BRACE};
 		synchronize(parser, synchronizations, 1);
 	} else {
@@ -1747,54 +1746,41 @@ Node* parse_function(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	Node* function_body = NULL;
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token token = peek_token(parser);
-		log_error(ctx, &token, info, EXPECTED_LEFT_BRACE);
+		log_error(ctx, &token, parser->info, EXPECTED_LEFT_BRACE);
 		token_t synchronizations[7] = {TOKEN_LET_KEYWORD, TOKEN_ID, TOKEN_STRUCT_KEYWORD, TOKEN_ENUM_KEYWORD, TOKEN_FOR_KEYWORD, TOKEN_WHILE_KEYWORD, TOKEN_IF_KEYWORD};
 		synchronize(parser, synchronizations, 7);
-		function_body = parse_block(ctx, parser, info);
+		
+		function_body = parse_block(ctx, parser);
 		if (!function_body) {
-			// free_type(function_maintype);
-			// free(function_subtype);
-			// free(id);
 			return NULL;
 		}
 		// add_node_to_node_table(function_body);
 	} else {
 		advance_parser(parser);
-		function_body = parse_block(ctx, parser, info);
+		function_body = parse_block(ctx, parser);
 		if (!function_body) {
-			// free_type(function_maintype);
-			// free(function_subtype);			
-			// free(id);
 			return NULL;
 		} 
-		// add_node_to_node_table(function_body);
 	}
 	printf("Got here\n");
 	printf("Got here after\n");
 	Node* function_node = create_string_node(ctx, NODE_NAME, id, NULL, function_body, NULL, NULL, function_maintype);
 	if (!function_node) {
 		printf("Unable to create function node.\n");
-		// free_type(function_maintype);
-		// free_type(function_subtype);
-		// free(id);
 		return NULL;
 	}
-	// add_node_to_node_table(function_node);
-	// free_type(function_maintype);
-	// free_type(function_subtype);
-	// free(id);
 
 	printf("got all the way here\n");
 	return function_node;
 }
 
-Node* parse_args(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_args(CompilerContext* ctx, Parser* parser) {
 	Node* head = NULL;
 	Node* current = NULL;
 	Node* arg = NULL;
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
-		arg = parse_logical_or(ctx, parser, info);
+		arg = parse_logical_or(ctx, parser);
 		if (!arg) {
 			printf("Received NULL arg in 'parse_args()'\n");
 			return NULL;
@@ -1825,7 +1811,7 @@ Node* parse_args(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	return head;
 }
 
-Node* parse_array_list(CompilerContext* ctx, Parser* parser, FileInfo* info, int* element_count) {
+Node* parse_array_list(CompilerContext* ctx, Parser* parser, int* element_count) {
 
 	Node* head = NULL;
 	Node* current = NULL;
@@ -1834,7 +1820,7 @@ Node* parse_array_list(CompilerContext* ctx, Parser* parser, FileInfo* info, int
 	advance_parser(parser);	
 
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
-		array_element = parse_logical_or(ctx, parser, info);
+		array_element = parse_logical_or(ctx, parser);
 
 		if (array_element) {
 			if (!head) {
@@ -1870,20 +1856,18 @@ Node* parse_array_list(CompilerContext* ctx, Parser* parser, FileInfo* info, int
 	return head;
 }
 
-Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
+Node* parse_let(CompilerContext* ctx,Parser* parser) {
 	Node* let_node = NULL;
 	advance_parser(parser);
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 	}
 
 	char* id = NULL;
 	{
 		Token tok = peek_token(parser);
-		// id = strdup(tok.value.str);
 		id = arena_allocate(ctx->ast_arena, strlen(tok.value.str) + 1);
 		if (!id) {
 			printf("Error: Unable to allocate space for id in 'parse_let()'\n");
@@ -1896,8 +1880,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 	
 	if (peek_token_type(parser) != TOKEN_COLON) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_COLON);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_COLON);
 	}
 
 	advance_parser(parser);
@@ -1906,8 +1889,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 		peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
 			
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_DATATYPE);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
 	}
 
 
@@ -1923,7 +1905,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			struct type* array_type = type_create(ctx, TYPE_ARRAY, t, NULL);
 			printf(" JUST MOVED PAST TOKEN_LEFT_BRACKET and Current token type is '%d'\n", peek_token_type(parser));
 
-			Node* expr_node = parse_logical_or(ctx, parser, info);
+			Node* expr_node = parse_logical_or(ctx, parser);
 			if (!expr_node) {
 				printf("Error: Unable to retrieve size of array\n");
 				return NULL;
@@ -1931,8 +1913,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 				Token token = peek_token(parser);
-				log_error(ctx, &token, info, EXPECTED_RIGHT_BRACKET);
-				// return NULL;
+				log_error(ctx, &token, parser->info, EXPECTED_RIGHT_BRACKET);
 			}
 
 			advance_parser(parser);
@@ -1946,7 +1927,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 				int element_count = 0;
 				
 				Node* assignee = create_string_node(ctx, NODE_NAME, id, expr_node, NULL, NULL, NULL, array_type);
-				Node* elements = parse_array_list(ctx, parser, info, &element_count);
+				Node* elements = parse_array_list(ctx, parser, &element_count);
 
 				let_node = create_string_node(ctx, NODE_ASSIGNMENT, NULL, assignee, elements, NULL, NULL, NULL);   
 				
@@ -1954,8 +1935,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token token = peek_token(parser);
-					log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
-					// return NULL;
+					log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 				}
 				advance_parser(parser);
 			} 
@@ -1966,7 +1946,7 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			advance_parser(parser);
 
 			Node* assignee = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, t);
-			Node* expr_node = parse_logical_or(ctx, parser, info);
+			Node* expr_node = parse_logical_or(ctx, parser);
 			
 			if (!expr_node) {
 				printf("Error: EXPR NODE IN 'parse_let' is null\n");
@@ -1976,18 +1956,16 @@ Node* parse_let(CompilerContext* ctx,Parser* parser, FileInfo* info) {
 			let_node = create_string_node(ctx, NODE_ASSIGNMENT, NULL, assignee, expr_node, NULL, NULL, NULL);
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token token = peek_token(parser);
-				log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
-				// return NULL;
+				log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 			}
 			advance_parser(parser);
 		}
-		// free(id);
 	}
 		
 	return let_node;
 }
 
-Node* parse_enum_body(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_enum_body(CompilerContext* ctx, Parser* parser) {
 	Node* head = NULL;
 	Node* current = NULL;
 	Node* stmt = NULL;
@@ -1995,14 +1973,12 @@ Node* parse_enum_body(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
 		if (peek_token_type(parser) != TOKEN_ID) {
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
-			// return NULL;
+			log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 		}
 
 		char* id = NULL;
 		{
 			Token tok = peek_token(parser);
-			// id = strdup(tok.value.str);
 			id = arena_allocate(ctx->ast_arena, strlen(tok.value.str) + 1);
 			if (!id) return NULL;
 			strcpy(id, tok.value.str);
@@ -2035,20 +2011,18 @@ Node* parse_enum_body(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	return head;
 }
 
-Node* parse_enum(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_enum(CompilerContext* ctx, Parser* parser) {
 	Node* enum_node = NULL;
 	advance_parser(parser);
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 	}
 
 	char* id = NULL;
 	{
 		Token tok = peek_token(parser);
-		// id = strdup(tok.value.str);
 		id = arena_allocate(ctx->ast_arena, strlen(tok.value.str) + 1);
 		if (!id) return NULL;
 		strcpy(id, tok.value.str);
@@ -2058,14 +2032,12 @@ Node* parse_enum(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
-		// free(id);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 	}
 
 	advance_parser(parser);
 
-	Node* enum_body = parse_enum_body(ctx, parser, info);
+	Node* enum_body = parse_enum_body(ctx, parser);
 	if (!enum_body) {
 		printf("Error: body for enum '%s' is NULL\n", id);
 		// free(id);
@@ -2074,9 +2046,7 @@ Node* parse_enum(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
-		// free(id);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 	}
 
 	advance_parser(parser);
@@ -2086,20 +2056,18 @@ Node* parse_enum(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 	return enum_node;
 }
 
-Node* parse_struct(CompilerContext* ctx, Parser* parser, FileInfo* info) {
+Node* parse_struct(CompilerContext* ctx, Parser* parser) {
 	Node* struct_node = NULL;
 	advance_parser(parser);
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_IDENTIFIER);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 	}
 
 	char* id = NULL;
 	{
 		Token tok = peek_token(parser);
-		// id = strdup(tok.value.str);
 		id = arena_allocate(ctx->ast_arena, strlen(tok.value.str) + 1);
 		if (!id) return NULL;
 		strcpy(id, tok.value.str);
@@ -2109,25 +2077,20 @@ Node* parse_struct(CompilerContext* ctx, Parser* parser, FileInfo* info) {
 
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_LEFT_BRACE);
-		// free(id);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 	}
 
 	advance_parser(parser);
 
-	Node* struct_body = parse_block(ctx, parser, info);
+	Node* struct_body = parse_block(ctx, parser);
 	if (!struct_body) {
 		printf("Error: body for Struct '%s' is NULL\n", id);
-		// free(id);
 		return NULL;
 	}
 
 	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, info, EXPECTED_SEMICOLON);
-		// free(id);
-		// return NULL;
+		log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 	}
 
 	advance_parser(parser); // skip ';'
@@ -2151,11 +2114,10 @@ void synchronize(Parser* parser, token_t* synchronizations, size_t length) {
 	}
 }
 
-Node* parse(CompilerContext* ctx, Token* tokens, FileInfo* info) {
-	// init_node_table();
+Node* parse(CompilerContext* ctx, Lexer* lexer) {
 	init_error_table(ctx);
 	
-	Parser parser = initialize_parser(tokens);
+	Parser parser = initialize_parser(lexer);
 
 	Node* head = NULL;
 	Node* current = NULL;
@@ -2163,18 +2125,16 @@ Node* parse(CompilerContext* ctx, Token* tokens, FileInfo* info) {
 
 	while (!at_token_eof(&parser)) {
 
-		if (at_token_eof(&parser)) { break; }
-
 		token_t current_type = peek_token_type(&parser);
 
 		if (current_type == TOKEN_FUNCTION_KEYWORD) {
-			node = parse_function(ctx, &parser, info);
+			node = parse_function(ctx, &parser);
 		}  else if (current_type == TOKEN_LET_KEYWORD) {
-			node = parse_let(ctx, &parser, info);
+			node = parse_let(ctx, &parser);
 		} else if (current_type == TOKEN_STRUCT_KEYWORD) {
-			node = parse_struct(ctx, &parser, info);
+			node = parse_struct(ctx, &parser);
 		} else if (current_type == TOKEN_ENUM_KEYWORD) {
-			node = parse_enum(ctx, &parser, info);
+			node = parse_enum(ctx, &parser);
 		} else {
 			printf("Unexpected token type: %d\n", peek_token_type(&parser));
 			advance_parser(&parser);
@@ -2203,215 +2163,3 @@ Node* parse(CompilerContext* ctx, Token* tokens, FileInfo* info) {
 
 	return head;
 }
-
-// void free_type(struct type* t) {
-// 	if (!t || (t && t->type_free)) return;
-// 	t->type_free = true;
-// 	if (t->subtype) free_type(t->subtype);
-// 	if (t->params) free_node(t->params);
-// 	free(t);
-// }
-
-// void free_node(Node* node) {
-// 	if (!node || (node && node->freed)) return;
-// 	node->freed = true;
-// 	switch (node->type) {
-// 		case NODE_IF:
-// 		case NODE_ELSE_IF:
-// 		case NODE_WHILE:
-// 		case NODE_ASSIGNMENT:
-// 		case NODE_ADD:
-// 		case NODE_SUB:
-// 		case NODE_MUL:
-// 		case NODE_DIV:
-// 		case NODE_ADD_EQUAL:
-// 		case NODE_SUB_EQUAL:
-// 		case NODE_MUL_EQUAL:
-// 		case NODE_DIV_EQUAL:
-// 		case NODE_MODULO:
-// 		case NODE_LESS:
-// 		case NODE_GREATER:
-// 		case NODE_LESS_EQUAL:
-// 		case NODE_GREATER_EQUAL:
-// 		case NODE_EQUAL:
-// 		case NODE_NOT_EQUAL:
-// 		case NODE_LOGICAL_AND:
-// 		case NODE_LOGICAL_OR: {
-// 			if (node->left) free_node(node->left);
-// 			if (node->right) free_node(node->right);
-// 			break;
-// 		}
-
-// 		case NODE_INTEGER:
-// 		case NODE_CHAR:
-// 		case NODE_BOOL: {
-// 			if (node->t) free_type(node->t);
-// 			break;
-// 		}
-
-// 		case NODE_ELSE:
-// 		case NODE_ARG:
-// 		case NODE_NOT: {
-// 			if (node->right) free_node(node->right);
-// 			break;
-// 		}
-
-// 		case NODE_INCREMENT:
-// 		case NODE_DECREMENT: {
-// 			if (node->left) free_node(node->left);
-// 			break;
-// 		}
-
-// 		case NODE_PARAM: {
-// 			Node* current = node;
-// 			while (current) {
-// 				Node* next = current->next;
-// 				free_node(current->right);
-// 				current = current->next;
-// 			}
-// 			break;
-// 		}
-
-// 		case NODE_CALL: {
-// 			if (node->left) free_node(node->left);
-
-// 			Node* wrapped_arg = node->right;
-// 			while (wrapped_arg) {
-// 				free_node(wrapped_arg);
-// 				wrapped_arg = wrapped_arg->next;
-// 			}
-// 			if (node->t) free_type(node->t);
-// 			if (node->symbol) free_symbol(node->symbol);
-// 			break;
-// 		}
-// 		// node array list
-// 		case NODE_NAME: {
-// 			if (node->value.name) free(node->value.name);
-// 			if (node->left) free_node(node->left);
-// 			if (node->right) free_node(node->right);
-// 			if (node->t) free_type(node->t);
-// 			if (node->symbol) free_symbol(node->symbol);
-// 			break;
-// 		}
-
-// 		case NODE_SUBSCRIPT: {
-// 			if (node->left) free_node(node->left);
-// 			if (node->right) free_node(node->right);
-// 			if (node->t) free_type(node->t);
-// 			if (node->symbol) free_symbol(node->symbol);
-// 			break;
-// 		}
-
-// 		case NODE_DEF:
-// 		case NODE_DECL:
-// 		case NODE_AUG: {
-// 			if (node->left) free_node(node->left);
-// 			break;
-// 		}
-
-// 		case NODE_BLOCK: {
-// 			Node* stmt = node->right;
-// 			while (stmt) {
-// 				free_node(stmt);
-// 				stmt = stmt->next;
-// 			}
-// 			break;
-// 		}
-
-// 		case NODE_FOR: {
-// 			Node* initializer = node->left;
-// 			Node* condition = initializer->next;
-// 			Node* update = condition->next;
-// 			Node* body = node->right;
-// 			if (initializer) free_node(initializer);
-// 			if (condition) free_node(condition);
-// 			if (update) free_node(update);
-// 			if (body) free_node(body);
-// 			break;
-// 		}
-
-// 		case NODE_RETURN: {
-// 			if (!node->right) break;
-// 			free_node(node->right);
-// 			break;
-// 		}
-
-// 		case NODE_BREAK:
-// 		case NODE_CONTINUE: {
-// 			break;
-// 		}
-// 	}
-
-	
-// 	free(node);
-// }
-
-// void free_globals(Node* node) {
-// 	if (!node || (node && node->freed)) return;
-
-// 	node->freed = true;
-// 	switch (node->type) {
-// 		case NODE_NAME: {
-// 			if (node->t) {
-// 				if (node->t->kind == TYPE_FUNCTION) {
-// 					if (node->value.name) free(node->value.name);
-// 					if (node->right) free_node(node->right);
-// 					if (node->t) free_type(node->t);
-					
-// 				} else if (node->t->kind == TYPE_ARRAY) {
-// 					if (node->value.name) {
-// 						free(node->value.name);
-// 					}
-
-// 					if (node->left) {
-// 						free_node(node->left);
-// 					}
-
-// 					if (node->right) {
-// 						free_node(node->right);
-// 						node->right = NULL;
-// 					}
-
-// 					if (node->t) {
-// 						free_type(node->t);
-// 						node->t = NULL;
-// 					}
-// 				}
-// 			} 
-// 			break;
-// 		}
-
-// 		case NODE_ASSIGNMENT: {
-// 			if (node->value.name) {
-// 				free(node->value.name);
-// 				node->value.name = NULL;
-// 			}
-
-// 			if (node->left) {
-// 				free_node(node->left);
-// 				node->left = NULL;
-// 			}
-
-// 			if (node->right) {
-// 				free_node(node->right);
-// 				node->right = NULL;
-// 			}
-// 			break;
-// 		}
-// 	}
-// 	free(node);
-// }
-
-// void free_ast(Node* root) {
-//     printf("--- Starting AST Deallocation ---\n");
-
-//     Node* current = root;
-//     while (current) {
-//         Node* next = current->next;
-//         free_globals(current);
-//         current = next;
-//     }
-//     printf("--- AST Deallocation Complete ---\n");
-
-//     free_node_table();
-// }
