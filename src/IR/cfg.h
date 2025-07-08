@@ -66,7 +66,7 @@ typedef struct BasicBlock {
 	int num_successors_capacity;
 	
 	bool visited;
-	int id;
+	// int id;
 	
 	TACInstruction** instructions;
 	BasicBlock** predecessors;
@@ -100,11 +100,11 @@ typedef struct {
 	FunctionInfo** infos;
 } FunctionList;
 
-LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key);
+LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key, char* name, operand_t type);
 void init_operand_liveinfo(CompilerContext* ctx, CFG* cfg, Operand* operand);
 void init_instruction_liveinfo(CompilerContext* ctx, CFG* cfg, TACInstruction* instruction);
 void init_liveinfo_state(CompilerContext* ctx, CFG* cfg);
-bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info);
+bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info, int hash_key);
 
 void union_sets(CompilerContext* ctx, OperandSet* dest, OperandSet* src);
 bool sets_equal(OperandSet* set1, OperandSet* set2);

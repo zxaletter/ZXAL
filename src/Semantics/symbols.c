@@ -5,7 +5,6 @@ static size_t param_byte_offset = 0;
 static size_t local_byte_offset = 0;
 static size_t total_local_bytes = 0;
 static bool start_at_param_bytes = false;
-static int sym_id = 0;
 
 SymbolStack* symbol_stack = NULL;
 ContextStack* context_stack = NULL;
@@ -144,7 +143,6 @@ Symbol* create_symbol(CompilerContext* ctx, symbol_t kind, char* name, struct ty
 	}
 
 	sym->kind = kind;
-	sym->symbol_id = sym_id++;
 	sym->symbol_free = false;
 	sym->bind_symbol = false;
 	sym->name = NULL;
@@ -188,7 +186,6 @@ Symbol* create_array_symbol(CompilerContext* ctx, symbol_t kind, char* name, int
 	}
 
 	sym->kind = kind;
-	sym->symbol_id = sym_id++;
 	sym->symbol_free = false;
 	sym->bind_symbol = false;
 	sym->name = NULL;

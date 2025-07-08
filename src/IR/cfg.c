@@ -218,7 +218,6 @@ BasicBlock* create_basic_block(CompilerContext* ctx) {
 		return NULL;
 	}
 
-	basic_block->id = block_id++;
 	basic_block->visited = false;
 	basic_block->num_instructions = 0;
 	basic_block->num_successors = 0;
@@ -570,14 +569,11 @@ LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool i
 	return live_info;
 }
 
-bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info) {
+bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info, int hash_key) {
 	if (!live_info) return false;
 
-	int entry_index = 0;
-	bool need_to_recompute_hashes = false;
 
 	if (table->size >= table->capacity) {
-		need_to_recompute_hashes = true;
 		int prev_capacity = table->capacity;
 
 		LivenessInfo** prev_infos = arena_allocate(
@@ -610,16 +606,16 @@ bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, 
 			LivenessInfo* current_prev_info = prev_infos[i];
 			while (current_prev_info) {
 				LivenessInfo* current_prev_info_link = current_prev_info->link;
-				int hash_key = hash_variable(
+				int updated_hash_key = hash_variable(
 					table, 
 					current_prev_info->var.symbol->name ? current_prev_info->var.symbol->name : current_prev_info->var.label_name);
 
-				if (hash_key != -1) {
-					if (table->liveness_infos[hash_key]) {
-						current_prev_info->link = table->liveness_infos[hash_key];
-						table->liveness_infos[hash_key] = current_prev_info;	
+				if (updated_hash_key != -1) {
+					if (table->liveness_infos[updated_hash_key]) {
+						current_prev_info->link = table->liveness_infos[updated_hash_key];
+						table->liveness_infos[updated_hash_key] = current_prev_info;	
 					} else {
-						table->liveness_infos[hash_key] = current_prev_info;
+						table->liveness_infos[updated_hash_key] = current_prev_info;
 						current_prev_info->link = NULL;
 					}		
 				} else {
@@ -631,30 +627,15 @@ bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, 
 			}
 		}
 
-		entry_index = hash_variable(
+		hash_key = hash_variable(
 			table, 
 			live_info->var.symbol->name ? live_info->var.symbol->name : live_info->var.label_name);	
 	}
 
-	if (!need_to_recompute_hashes) {
-		if (live_info->var.symbol) {
-			if (live_info->var.symbol->name) {
-				printf("\033[31mAbout to hash '%s'\033[0m\n", live_info->var.symbol->name);
-			}
-		} else {
-			printf("\033[31mAbout to hash '%s'\033[0m\n", live_info->var.label_name);
-		}
-		entry_index = hash_variable(table,
-			live_info->var.symbol->name ? live_info->var.symbol->name : live_info->var.label_name);
-	}
+	table->liveness_infos[hash_key] = live_info;
+	table->size++;
+	return true;
 
-	if (entry_index  != -1) {
-		table->liveness_infos[entry_index] = live_info;
-		table->size++;
-		return true;
-	}
-
-	return false;
 }
 
 OperandSet* create_operand_set(CompilerContext* ctx) {
@@ -866,22 +847,32 @@ void fixed_point_iteration(CompilerContext* ctx, CFG* cfg) {
 
 int hash_variable(LivenessTable* table, char* name) {
 	if (!table || !name) return -1;
-
-	unsigned int hash = 0;
-	printf("hash_variable called with name=%p\n", (void*)name);
-    if (name) {
-        printf("First char check: %c (0x%x)\n", name[0], (unsigned char)name[0]);
-    }
+	
+	int hash = 0;
+	
 	while (*name) {
 		hash = (hash << 1) + *name++;
 	}
 	return hash % table->capacity;
 }
 
-LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key) {
+LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key, char* target_name, operand_t type) {
 	if (!table || hash_key == -1) return NULL;
 
-	return table->liveness_infos[hash_key];
+	bool is_symbol = (type == OP_SYMBOL) ? true : false;
+
+	LivenessInfo* current = table->liveness_infos[hash_key];
+	
+	while (current) {
+		LivenessInfo* link = current->link;
+		char* info_name = is_symbol ? current->var.symbol->name : current->var.label_name;
+		if (strcmp(target_name, info_name) == 0) {
+			return current;
+		}
+		current = link;
+	}
+	
+	return NULL;
 }
 
 void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable* live_variables, 
@@ -891,17 +882,20 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable
 	
 	switch (operand->kind) {
 		case OP_SYMBOL: {
-			LiveInfoVar var = {.symbol = operand->value.sym};
+			if (!operand->value.sym || (operand->value.sym && !operand->value.sym->name)) {
+				return;
+			}
+			LiveInfoVar var = { .symbol = operand->value.sym}; 
 
-			int hash_key = hash_variable(live_variables, operand->value.sym->name);	
+			int hash_key = hash_variable(live_variables, var.symbol->name);	
 
 			LivenessInfo* stored_info = NULL;
 			switch (role) {	
 				case OP_RESULT: {
-					stored_info = retrieve_livenessinfo(live_variables, hash_key); 
+					stored_info = retrieve_livenessinfo(live_variables, hash_key, operand->value.sym->name, OP_SYMBOL); 
 					if (!stored_info) {
 						LivenessInfo* new_info = create_liveness_info(ctx, var, false, -1);
-						add_liveinfo_to_liveness_table(ctx, live_variables, new_info);
+						add_liveinfo_to_liveness_table(ctx, live_variables, new_info, hash_key);
 						stored_info = new_info;
 					} else {
 						operand->next_use = stored_info->next_use;
@@ -914,10 +908,10 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable
 					break;
 				}
 				case OP_USE: {
-					stored_info = retrieve_livenessinfo(live_variables, hash_key); 
+					stored_info = retrieve_livenessinfo(live_variables, hash_key, operand->value.sym->name, OP_SYMBOL); 
 					if (!stored_info) {
 						LivenessInfo* new_info = create_liveness_info(ctx, var, false, -1);
-						add_liveinfo_to_liveness_table(ctx, live_variables, new_info);	
+						add_liveinfo_to_liveness_table(ctx, live_variables, new_info, hash_key);	
 						stored_info = new_info;
 					} else {
 						operand->next_use = stored_info->next_use;
@@ -939,17 +933,17 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable
 			if (!operand->value.label_name) return;
 
 			LiveInfoVar var = {.label_name = operand->value.label_name};
-
+			
 			int hash_key = hash_variable(live_variables, operand->value.label_name);
 			
 
 			LivenessInfo* stored_info = NULL;
 			switch (role) {
 				case OP_RESULT: {
-					stored_info = retrieve_livenessinfo(live_variables, hash_key); 
+					stored_info = retrieve_livenessinfo(live_variables, hash_key, operand->value.label_name, OP_LABEL); 
 					if (!stored_info) {
 						LivenessInfo* new_info = create_liveness_info(ctx, var, false, -1);
-						add_liveinfo_to_liveness_table(ctx, live_variables, new_info);
+						add_liveinfo_to_liveness_table(ctx, live_variables, new_info, hash_key);
 						stored_info = new_info;
 					} else {
 						operand->is_live = stored_info->is_live;
@@ -961,10 +955,10 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable
 					break;
 				}
 				case OP_USE: {
-					stored_info = retrieve_livenessinfo(live_variables, hash_key); 
+					stored_info = retrieve_livenessinfo(live_variables, hash_key, operand->value.label_name, OP_LABEL); 
 					if (!stored_info) {
 						LivenessInfo* new_info = create_liveness_info(ctx, var, false, -1);
-						add_liveinfo_to_liveness_table(ctx, live_variables, new_info);
+						add_liveinfo_to_liveness_table(ctx, live_variables, new_info, hash_key);
 						stored_info = new_info;
 					} else {
 						operand->next_use = stored_info->next_use;
@@ -1003,12 +997,21 @@ void determine_next_use(CompilerContext* ctx, CFG* cfg) {
 
 		for (int j = 0; j < current_block->out_set->size; j++) {
 			Operand* op = current_block->out_set->elements[j];
-
+			int hash_key = 0;
 			switch (op->kind) {
 				case OP_SYMBOL: {
 					LiveInfoVar var = {.symbol = op->value.sym};
-					LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
-					add_liveinfo_to_liveness_table(ctx, live_variables, live_info);
+					if (op->value.sym && op->value.sym->name) {
+						hash_key = hash_variable(live_variables, op->value.sym->name);
+					} else {
+						// printf("Error: Symbol is NULL or name in symbol is NULL\n");
+						return;
+					}
+
+					if (hash_key != -1) {
+						LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
+						add_liveinfo_to_liveness_table(ctx, live_variables, live_info, hash_key);
+					} 
 					break;
 				}
 
@@ -1016,10 +1019,21 @@ void determine_next_use(CompilerContext* ctx, CFG* cfg) {
 				case OP_BINARY:
 				case OP_STORE: {
 					LiveInfoVar var = {.label_name = op->value.label_name};
-					LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
-					add_liveinfo_to_liveness_table(ctx, live_variables, live_info);
+					if (op->value.label_name) {
+						hash_key = hash_variable(live_variables, op->value.label_name);  
+					} else { 
+						// printf("Error: operand has NULL label name\n");
+						return; 
+					}
+
+					if (hash_key != -1) {
+						LivenessInfo* live_info = create_liveness_info(ctx, var, true, -1);
+						add_liveinfo_to_liveness_table(ctx, live_variables, live_info, hash_key);
+					}
 					break;
 				}
+
+				default: break;
 			}
 		}
 

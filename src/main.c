@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
 	
 	// DAGNode* dag_root = build_DAG(ctx, ast_root);
 	TACTable* tac_table = build_tacs(ctx, ast_root);
-	// FunctionList* function_list = build_cfg(ctx, tac_table);
+	FunctionList* function_list = build_cfg(ctx, tac_table);
 	// reg_alloc(ctx, function_list);
 	
 

@@ -241,7 +241,7 @@ char* tac_variable_create(CompilerContext* ctx) {
 
 char* tac_parameter_label(CompilerContext* ctx) {
 	char buffer[32];
-	snprintf(buffer, sizeof(buffer), "t%d", tac_parameter_index++);
+	snprintf(buffer, sizeof(buffer), "p%d", tac_parameter_index++);
 
 	char* param = arena_allocate(ctx->ir_arena, strlen(buffer) + 1);
 	if (!param) return NULL;
@@ -251,7 +251,7 @@ char* tac_parameter_label(CompilerContext* ctx) {
 
 char* tac_function_argument_label(CompilerContext* ctx) {
 	char buffer[32];
-	snprintf(buffer, sizeof(buffer), "t%d", tac_function_argument_index++);
+	snprintf(buffer, sizeof(buffer), "a%d", tac_function_argument_index++);
 
 	char* arg = arena_allocate(ctx->ir_arena, strlen(buffer) + 1);
 	if (!arg) return NULL;
@@ -367,16 +367,21 @@ char* convert_subtype_to_string(struct type* type) {
 		case TYPE_ARRAY: {
 			return convert_subtype_to_string(type->subtype);
 		}
+		default: return NULL;
 	}
 }
 
 TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_identifier, Node* array_list) {
-	if (!array_identifier || !array_list) return NULL;
+	if (!array_identifier) return NULL;
 
-	OperandValue array_subtype_val = {
-		.label_name = convert_subtype_to_string(array_identifier->t)
-	};
-	
+
+	OperandValue array_subtype_val =  {.label_name = convert_subtype_to_string(array_identifier->left->t)};
+
+	if (array_subtype_val.label_name) {
+		printf("We have for array subtype: \033[31m%s\033[0m\n", array_subtype_val.label_name);
+	} else {
+		printf("\033[31mUnable to retrieve array subtype from 'convert_subtype_to_string'\033[0m\n");
+	}
 
 	Operand* array_subtype_op = create_operand(ctx, OP_STORE, array_subtype_val);
 	if (!array_subtype_op) {
@@ -384,7 +389,7 @@ TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_i
 		return NULL;
 	}
 
-	OperandValue array_identifier_val = { .sym = array_identifier->symbol }; 
+	OperandValue array_identifier_val = { .sym = array_identifier->left->symbol }; 
 	Operand* array_identifier_op = create_operand(ctx, OP_SYMBOL, array_identifier_val);
 	if (!array_identifier_op) {
 		printf("\033[31mUNABLE TO CREATE array identifier op\033[0m\n");
@@ -1119,7 +1124,7 @@ void emit_tac_instructions() {
 					if (current->result->kind == OP_SYMBOL && current->op2->kind == OP_SYMBOL) {
 						printf("\t%s = %s\n", current->result->value.sym->name, current->op2->value.sym->name);
 					
-					} else if (current->result->kind == OP_SYMBOL && (current->op2->kind == OP_STORE || current->op2->kind == OP_STORE)) {
+					} else if (current->result->kind == OP_SYMBOL && (current->op2->kind == OP_STORE || current->op2->kind == OP_BINARY || current->op2->kind == OP_UNARY)) {
 						printf("\t%s = %s\n", current->result->value.sym->name, current->op2->value.label_name);
 					
 					} else if (current->result->kind == OP_STORE && current->op2->kind == OP_RETURN) {
@@ -1176,11 +1181,11 @@ void emit_tac_instructions() {
 				if (current->op1->kind == OP_SYMBOL && current->op2->kind == OP_SYMBOL) {
 					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.sym->name, op, current->op2->value.sym->name);
 				
-				} else if (current->op1->kind == OP_SYMBOL && (current->op2->kind == OP_BINARY || current->op2->kind == OP_STORE)) {
+				} else if (current->op1->kind == OP_SYMBOL && (current->op2->kind == OP_BINARY || current->op2->kind == OP_STORE || current->op2->kind == OP_UNARY)) {
 					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.sym->name, op, current->op2->value.label_name);
 				
 				} else if ((current->op1->kind == OP_BINARY || current->op1->kind == OP_STORE) && current->op2->kind == OP_SYMBOL) {
-					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.label_name, op, current->op2->value.label_name);
+					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.label_name, op, current->op2->value.sym->name);
 				
 				} else if ((current->op1->kind == OP_BINARY || current->op1->kind == OP_STORE) && (current->op2->kind == OP_BINARY || current->op2->kind == OP_STORE)) {
 					printf("\t%s = %s %s %s\n", current->result->value.label_name, current->op1->value.label_name, op, current->op2->value.label_name);
@@ -1206,12 +1211,12 @@ void emit_tac_instructions() {
 			}
 			
 			case TAC_PARAM: {
-				printf("\tPARAM, %s, %s\n", current->result->value.label_name, current->op1->value.sym->name);
+				printf("\tPARAM %s, %s\n", current->result->value.label_name, current->op1->value.sym->name);
 				break;
 			}
 			case TAC_ARG: {
 				if (current->op1->kind == OP_BINARY || current->op1->kind == OP_UNARY || current->op1->kind == OP_STORE) {
-					printf("\tARG, %s, %s\n", current->result->value.label_name, current->op1->value.label_name);
+					printf("\tARG %s, %s\n", current->result->value.label_name, current->op1->value.label_name);
 				
 				} else if (current->op1->kind == OP_SYMBOL) {
 					printf("\tARG %s, %s\n", current->result->value.label_name, current->op1->value.sym->name);
