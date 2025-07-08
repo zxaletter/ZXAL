@@ -1,6 +1,5 @@
 #include "Lexer/lexer.h"
 #include "Parser/parser.h"
-#include "IR/dag.h"
 #include "IR/tac.h"
 #include "IR/cfg.h"
 // #include "RegAlloc/regalloc.h"
@@ -55,9 +54,9 @@ int main(int argc, char** argv) {
 	resolve_tree(ctx, ast_root);
 	typecheck_tree(ctx, ast_root);
 	
-	DAGNode* dag_root = build_DAG(ctx, ast_root);
-	TACTable* tac_table = build_tacs(ctx, dag_root);
-	FunctionList* function_list = build_cfg(ctx, tac_table);
+	// DAGNode* dag_root = build_DAG(ctx, ast_root);
+	TACTable* tac_table = build_tacs(ctx, ast_root);
+	// FunctionList* function_list = build_cfg(ctx, tac_table);
 	// reg_alloc(ctx, function_list);
 	
 

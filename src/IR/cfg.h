@@ -36,10 +36,11 @@ typedef union {
 	char* label_name;
 } LiveInfoVar;
 
-typedef struct {
+typedef struct LivenessInfo {
 	LiveInfoVar var;
 	bool is_live;
 	int next_use;
+	struct LivenessInfo* link;
 } LivenessInfo;
 
 typedef struct {
@@ -47,12 +48,6 @@ typedef struct {
 	int size;
 	int capacity;
 } LivenessTable;
-
-typedef enum {
-	SETS_EQAUL,
-	MIN_OUT_SET,
-	MIN_IN_SET
-} set_t;
 
 typedef struct {
 	Operand** elements;
@@ -81,8 +76,6 @@ typedef struct BasicBlock {
 	OperandSet* def_set;
 	OperandSet* in_set;
 	OperandSet* out_set;
-
-	LivenessTable* table;
 
 } BasicBlock;
 
@@ -138,16 +131,11 @@ int find_label_index(TACTable* instructions, char* target_name, int current_inde
 LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool is_live, int next_use);
 LivenessTable* create_liveness_table(CompilerContext* ctx);
 
-void determine_next_use(CompilerContext* ctx, CFG* cfg);
 
 int hash_variable(LivenessTable* table, char* name);
-
-void determine_instruction_liveness_info(CompilerContext* ctx, CFG* cfg, BasicBlock* block, int current_index);
-void determine_operand_liveness_and_next_use(CompilerContext* ctx, CFG* cfg, BasicBlock* block, Operand* op, operand_role role, int instruction_index);
-
-void operand_contain_variable(CompilerContext* ctx, Operand* op);
-void instruction_contains_nonvirtual_variables(CompilerContext* ctx, BasicBlock* block, int current_index);
-void store_nonvirtual_variables(CompilerContext* ctx);
+void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable* live_variables, BasicBlock* block, Operand* op, operand_role role, int instruction_index);
+void determine_instruction_liveness_info(CompilerContext* ctx, LivenessTable* live_variables, BasicBlock* block, int current_index);
+void determine_next_use(CompilerContext* ctx, CFG* cfg);
 void live_analysis(CompilerContext* ctx);
 
 void add_leader(CompilerContext* ctx, int leader_idx);

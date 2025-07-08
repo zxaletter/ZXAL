@@ -48,12 +48,18 @@ ContextStack* create_context(CompilerContext* ctx) {
 void push_context(CompilerContext* ctx, context_t new_context) {
 	if (context_stack->size >= context_stack->capacity) {
 		size_t prev_capacity = context_stack->capacity;
+		
 		context_stack->capacity *= 2;
 		size_t new_capacity = context_stack->capacity;
-		void* new_contexts = arena_reallocate(ctx->symbol_arena, context_stack->contexts, prev_capacity, new_capacity);
+		void* new_contexts = arena_reallocate(
+			ctx->symbol_arena, 
+			context_stack->contexts, 
+			prev_capacity * sizeof(context_t), 
+			new_capacity* sizeof(context_t)
+		);
+		
 		if (!new_contexts) {
 			perror("Unable to reallocate space for context types\n");
-			exit(EXIT_FAILURE);
 		}
 		context_stack->contexts = new_contexts;
 	}
@@ -90,9 +96,16 @@ void init_symbol_stack(CompilerContext* ctx) {
 bool push_scope(CompilerContext* ctx) {
 	if (symbol_stack->size >= symbol_stack->capacity) {
 		size_t prev_capacity = symbol_stack->capacity;
+		
 		symbol_stack->capacity *= 2;
 		size_t new_capacity = symbol_stack->capacity;
-		void* new_tables = arena_reallocate(ctx->symbol_arena, symbol_stack->tables, prev_capacity, new_capacity);
+		void* new_tables = arena_reallocate(
+			ctx->symbol_arena, 
+			symbol_stack->tables, 
+			prev_capacity * sizeof(SymbolTable*), 
+			new_capacity * sizeof(SymbolTable*)
+		);
+
 		if (!new_tables) {
 			perror("Unable to reallocate stack tables\n");
 			return false;
@@ -401,62 +414,6 @@ data_t get_kind(struct type* t) {
 	return TYPE_UNKNOWN;
 }
 
-Symbol* symbol_copy(CompilerContext* ctx, Symbol* original_symbol) {
-	if (!original_symbol) return NULL;
-
-	// Symbol* duplicate_symbol = malloc(sizeof(Symbol));
-	Symbol* duplicate_symbol = arena_allocate(ctx->symbol_arena, sizeof(Symbol));
-	if (!duplicate_symbol) {
-		perror("Unable to allocate space for duplicate symbol\n");
-		return NULL;
-	}
-
-	duplicate_symbol->kind = original_symbol->kind;
-	duplicate_symbol->symbol_free = false;
-	duplicate_symbol->bind_symbol = false;
-	duplicate_symbol->name = NULL;
-	duplicate_symbol->type = NULL;
-	duplicate_symbol->link = NULL;
-	duplicate_symbol->next = NULL;
-	duplicate_symbol->local_byte_offset = original_symbol->local_byte_offset;
-	duplicate_symbol->total_bytes = original_symbol->total_bytes;
-	duplicate_symbol->param_byte_offset = original_symbol->param_byte_offset;
-	duplicate_symbol->actual_bytes = original_symbol->actual_bytes;
-	duplicate_symbol->array_size = original_symbol->array_size;
-
-	printf("In 'symbol_copy' copying symbol for '%s' with local byte offset: %zu, Parameter byte offset: %zu, and byte size: %zu\n", original_symbol->name,
-		original_symbol->local_byte_offset, original_symbol->param_byte_offset, original_symbol->actual_bytes);
-
-	if (original_symbol->name) {
-		// duplicate_symbol->name = strdup(original_symbol->name);
-		duplicate_symbol->name = arena_allocate(ctx->symbol_arena, strlen(original_symbol->name) + 1);
-		if (!duplicate_symbol->name) {
-			printf("Unable to original_symbol name '%s'.\n", original_symbol->name ? original_symbol->name : "N/A");
-			// free(duplicate_symbol);
-			return NULL;
-		}
-	} 
-
-	if (original_symbol->type) {
-		duplicate_symbol->type = type_copy(ctx, original_symbol->type);
-		if (!duplicate_symbol->type) {
-			printf("Unable to duplicate original symbol type with kind %d.\n", original_symbol->type->kind);
-			// if (duplicate_symbol->name) free(duplicate_symbol->name);
-			// free(duplicate_symbol);
-			return NULL;
-		}
-	} 
-
-
-	// if (original_symbol->link) {
-		// Symbol* current_original_symbol_link = original_symbol->link;
-		
-		
-	// }
-
-	return duplicate_symbol;
-}
-
 void resolve_expression(CompilerContext* ctx, Node* node) {
 	if (!node || (node && !node->type)) return;
 
@@ -571,11 +528,9 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 						}
 						sym = create_array_symbol(ctx, SYMBOL_LOCAL, node->value.name, count, node->t);
 
-						// node->symbol = symbol_copy(sym);
 						node->symbol = sym;
 					} else {
 						sym = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, node->t);
-						// node->symbol = symbol_copy(sym);
 						node->symbol = sym;
 					}
 
@@ -637,14 +592,12 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 							return;
 						} else {
 							printf("Found symbol '%s' in remaining scopes\n", sym->name);
-							// node->symbol = symbol_copy(sym);
 							node->symbol = sym;
 							node->t = sym->type;
 							
 							return;
 						}
 					} else {
-						// node->symbol = symbol_copy(sym);
 						node->symbol = sym;
 						node->t = sym->type;
 					
@@ -991,50 +944,3 @@ void resolve_tree(CompilerContext* ctx, Node* root) {
 	// free_context_stack();
 	// free_symbol_stack();
 }
-
-// void free_symbol(Symbol* symbol) {
-// 	if (!symbol || (symbol && symbol->symbol_free)) return;
-
-// 	if (symbol->name) free(symbol->name);
-// 	if (symbol->type) free_type(symbol->type);
-// 	if (symbol->link) {
-// 		Symbol* current_link = symbol->link;
-// 		while (current_link) {
-// 			Symbol* next_link = current_link->link;
-// 			free_symbol(current_link);
-// 			current_link = next_link;
-// 		}
-// 	}
-// 	symbol->symbol_free = true;
-// 	free(symbol);
-// }
-
-// void free_table(SymbolTable* table) {
-// 	if (!table || (table && table->symboltable_free)) return;
-
-// 	// for (int i = 0; i < table->capacity; i++) {
-// 	// 	Symbol* current = table->symbols[i];
-// 	// 	free_symbol(current);
-// 	// }
-
-// 	free(table->symbols);
-// 	table->symboltable_free = true;
-// 	free(table);
-// }
-
-
-// void free_symbol_stack() {
-// 	if (!symbol_stack) return;
-
-// 	for (int i = symbol_stack->top; i >= 0; i--) {
-// 		free_table(symbol_stack->tables[i]);
-// 	}
-// 	free(symbol_stack->tables);
-// 	free(symbol_stack);
-// }
-
-// void free_context_stack() {
-// 	if (!context_stack) return;
-// 	free(context_stack->contexts);
-// 	free(context_stack);
-// }

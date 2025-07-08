@@ -358,9 +358,9 @@ data_t get_type(Token* token) {
 	}
 }
 
-Node* create_node(CompilerContext* ctx, node_t type, Node* left, Node* right, Node* prev, Node* next, struct type* t) {
-	// printf("In 'create_node'\n");
-	// Node* node = malloc(sizeof(Node));
+Node* create_node(CompilerContext* ctx, node_t type, 
+	Node* left, Node* right, Node* prev, Node* next, struct type* t) {
+
 	Node* node = arena_allocate(ctx->ast_arena, sizeof(Node));
 	if (!node) {
 		printf("In 'create_node', unable to allocate space for node\n");
@@ -385,23 +385,15 @@ Node* create_node(CompilerContext* ctx, node_t type, Node* left, Node* right, No
 	return node;
 }
 
-Node* create_int_node(CompilerContext* ctx ,node_t type, int val, Node* left, Node* right, Node* prev, Node* next, struct type* t) {
+Node* create_int_node(CompilerContext* ctx, node_t type, int val, 
+	Node* left, Node* right, Node* prev, Node* next, struct type* t) {
+
 	Node* node = create_node(ctx, type, left, right, prev, next, t);
 	if (!node) {
 		printf("In 'create_int_node', receieved NULL node from 'create_node'.\n");
 		return NULL;
 	}
 	node->value.val = val;
-	return node;
-}
-
-Node* create_char_node(CompilerContext* ctx, node_t type, char ch, Node* left, Node* right, Node* prev, Node* next, struct type* t) {
-	Node* node = create_node(ctx, type, left, right, prev, next, t);
-	if (!node) {
-		printf("In 'create_char_node', received NULL node from 'create_node'\n");
-		return NULL;
-	}
-	node->value.c = ch;
 	return node;
 }
 
@@ -606,7 +598,7 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 				return NULL;
 			}
 
-			Node* character_node = create_char_node(ctx, NODE_CHAR, ch, NULL, NULL, NULL, NULL, t);
+			Node* character_node = create_int_node(ctx, NODE_CHAR, ch, NULL, NULL, NULL, NULL, t);
 			if (!character_node) {
 				printf("In case 'TOKEN_CHAR_LITERAL' in 'parse_factor', received NULL CHAR LITERAL node.\n");
 				// free_type(t);

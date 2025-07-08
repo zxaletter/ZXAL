@@ -1,9 +1,11 @@
 #ifndef TAC_H
 #define TAC_H
 
-#include "dag.h"
-#include "Semantics/symbols.h"
 #include "compilercontext.h"
+#include "Semantics/symbols.h"
+#include "Parser/parser.h"
+// #include "dag.h"
+#include "auxiliaries.h"
 
 #define INITIAL_TABLE_CAPACITY 500 
 #define INITIAL_TACCONTEXT_CAPACITY 100
@@ -136,7 +138,7 @@ operand_t get_operand_type(Operand* op);
 Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value);
 
 char* convert_subtype_to_string(struct type* subtype);
-TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, DAGNode* array_identifier, DAGNode* array_list);
+TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_identifier, Node* array_list);
 TACContext* tac_context_lookup(tac_t* target_types, size_t length); 
 TACContext* peek_tac_context();
 bool is_tac_context_stack_empty();
@@ -152,18 +154,18 @@ char* tac_variable_create(CompilerContext* ctx);
 char* tac_function_argument_label(CompilerContext* ctx);
 char* tac_parameter_label(CompilerContext* ctx);
 char* tac_function_name(CompilerContext* ctx, char* name);
-tac_t get_tac_type(dagnode_t type);
+tac_t get_tac_type(node_t type);
 
 TACInstruction* create_tac(CompilerContext* ctx, tac_t type, Operand* result, Operand* op1, Operand* op2, Operand* op3);
 TACTable* create_tac_table(CompilerContext* ctx);
 void init_tac_table(CompilerContext* ctx);
 void add_tac_to_table(CompilerContext* ctx, TACInstruction* tac);
 
-void build_tac_from_parameter_dag(CompilerContext* ctx, DAGNode* node);
-TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, DAGNode* node);
-void build_tac_from_statement_dag(CompilerContext* ctx, DAGNode* node);
-void build_tac_from_global_dag(CompilerContext* ctx, DAGNode* node);
-TACTable* build_tacs(CompilerContext* ctx, DAGNode* node);
+void build_tac_from_parameter_dag(CompilerContext* ctx, Node* node);
+TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node);
+void build_tac_from_statement_dag(CompilerContext* ctx, Node* node);
+void build_tac_from_global_dag(CompilerContext* ctx, Node* node);
+TACTable* build_tacs(CompilerContext* ctx, Node* node);
 
 char* get_tac_op(TACInstruction* tac);
 void emit_tac_instructions();

@@ -59,7 +59,6 @@ Symbol* create_symbol(CompilerContext* ctx, symbol_t kind, char* name, struct ty
 bool scope_bind(Symbol* symbol, int hash_key);
 Symbol* scope_lookup(Symbol* symbol, int hash_key);
 Symbol* scope_lookup_current(Symbol* symbol, int hash_key);
-Symbol* symbol_copy(CompilerContext* ctx, Symbol* original_symbol);
 
 bool is_stack_empty();
 bool push_scope(CompilerContext* ctx);

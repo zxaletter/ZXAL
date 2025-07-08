@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "compilercontext.h"
-
+// MAKE COPY NODE FUNCTION
 #define ERROR_CAPACITY 100
 #define CONTEXT_CAPACITY 10
 #define NUM_NODES 1000
