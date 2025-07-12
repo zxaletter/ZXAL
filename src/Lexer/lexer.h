@@ -71,10 +71,10 @@ typedef enum {
 	TOKEN_COMMA, 
 	TOKEN_COLON, // 52
 	TOKEN_SEMICOLON, 
-	TOKEN_AMPERSAND,  // 55
+	TOKEN_AMPERSAND,  // 54
 	TOKEN_PERIOD, 
 
-	TOKEN_UNKNOWN, // 59
+	TOKEN_UNKNOWN, // 56
 	TOKEN_EOF,
 	TOKEN_STR_KEYWORD
 } token_t;
@@ -105,7 +105,7 @@ typedef struct Lexer {
 	int line;
 	int column;
 	Token* tokens;
-	int tokenIdx;
+	int size;
 	int capacity;
 	FileInfo* info;
 } Lexer;
@@ -147,6 +147,7 @@ char peek_lexer_next(Lexer* lexer);
 char advance_lexer(Lexer* lexer);
 bool lexer_at_end(Lexer* lexer);
 bool skip_lexer_whitespace(Lexer* lexer);
+bool skip_lexer_comment(Lexer* lexer);
 
 void get_identifier(CompilerContext* ctx, Lexer* lexer);
 void get_number(CompilerContext* ctx, Lexer* lexer);

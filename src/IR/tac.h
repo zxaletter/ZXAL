@@ -17,16 +17,33 @@ typedef enum {
 
 typedef enum {
 	OP_SYMBOL,
-	OP_BINARY,
-	OP_UNARY,
+	OP_ADD,
+	OP_SUB,
+	OP_MUL,
+	OP_DIV,
+	OP_MODULO,
+	OP_LESS,
+	OP_GREATER,
+	OP_LESS_EQUAL,
+	OP_GREATER_EQUAL,
+	OP_EQUAL, // 10
+	OP_NOT_EQUAL,
+	OP_NOT,
+	OP_LOGICAL_AND,
+	OP_LOGICAL_OR,
+
+	OP_UNARY_ADD,
+	OP_UNARY_SUB,
 	OP_ARG,
 	OP_INT_LITERAL,
 	OP_LABEL,
+	OP_SUBTYPE_STR,
 	
 	// for function calls, ints, bools, and chars
 	OP_STORE, 
 	// e.g. int x = 1;
 	//      => t_i = 1
+	//      => x = t_i
 	//      
 	//      CALL f
 	//      => t_j = _RET
@@ -101,12 +118,16 @@ typedef enum {
 
 	TAC_IF_FALSE,
 	TAC_GOTO,
-	TAC_LABEL
+	TAC_LABEL,
+	TAC_DEREFERENCE_AND_ASSIGN,
+	TAC_UNARY_ADD,
+	TAC_UNARY_SUB
 } tac_t;
 
 typedef struct {
 	tac_t type;
 	int id;
+	bool handled;
 	Operand* result;
 	Operand* op1;
 	Operand* op2;
@@ -122,9 +143,12 @@ typedef struct {
 
 typedef struct {
 	tac_t type;
+	int depth;
+	bool root_chain_mem;
 	char* next_label;
 	char* end_label;
 	char* update_label;
+	bool conditional_statement_next;
 } TACContext;
 
 typedef struct {
@@ -134,6 +158,9 @@ typedef struct {
 	TACContext** contexts;
 } TACContextStack;
 
+bool contains_logical_operator(Node* node);
+bool is_op(operand_t type);
+operand_t node_to_operand_type(node_t type);
 operand_t get_operand_type(Operand* op);
 Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value);
 
@@ -145,7 +172,10 @@ bool is_tac_context_stack_empty();
 void pop_tac_context();
 void clear_tac_contexts(tac_t target_type);
 void push_tac_context(CompilerContext* ctx, TACContext* context);
-TACContext* create_tac_context(CompilerContext* ctx, tac_t type, char* next_label, char* end_label, char* update_label);
+TACContext* create_tac_context(CompilerContext* ctx, tac_t type, 
+	char* next_label, char* end_label, 
+	char* update_label, bool next_statement_conditional,
+	int depth, bool root_chain_mem);
 bool init_tac_context_stack(CompilerContext* ctx);
 TACContextStack create_tac_context_stack(CompilerContext* ctx);
 
@@ -156,7 +186,8 @@ char* tac_parameter_label(CompilerContext* ctx);
 char* tac_function_name(CompilerContext* ctx, char* name);
 tac_t get_tac_type(node_t type);
 
-TACInstruction* create_tac(CompilerContext* ctx, tac_t type, Operand* result, Operand* op1, Operand* op2, Operand* op3);
+TACInstruction* create_tac(CompilerContext* ctx, tac_t type, 
+	Operand* result, Operand* op1, Operand* op2, Operand* op3);
 TACTable* create_tac_table(CompilerContext* ctx);
 void init_tac_table(CompilerContext* ctx);
 void add_tac_to_table(CompilerContext* ctx, TACInstruction* tac);

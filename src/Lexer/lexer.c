@@ -8,7 +8,6 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 
 
 Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {
-	// Lexer* lexer = malloc(sizeof(Lexer));
 	Lexer* lexer = arena_allocate(ctx->lexer_arena, sizeof(Lexer));
 	if (!lexer) {
 		fprintf(stderr, "Error: Failed to allocate space for lexer\n");
@@ -20,12 +19,10 @@ Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {
 	lexer->line = 1;
 	lexer->column = 1;
 	lexer->capacity = INITIAL_TOKEN_CAPACITY;
-	lexer->tokenIdx = 0;
-	// lexer->tokens = malloc(sizeof(Token) * lexer->capacity);
+	lexer->size = 0;
 	lexer->tokens = arena_allocate(ctx->lexer_arena, sizeof(Token) * lexer->capacity);
 	if (!lexer->tokens) {
 		printf("Error: Unable to allocate space for tokens\n");
-		// free(lexer);
 		return NULL;
 	}
 	lexer->info = info;
@@ -34,12 +31,12 @@ Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {
 }
 
 char peek_lexer(Lexer* lexer) {
-	if (*lexer->end == '\0') return '\0';
+	if (lexer_at_end(lexer)) return '\0';
 	return *lexer->end;
 }
 
 char peek_lexer_next(Lexer* lexer) {
-	if (*lexer->end == '\0' || *(lexer->end + 1) == '\0') return '\0';
+	if (lexer_at_end(lexer) || *(lexer->end + 1) == '\0') return '\0';
 	lexer->end++;
 	char c = *lexer->end;
 	lexer->end--;
@@ -47,14 +44,13 @@ char peek_lexer_next(Lexer* lexer) {
 }
 
 char advance_lexer(Lexer* lexer) {
-	if (*lexer->end != '\0') {
-		if (*lexer->end == '\n') {
-			lexer->column = 1;
-			lexer->line++;
-		} else {
-			lexer->column++;
-		}
+	if (lexer_at_end(lexer)) return '\0';
 
+	if (*lexer->end == '\n') {
+		lexer->column = 1;
+		lexer->line++;
+	} else {
+		lexer->column++;
 	}
 	char current = *lexer->end;
 	lexer->end++;
@@ -63,6 +59,13 @@ char advance_lexer(Lexer* lexer) {
 
 bool skip_lexer_whitespace(Lexer* lexer) {
 	while (!lexer_at_end(lexer) && isspace(peek_lexer(lexer))) {
+		advance_lexer(lexer);
+	}
+	return true;
+}
+
+bool skip_lexer_comment(Lexer* lexer) {
+	while (!lexer_at_end(lexer) && peek_lexer(lexer) != '\n') {
 		advance_lexer(lexer);
 	}
 	return true;
@@ -130,8 +133,9 @@ Token create_int_token(token_t type, int val, int line, int column) {
 
 Token create_string_token(CompilerContext* ctx, token_t type, char* str, int line, int column) {
 	Token token = create_token(type, line, column);
-	// token.value.str = strdup(str);
-	token.value.str = arena_allocate(ctx->lexer_arena, strlen(str) + 1);
+
+	int length = strlen(str);
+	token.value.str = arena_allocate(ctx->lexer_arena, length + 1);
 	if (!token.value.str) {
 		TokenValue error_val = {
 			.str = NULL
@@ -145,16 +149,19 @@ Token create_string_token(CompilerContext* ctx, token_t type, char* str, int lin
 		};
 		return error_token;
 	}
-	strcpy(token.value.str, str);
+	strncpy(token.value.str, str, length);
+	token.value.str[length] = '\0';
+
 	return token;
 }
 
 void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
-	if (lexer->tokenIdx >= lexer->capacity) {
-		size_t prev_capacity = lexer->capacity; 
+	if (lexer->size >= lexer->capacity) {
+		size_t prev_capacity = lexer->capacity;
+
 		lexer->capacity *= 2;
-		size_t new_capacity = lexer->capacity * sizeof(Token);
-		// lexer->tokens = realloc(lexer->tokens, lexer->capacity * sizeof(Token));
+		size_t new_capacity = lexer->capacity;
+		
 		void* new_tokens = arena_reallocate(
 			ctx->lexer_arena, 
 			lexer->tokens, 
@@ -168,18 +175,16 @@ void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 		}
 		lexer->tokens = new_tokens;
 	}
-
-	lexer->tokens[lexer->tokenIdx++] = token;
+	// printf("Adding token with type %d to lexer\n", token.type);
+	lexer->tokens[lexer->size++] = token;
 }
 
 void get_identifier(CompilerContext* ctx, Lexer* lexer) {
-	printf("in get identifier\n");
-	while (isalnum(peek_lexer(lexer)) || peek_lexer(lexer) == '_') {
+	while (!lexer_at_end(lexer) && (isalnum(peek_lexer(lexer)) || peek_lexer(lexer) == '_')) {
 		advance_lexer(lexer);
 	}
 
 	int length = lexer->end - lexer->start;
-	// char* identifier = malloc(length + 1);
 	char* identifier = arena_allocate(ctx->lexer_arena, length + 1);
 	if (!identifier) return;
 
@@ -193,24 +198,14 @@ void get_identifier(CompilerContext* ctx, Lexer* lexer) {
 	} else {
 		add_token(ctx, lexer, create_string_token(ctx, TOKEN_ID, identifier, lexer->line, lexer->column));
 	}
-
-	// free(identifier);
 }	
 
 void get_number(CompilerContext* ctx, Lexer* lexer) {
-	printf("in get number\n");
-	bool isNegative = false;
-	if (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer))) {
-		isNegative = true;
-		advance_lexer(lexer);
-	}
-
-	while (isdigit(peek_lexer(lexer))) {
+	while (!lexer_at_end(lexer) && isdigit(peek_lexer(lexer))) {
 		advance_lexer(lexer);
 	}
 
 	int length = lexer->end - lexer->start;
-	// char* text = malloc(length + 1);
 	char* text = arena_allocate(ctx->lexer_arena, length + 1);
 	if (!text) return;
 
@@ -218,16 +213,10 @@ void get_number(CompilerContext* ctx, Lexer* lexer) {
 	text[length] = '\0';
 
 	int number = atoi(text);
-	if (isNegative) {
-		number = -number;
-	}
-
 	add_token(ctx, lexer, create_int_token(TOKEN_INTEGER, number, lexer->line, lexer->column));
-	// free(text);
 }
 
 void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
-	printf("in get delimeters\n");
 	char c = advance_lexer(lexer);
 	token_t type = TOKEN_UNKNOWN;
 
@@ -246,9 +235,9 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 			advance_lexer(lexer);
 			if (peek_lexer(lexer) != '\'') {
 				printf("Expected matching token '\''.\n");
-				return;
+			} else {
+				advance_lexer(lexer);
 			}
-			advance_lexer(lexer);
 			return;
 		}
 	}
@@ -257,16 +246,15 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 }
 
 bool match(Lexer* lexer, char expected) {
-	printf("in match\n");
 	if (peek_lexer(lexer) != expected) return false;
 	advance_lexer(lexer);
 	return true;
 }
 
 void get_operator(CompilerContext* ctx, Lexer* lexer) {
-	printf("in get operator\n");
 	char c = advance_lexer(lexer);
 	bool isCompoundOp = false;
+	bool has_comment = false;
 	token_t type = TOKEN_UNKNOWN;
 
 	switch (c) {
@@ -313,6 +301,9 @@ void get_operator(CompilerContext* ctx, Lexer* lexer) {
 			if (match(lexer, '=')) {
 				type = TOKEN_DIV_EQUAL;
 				isCompoundOp = true;
+			} else if (match(lexer, '/')) {
+				bool has_comment = true;
+				skip_lexer_comment(lexer);
 			} else {
 				type = TOKEN_DIV;
 			}
@@ -374,6 +365,7 @@ void get_operator(CompilerContext* ctx, Lexer* lexer) {
 				type = TOKEN_LOGICAL_OR;
 				isCompoundOp = true;
 			} else {
+				printf("\033[31mGot unknown token in lexer\033[0m\n");
 				type = TOKEN_UNKNOWN;
 			}
 			break;
@@ -383,20 +375,24 @@ void get_operator(CompilerContext* ctx, Lexer* lexer) {
 			type = TOKEN_MODULO;
 			break;
 		}
-
 	}
+
+	if (has_comment) return;
+	if (type == TOKEN_UNKNOWN) return;
 
 	if (isCompoundOp) {
 		char str_opr[3] = {c, *(lexer->end - 1), '\0'};
+		printf("About to add compound op token with type %d\n", type);
 		add_token(ctx, lexer, create_string_token(ctx, type, str_opr, lexer->line, lexer->column - 2));
 	} else {
+		if (type == TOKEN_UNKNOWN) {
+			printf("About to add char token with type \033[31m%d\033[0m at \033[33m%d:%d\033[0m\n", type, lexer->line, lexer->column - 1);
+		}
 		add_token(ctx, lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
 	}
 }
 
 FileInfo* create_info(CompilerContext* ctx, char* filename, int line_count, char* contents) {
-	// FileInfo* info = malloc(sizeof(FileInfo));
-	printf("in create info\n");
 	FileInfo* info = arena_allocate(ctx->lexer_arena, sizeof(FileInfo));
 	if (!info) {
 		perror("Failed to create file info\n");
@@ -513,20 +509,17 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 
 Lexer* lex(CompilerContext* ctx, char* filename) {
 	FileInfo* info = retrieve_file_contents(ctx, filename);
-	printf("in lexer\n");
 	Lexer* lexer = initialize_lexer(ctx, info);
 	if (!lexer) return NULL;
 
 	while (!lexer_at_end(lexer)) {
 		skip_lexer_whitespace(lexer);
 		
-		if (lexer_at_end(lexer)) { break; }
-
 		lexer->start = lexer->end;
 
 		if (isalpha(peek_lexer(lexer))) {
 			get_identifier(ctx, lexer);
-		} else if (isdigit(peek_lexer(lexer)) || (peek_lexer(lexer) == '-' && isdigit(peek_lexer_next(lexer)))) {
+		} else if (isdigit(peek_lexer(lexer))) {
 			get_number(ctx, lexer);
 		} else if (strchr("=+-*/<!&>|%", peek_lexer(lexer))) {
 			get_operator(ctx, lexer);
@@ -537,11 +530,8 @@ Lexer* lex(CompilerContext* ctx, char* filename) {
 		}
 
 	}
-	printf("at the end about to add eof token\n");
 	add_token(ctx, lexer, create_token(TOKEN_EOF, lexer->line, lexer->column));
-	printf("About to return lexer\n");
 	return lexer;
-
 }
 
 void print_tokens(Token* tokens) {

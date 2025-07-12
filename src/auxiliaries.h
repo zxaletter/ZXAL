@@ -60,6 +60,8 @@ typedef enum {
 	NODE_LOGICAL_OR,
 	NODE_ARRAY_LIST,
 
+	NODE_UNARY_ADD,
+	NODE_UNARY_SUB,
 	NODE_UNKNOWN
 } node_t;
 

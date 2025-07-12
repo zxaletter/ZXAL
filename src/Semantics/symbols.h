@@ -15,7 +15,6 @@ typedef enum {
 
 typedef struct Symbol {
 	symbol_t kind;
-	int symbol_id;
 	
 	bool symbol_free;
 	bool bind_symbol;
@@ -52,11 +51,11 @@ typedef struct SymbolStack {
 size_t get_num_bytes(Symbol* symbol);
 data_t get_kind(struct type* t);
 
-int hash(char* name);
+int hash(int table_capacity, char* name);
 SymbolTable* create_symbol_table(CompilerContext* ctx);
 Symbol* create_array_symbol(CompilerContext* ctx, symbol_t kind, char* name, int element_count, struct type* type);
 Symbol* create_symbol(CompilerContext* ctx, symbol_t kind, char* name, struct type* type);
-bool scope_bind(Symbol* symbol, int hash_key);
+bool scope_bind(CompilerContext* ctx, Symbol* symbol, int hash_key);
 Symbol* scope_lookup(Symbol* symbol, int hash_key);
 Symbol* scope_lookup_current(Symbol* symbol, int hash_key);
 

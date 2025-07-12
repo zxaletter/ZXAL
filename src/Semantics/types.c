@@ -99,31 +99,12 @@ struct type* type_create(CompilerContext* ctx, data_t kind, struct type* subtype
 	type->params = params;
 	type->is_a_copy = false;
 
-	// if (subtype) {
-		// type->subtype = subtype;
-		// if (!type->subtype) {
-		// 	perror("Unable to copy subtype\n");
-		// 	// free(type);
-		// 	return NULL;
-		// }
-	// }
-
-	// if (params) {
-	// 	type->params = params_copy(ctx, params);
-	// 	if (!type->params) {
-	// 		// if (type->subtype) free_type(type->subtype);
-	// 		// free(type);
-	// 		return NULL;
-	// 	}
-	// }
-
 	return type;
 }
 
 struct type* type_copy(CompilerContext* ctx, struct type* original_type) {
 	if (!original_type) return NULL;
 	printf("Here in type_copy\n");
-	// struct type* duplicate_type = malloc(sizeof(struct type));
 	if (original_type->is_a_copy) {
 		return original_type;
 	}
@@ -226,13 +207,28 @@ struct type* typecheck_expression(CompilerContext* ctx, Node* node) {
 			lt = typecheck_expression(ctx, node->left);
 			rt = typecheck_expression(ctx, node->right);
 
-			if (!lt || !rt || lt->kind != TYPE_INTEGER || rt->kind != TYPE_INTEGER) {
-				printf("Error: Arithmetic expression require integer types\n");
+			if (!lt || !rt) {
 				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
-			} 
-			else { 
-				result = type_create(ctx, TYPE_INTEGER, NULL, NULL); 
-			} 
+				break;
+			}
+
+			switch (lt->kind) {
+				case TYPE_INTEGER:
+				case TYPE_BOOL: {
+					if (rt->kind != TYPE_INTEGER && rt->kind != TYPE_BOOL) {
+						result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
+					} else {
+						result = type_create(ctx, TYPE_INTEGER, NULL, NULL);
+					}
+					break;
+				}
+				default: {
+					printf("Error: Arithmetic expression require integer or boolean types\n");
+					printf("left type is %d and right type is %d\n", lt->kind, rt->kind);
+					result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
+					break;
+				}
+			}
 			printf("\033[31mLeaving node case with type %d\033[0m\n", node->type);
 			break;
 		}
@@ -250,6 +246,17 @@ struct type* typecheck_expression(CompilerContext* ctx, Node* node) {
 				result = type_create(ctx, TYPE_BOOL, NULL, NULL);
 			}
 			
+			break;
+		}
+
+		case NODE_UNARY_ADD:
+		case NODE_UNARY_SUB: {
+			rt = typecheck_expression(ctx, node->right);
+			if (!rt || (rt && rt->kind != TYPE_INTEGER)) {
+				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
+			} else {
+				result = type_create(ctx, TYPE_INTEGER, NULL, NULL);
+			}
 			break;
 		}
 
@@ -285,7 +292,6 @@ struct type* typecheck_expression(CompilerContext* ctx, Node* node) {
 				printf("Left node type is %d and left node symbol type is %d\n", node->left->t->kind, node->left->symbol->type->kind);
 				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			}
-			// result = type_copy(ctx, node->left->t->subtype);
 			result = type_create(ctx, node->left->t->subtype->kind, NULL, NULL);
 			break; 
 
@@ -327,7 +333,6 @@ struct type* typecheck_expression(CompilerContext* ctx, Node* node) {
 				printf("right operand of subscript must be an integer type\n");
 				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else {
-				// result = type_copy(ctx, lt->subtype);
 				// printf("left type and right type in NODE_SUBSCRIPT case are both valid\n");
 				if (!lt->subtype) {
 					printf("left type has no subtype\n");
@@ -358,9 +363,7 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 
 	switch (node->type) {
 		case NODE_ASSIGNMENT: {
-			printf("IN TYPECHECK STATEMENT->NODE ASSIGNMENT CASE\n");
-			if (node->right->type == NODE_ARRAY_LIST) {
-				printf("in regular case\n");
+			if (node->right && node->right->type == NODE_ARRAY_LIST) {
 				lt = typecheck_expression(ctx, node->left);
 				if (!lt) return;
 
@@ -377,9 +380,7 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 					}
 				}
 			} else {
-				printf("In else case\n");
 				lt = typecheck_expression(ctx, node->left);
-				if (!lt) { printf("IN NODE_ASSIGNMENT-> left type is NULL\n"); }
 				rt = typecheck_expression(ctx, node->right);
 				if (!rt) { printf("IN NODE_ASSIGNMENT-> right type is NULL\n"); }
 				if (!lt || !rt || !type_equals(lt, rt)) {
@@ -387,7 +388,6 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 					printf("Left type is %d and right type is \n", lt->kind);
 					result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 				} else {
-					// result = type_copy(ctx, lt);
 				}
 			}
 			printf("LEAVING NODE ASSIGNMENT CASE IN TYPECHECK STATEMENT\n");
@@ -408,7 +408,6 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 			if (!rt || !type_equals(rt, node->t)) {
 				result = type_create(ctx, TYPE_UNKNOWN, NULL, NULL);
 			} else {
-				// result = type_copy(ctx, rt);
 				result = type_create(ctx, rt->kind, NULL, NULL);
 			}
 			break;
@@ -447,14 +446,14 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 				printf("Here in %d statement\n", node->type);
 				result = typecheck_expression(ctx, node->left);
 
-				if (!result || result->kind != TYPE_BOOL) {
-					printf("Condition in while/else if/ if must be boolean type\n");
-					exit(EXIT_FAILURE);
+				if (!result) return;
+
+				if (result->kind != TYPE_BOOL) {
+					printf("\033[31mCondition in NODE %d must be of boolean type\033[0m\n", node->type);
+					return;
 				}
 			}
-			if (result && result->kind == TYPE_BOOL) {
-				printf("LEAVING condition in while/else if/if\n");
-			}
+
 			if (node->right) {
 				typecheck_statement(ctx, node->right);
 			}

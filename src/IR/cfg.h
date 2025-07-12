@@ -37,6 +37,7 @@ typedef union {
 } LiveInfoVar;
 
 typedef struct LivenessInfo {
+	operand_t type;
 	LiveInfoVar var;
 	bool is_live;
 	int next_use;
@@ -88,7 +89,7 @@ typedef struct {
 } CFG;
 
 typedef struct {
-	char* name;
+	Symbol* symbol;
 	int tac_start_index;
 	int tac_end_index;
 	CFG* cfg;
@@ -100,6 +101,9 @@ typedef struct {
 	FunctionInfo** infos;
 } FunctionList;
 
+bool operands_equal(Operand* op1, Operand* op2);
+OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
+
 LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key, char* name, operand_t type);
 void init_operand_liveinfo(CompilerContext* ctx, CFG* cfg, Operand* operand);
 void init_instruction_liveinfo(CompilerContext* ctx, CFG* cfg, TACInstruction* instruction);
@@ -109,7 +113,7 @@ bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, 
 void union_sets(CompilerContext* ctx, OperandSet* dest, OperandSet* src);
 bool sets_equal(OperandSet* set1, OperandSet* set2);
 OperandSet* difference_sets(CompilerContext* ctx, OperandSet* set1, OperandSet* set2);
-OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
+// OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
 bool contains_operand(OperandSet* op_set, Operand* operand);
 void populate_and_use_defs(CompilerContext* ctx, BasicBlock* block);
 bool init_block_sets(CompilerContext* ctx, BasicBlock* block);
@@ -128,13 +132,13 @@ void emit_leaders();
 BasicBlock* find_matching_label_block(CFG* cfg, char* target_name);
 int find_label_index(TACTable* instructions, char* target_name, int current_index);
 
-LivenessInfo* create_liveness_info(CompilerContext* ctx, LiveInfoVar var, bool is_live, int next_use);
+LivenessInfo* create_liveness_info(CompilerContext* ctx, operand_t type, LiveInfoVar var, bool is_live, int next_use);
 LivenessTable* create_liveness_table(CompilerContext* ctx);
 
 
 int hash_variable(LivenessTable* table, char* name);
-void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable* live_variables, BasicBlock* block, Operand* op, operand_role role, int instruction_index);
-void determine_instruction_liveness_info(CompilerContext* ctx, LivenessTable* live_variables, BasicBlock* block, int current_index);
+void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable* live_variables, Operand* op, operand_role role, int instruction_index);
+void determine_instruction_liveness_info(CompilerContext* ctx, LivenessTable* live_variables, TACInstruction* instruction);
 void determine_next_use(CompilerContext* ctx, CFG* cfg);
 void live_analysis(CompilerContext* ctx);
 

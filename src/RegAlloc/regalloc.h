@@ -7,16 +7,33 @@
 #define INIT_IDEALIZED_ASM_INSTRUCTIONS_CAPACITY 500
 
 typedef enum {
+	TRUE,
+	FALSE,
+	END
+} label_t;
+
+typedef enum {
 	ADD,
 	SUB,
 	MUL,
 	DIV,
+	MODULO,
 	STORE,
+	DEREFERENCE,
+	ASSIGN,
 	MOV,
+	MOV_ARG,
 	CMP,
 	CALL,
-	RET,
+	RETURN,
 	ARG,
+	PARAM,
+	JMP,
+	JMP_L,
+	JMP_G,
+	JMP_E,
+	JMP_NE,
+
 	LABEL
 } OpCode;
 
@@ -27,10 +44,11 @@ typedef struct {
 
 typedef struct {
 	OpCode op;
-	char* function_name;
-	VirtualRegister* dest;
-	VirtualRegister* src1;
-	VirtualRegister* src2;
+	Symbol* symbol;
+	Operand* dest;
+	Operand* src1;
+	Operand* src2;
+	int immediate_val;
 } IdealizedASMInstruction;
 
 typedef struct {
@@ -39,19 +57,26 @@ typedef struct {
 	IdealizedASMInstruction* instructions;	
 } IdealizedASMInstructionList;
 
+char* generate_jmp_label(CompilerContext* ctx, label_t type);
+bool is_int_literal(operand_t type);
+bool is_symbol(operand_t type);
 bool store_idealized_asm_instruciton(CompilerContext* ctx, IdealizedASMInstruction instruciton);
-char* create_virtual_register_name(CompilerContext* ctx);
 VirtualRegister* create_virtual_register(CompilerContext* ctx, Operand* op);
 OpCode get_op_code(TACInstruction* tac);
-IdealizedASMInstruction create_idealized_asm_instruction(OpCode op, char* function_name, VirtualRegister* dest, 
-	VirtualRegister* src1, VirtualRegister* src2);
-
+IdealizedASMInstruction create_idealized_asm_instruction(
+	OpCode op, 
+	Symbol* symbol, 
+	Operand* dest,
+	Operand* src1,
+	Operand* src2,
+	int immediate_val
+);
 IdealizedASMInstructionList create_idealized_asm_instruction_list(CompilerContext* ctx);
 
 void create_interference_graph(CompilerContext* ctx);
 VirtualRegister* create_idealized_asm_for_tac_instruction(CompilerContext* ctx, TACInstruction* tac);
 void create_idealized_asm_for_block(CompilerContext* ctx, BasicBlock* block);
-void create_idealized_asm_for_functions(CompilerContext* ctx, FunctionList* function_list);
+void create_idealized_asm(CompilerContext* ctx, FunctionList* function_list);
 void reg_alloc(CompilerContext* ctx, FunctionList* function_list);
 
 #endif

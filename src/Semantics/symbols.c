@@ -23,7 +23,6 @@ bool is_context_stack_empty() {
 }
 
 ContextStack* create_context(CompilerContext* ctx) {
-	// ContextStack* context_stack = malloc(sizeof(ContextStack));
 	ContextStack *context_stack = arena_allocate(ctx->symbol_arena, sizeof(ContextStack));
 	if (!context_stack) {
 		perror("Unable to allocate space for context stack\n");
@@ -33,11 +32,9 @@ ContextStack* create_context(CompilerContext* ctx) {
 	context_stack->top = -1;
 	context_stack->size = 0;
 	context_stack->capacity = CONTEXT_CAPACITY;
-	// context_stack->contexts = malloc(sizeof(context_t) * context_stack->capacity);
 	context_stack->contexts = arena_allocate(ctx->symbol_arena, sizeof(context_t) * context_stack->capacity);
 	if (!context_stack->contexts) {
 		perror("Unable to allocate space for context types\n");
-		// free(context_stack);
 		return NULL;
 	}
 
@@ -124,9 +121,7 @@ bool push_scope(CompilerContext* ctx) {
 
 bool pop_scope() {
 	if (!is_stack_empty()) {
-		// SymbolTable* table = symbol_stack->tables[symbol_stack->top];
-		// free_table(table);
-		symbol_stack->tables[symbol_stack->top--];
+		symbol_stack->top--;
 		symbol_stack->size--;
 		return true;
 	}
@@ -222,7 +217,6 @@ Symbol* create_array_symbol(CompilerContext* ctx, symbol_t kind, char* name, int
 }
 
 SymbolTable* create_symbol_table(CompilerContext* ctx) {
-	// SymbolTable* table = malloc(sizeof(SymbolTable));
 	SymbolTable* table = arena_allocate(ctx->symbol_arena, sizeof(SymbolTable));
 	if (!table) {
 		perror("Error: Unable to allocate space for symbol table\n");
@@ -232,12 +226,14 @@ SymbolTable* create_symbol_table(CompilerContext* ctx) {
 	table->level = scope_level++;
 	table->size = 0;
 	table->capacity = TABLE_CAPACITY;
-	// table->symbols = calloc(table->capacity, sizeof(Symbol*));
 	table->symbols = arena_allocate(ctx->symbol_arena, sizeof(Symbol*) * table->capacity);
 	if (!table->symbols) {
 		perror("Error: Unable to allocate space for symbol table hash array\n");
-		// free(table);
 		return NULL;
+	}
+
+	for (int i = 0; i < table->capacity; i++) {
+		table->symbols[i] = NULL;
 	}
 
 	table->symboltable_free = false;
@@ -245,7 +241,6 @@ SymbolTable* create_symbol_table(CompilerContext* ctx) {
 }
 
 SymbolStack* create_stack(CompilerContext* ctx) {
-	// SymbolStack* symbol_stack = malloc(sizeof(SymbolStack));
 	SymbolStack* symbol_stack = arena_allocate(ctx->symbol_arena, sizeof(SymbolStack));
 	if (!symbol_stack) {
 		perror("Error: Unable to allocate space for stack\n");
@@ -255,11 +250,9 @@ SymbolStack* create_stack(CompilerContext* ctx) {
 	symbol_stack->top = -1;
 	symbol_stack->size = 0;
 	symbol_stack->capacity = STACK_CAPACITY;
-	// symbol_stack->tables = malloc(sizeof(SymbolTable*) * symbol_stack->capacity);
 	symbol_stack->tables = arena_allocate(ctx->symbol_arena, sizeof(SymbolTable*) * symbol_stack->capacity);
 	if (!symbol_stack->tables) {
 		perror("Unable to allocate space for stack tables\n");
-		// free(symbol_stack);
 		return NULL;
 	}
 
@@ -270,8 +263,8 @@ bool is_stack_empty() {
 	return symbol_stack->top == -1;
 }
 
-bool scope_bind(Symbol* symbol, int hash_key) {
-	if (!symbol || !symbol->name) {
+bool scope_bind(CompilerContext* ctx, Symbol* symbol, int hash_key) {
+	if (!symbol || (symbol && !symbol->name)) {
 		printf("Error: Attempted to bind NULL symbol or symbol with NULL name.\n");
 		return false;
 	}
@@ -281,36 +274,70 @@ bool scope_bind(Symbol* symbol, int hash_key) {
 		printf("Error: Current symbol table is NULL in scope_bind.\n");
 		return false;
 	}
-	
-	if (table->symbols) {
-		if (table->symbols[hash_key]) {
-			Symbol* sym = table->symbols[hash_key];
-			Symbol* current = sym;
-			while (current) {
-				if (current->name && strcmp(current->name, symbol->name) == 0) {
-					printf("Name collision at scope level with '%s'.\n ", table->level, current->name);
-					return false;
-				}
-				current = current->link;
+
+	if (table->size >= table->capacity) {
+		int prev_capacity  = table->capacity;
+
+		Symbol** temp_symbols = arena_allocate(ctx->symbol_arena, sizeof(Symbol*) * prev_capacity);
+		if (!temp_symbols) return false;
+
+		for (int i = 0; i < prev_capacity; i++) {
+			temp_symbols[i] = table->symbols[i];
+		}
+
+		table->capacity *= 2;
+		void** new_symbols = arena_reallocate(
+			ctx->symbol_arena, 
+			table->symbols, 
+			prev_capacity * sizeof(Symbol*), 
+			table->capacity * sizeof(Symbol*)
+		);
+
+		if (!new_symbols) return false;
+
+		table->symbols = new_symbols;
+		table->size = 0;
+		for (int i = 0; i < table->capacity; i++) {
+			table->symbols[i] = NULL;
+		}
+
+		for (int i = 0; i < prev_capacity; i++) {
+			Symbol* current_sym = temp_symbols[i];
+			while (current_sym) {
+				Symbol* next_link = current_sym->link;
+				
+				int updated_hash_key = hash(table->capacity, current_sym->name);
+				if (updated_hash_key == -1) return false;
+
+				current_sym->link = table->symbols[updated_hash_key];
+				table->symbols[updated_hash_key] = current_sym;
+
+				current_sym = next_link;
 			}
 		}
+
+		hash_key = hash(table->capacity, symbol->name);
+	}
+
+	if (table->symbols[hash_key]) {
 		symbol->link = table->symbols[hash_key];
 		table->symbols[hash_key] = symbol;
-		printf("Bound symbol '%s' to scope level ('%d') at hash key %d -> Address: '%p'\n",
-			symbol->name, symbol_stack->top, hash_key, (void*)table->symbols[hash_key]);
-		return true;
-	} 
-	printf("Error: Symbol table hash array is NULL in scope_bind for table level %d.\n", table->level);
-	return false;
+
+	} else {
+		table->symbols[hash_key] = symbol;
+		symbol->link = NULL;
+		table->size++;
+	}
+	return true;
 }
 
-int hash(char* name) {
-	if (!name) return 0;
-	unsigned int hash = 0;
+int hash(int table_capacity, char* name) {
+	if (!name) return -1;
+	int hash = 0;
 	while (*name) {
 		hash = (hash << 1) + *name++;
 	}
-	return hash % TABLE_CAPACITY;
+	return hash % table_capacity;
 }
 
 Symbol* scope_lookup(Symbol* symbol, int hash_key) {
@@ -347,7 +374,7 @@ Symbol* scope_lookup_current(Symbol* symbol, int hash_key) {
 	Symbol* current = sym;
 	while (current) {
 		if (current->name && strcmp(current->name, symbol->name) == 0) {
-			printf("Found '%s' in current scope.\n", current->name);
+			// printf("Found '%s' in current scope.\n", current->name);
 			return current;
 		}
 		current = current->link;
@@ -451,6 +478,8 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 			break;
 		}
 
+		case NODE_UNARY_ADD:
+		case NODE_UNARY_SUB:
 		case NODE_NOT: {
 			push_context(ctx, CONTEXT_OP);
 			if (node->right) {
@@ -508,13 +537,15 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 		}
 
 		case NODE_NAME: {
-				printf("\033[31mIN node name processing '%s'\033[0m\n", node->value.name ? node->value.name : "NULL_NAME_NODE");
+				// printf("\033[31mIN node name processing '%s'\033[0m\n", node->value.name ? node->value.name : "NULL_NAME_NODE");
 				if (!node->value.name) {
 					printf("Error: NODE_NAME has NULL name. Cannot resolve\n");
 					return;
 				}
-
-				hash_key = hash(node->value.name);
+				SymbolTable* current_table = symbol_stack->tables[symbol_stack->top];
+				if (!current_table) return;
+				
+				hash_key = hash(current_table->capacity, node->value.name);
 				Symbol* sym = NULL;
 				if (node->t && !node->symbol) {
 					data_t kind = get_kind(node->t);
@@ -536,7 +567,7 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 						return;
 					}
 
-					if (!scope_bind(node->symbol, hash_key)) {
+					if (!scope_bind(ctx, node->symbol, hash_key)) {
 						printf("Error: Failed to bind newly created symbol '%s' during initial resolution.\n", node->value.name);
 						// free_symbol(sym);
 						return;
@@ -568,13 +599,12 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 
 				if (context_lookup(CONTEXT_OP) || context_lookup(CONTEXT_IF) ||
 				    context_lookup(CONTEXT_LOOP) || context_lookup(CONTEXT_RETURN) || 
-				    context_lookup(CONTEXT_AUG) || context_lookup(CONTEXT_CALL)) {
+				    context_lookup(CONTEXT_AUG) || context_lookup(CONTEXT_SUBSCRIPT) ||context_lookup(CONTEXT_CALL) ||
+				    context_lookup(CONTEXT_ASSIGNMENT)) {
 
-					printf("In context case for '%s'\n", node->value.name ? node->value.name : "N/A");
 					
 					Symbol* temp_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL);
 					if (!temp_symbol) {
-						printf("temp symbol is NULL\n");
 						return;
 					}
 
@@ -585,7 +615,6 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 						sym = scope_lookup(temp_symbol, hash_key);
 						if (!sym) {
 							printf("Did not find symbol in the remaining scopes\n");
-							// free_symbol(temp_symbol);
 							return;
 						} else {
 							printf("Found symbol '%s' in remaining scopes\n", sym->name);
@@ -602,7 +631,6 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 					}
 				} 
 
-				// printf("\033[31mSymbol: '%s' -> Size: %zu -> Type: %d\033[0m\n", node->symbol->name, node->symbol->actual_bytes, node->symbol->type->kind);
 				break;
 		}
 
@@ -610,7 +638,6 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 		case NODE_DECL: {
 				if (node->left) {
 					resolve_expression(ctx, node->left);
-					
 				}
 				break;
 		}
@@ -619,29 +646,30 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 				push_context(ctx, CONTEXT_AUG);
 				if (node->left) {
 					resolve_expression(ctx, node->left);
+					node->symbol = node->left->symbol;
 				}
 				pop_context();
 				break;
 		}
 
 		case NODE_SUBSCRIPT: {
-				if (node->left) {
-					resolve_expression(ctx, node->left);	
-				}
+			push_context(ctx, CONTEXT_SUBSCRIPT);
+			if (node->left) {
+				resolve_expression(ctx, node->left);	
+			}
 
-				if (node->right) {
-					resolve_expression(ctx, node->right);
-				}
+			if (node->right) {
+				resolve_expression(ctx, node->right);
+			}
 
-				if (node->left && node->left->symbol && node->left->symbol->type) {
-					if (node->left->symbol->type->kind == TYPE_ARRAY) {
-						node->symbol = node->left->symbol;
-
-						// if (node->t) free_type(node->t);
-						node->t = node->left->symbol->type->subtype;
-					} 
-				}
-				break;
+			if (node->left && node->left->symbol && node->left->symbol->type) {
+				if (node->left->symbol->type->kind == TYPE_ARRAY) {
+					node->symbol = node->left->symbol;
+					node->t = node->left->symbol->type->subtype;
+				} 
+			}
+			pop_context();
+			break;
 		}
 	}
 }
@@ -747,7 +775,10 @@ void resolve_statement(CompilerContext* ctx, Node* node) {
 				resolve_expression(ctx, node->left);
 			}
 			if (node->right) {
+				push_context(ctx, CONTEXT_ASSIGNMENT);
+				printf("\033[33mRight node of assignment has type %d\033[0m\n", node->right->type);
 				resolve_expression(ctx, node->right);
+				pop_context();
 			}
 
 			break;
@@ -796,12 +827,16 @@ void resolve_statement(CompilerContext* ctx, Node* node) {
 }
 
 void resolve_params(CompilerContext* ctx, Node* wrapped_param) {
-	printf("in resolve params\n");
-	if (!symbol_stack || !wrapped_param || !wrapped_param->right || !wrapped_param->right->t || !wrapped_param->right->value.name) {
-		printf("Warning: resolve_params received incomplete/NULL parameter node.\n");
+	if (!symbol_stack || !wrapped_param || 
+		!wrapped_param->right || !wrapped_param->right->t || 
+		!wrapped_param->right->value.name) {
 		return;
 	}
-	int param_hash_key = hash(wrapped_param->right->value.name);
+
+	SymbolTable* current_table = symbol_stack->tables[symbol_stack->top];
+	if (!current_table) return;
+
+	int param_hash_key = hash(current_table->capacity, wrapped_param->right->value.name);
 	
 	wrapped_param->right->symbol = create_symbol(ctx, SYMBOL_PARAM, wrapped_param->right->value.name, wrapped_param->right->t);
 	if (!wrapped_param->right->symbol) {
@@ -818,7 +853,7 @@ void resolve_params(CompilerContext* ctx, Node* wrapped_param) {
 		return;
 	}
 
-	if (!scope_bind(wrapped_param->right->symbol, param_hash_key)) {
+	if (!scope_bind(ctx, wrapped_param->right->symbol, param_hash_key)) {
 		// free_symbol(wrapped_param->right->symbol);
 		return;
 	}
@@ -835,17 +870,19 @@ void resolve_params(CompilerContext* ctx, Node* wrapped_param) {
 }
 
 void resolve_globals(CompilerContext* ctx, Node* node) {
-	int hash_key;
+	SymbolTable* current_table = symbol_stack->tables[symbol_stack->top];
+	if (!current_table) return;
 
 	switch (node->type) {
 		case NODE_ASSIGNMENT: {
-			hash_key = hash(node->left->value.name);
+
+			int hash_key = hash(current_table->capacity, node->left->value.name);
 			Symbol* sym = create_symbol(ctx, SYMBOL_GLOBAL, node->left->value.name, node->left->t);		
 			if (scope_lookup_current(sym, hash_key)) {
 				return;
 			} else {
 				node->left->symbol = sym;
-				if (scope_bind(node->left->symbol, hash_key)) {
+				if (scope_bind(ctx, node->left->symbol, hash_key)) {
 					printf("Bound symbol '%s' to scope level ('%d')\n", node->left->symbol->name, symbol_stack->top);
 				}				
 			}
@@ -863,15 +900,13 @@ void resolve_globals(CompilerContext* ctx, Node* node) {
 
 					if (node->t->subtype && node->t->subtype->kind == TYPE_VOID) { 
 						push_context(ctx, CONTEXT_VOID_FUNCTION);
-						printf("Pushed Context Void function.\n");
 					} else { 
 						push_context(ctx, CONTEXT_NONVOID_FUNCTION); 
-						printf("Pushed Context NON void function.\n");
 					}
 
-					hash_key = hash(node->value.name);
+					int hash_key = hash(current_table->capacity, node->value.name);
 					node->symbol = create_symbol(ctx, SYMBOL_GLOBAL, node->value.name, node->t);
-					if (scope_bind(node->symbol, hash_key)) {
+					if (scope_bind(ctx, node->symbol, hash_key)) {
 						printf("\033[31mBound symbol '%s' to scope level ('%d') with TYPE: '%d' and RETURN TYPE: '%d'\033[0m\n", node->symbol->name, symbol_stack->top, node->symbol->type->kind, node->symbol->type->subtype->kind);
 					} 
 
@@ -886,7 +921,6 @@ void resolve_globals(CompilerContext* ctx, Node* node) {
 							total_param_bytes += wrapped_param->right->symbol->actual_bytes;
 							wrapped_param = next_wrapped_param;
 						}
-						printf("Finished resolving params\n");
 					}
 					printf("\033[33mTotal param bytes: %zu\033[0m\n", total_param_bytes);
 
@@ -903,7 +937,6 @@ void resolve_globals(CompilerContext* ctx, Node* node) {
 					pop_scope();
 
 					node->symbol->total_bytes = total_param_bytes + total_local_bytes;
-					printf("Below\n");
 					printf("Total local bytes for '%s' before alignment: %d\n", node->symbol->name, node->symbol->total_bytes);
 
 					if ((node->symbol->total_bytes % 16) != 0) {
@@ -938,6 +971,4 @@ void resolve_tree(CompilerContext* ctx, Node* root) {
 	}
 
 	pop_scope();
-	// free_context_stack();
-	// free_symbol_stack();
 }
