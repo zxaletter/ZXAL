@@ -170,7 +170,7 @@ TACContext* tac_context_lookup(tac_t* target_types, size_t length);
 TACContext* peek_tac_context();
 bool is_tac_context_stack_empty();
 void pop_tac_context();
-void clear_tac_contexts(tac_t target_type);
+void clear_tac_contexts(int target_depth);
 void push_tac_context(CompilerContext* ctx, TACContext* context);
 TACContext* create_tac_context(CompilerContext* ctx, tac_t type, 
 	char* next_label, char* end_label, 

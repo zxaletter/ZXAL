@@ -917,8 +917,8 @@ bool contains_operand(OperandSet* op_set, Operand* operand) {
 
 	for (int i = 0; i < op_set->size; i++) {
 		if (op_set->elements[i] == operand) {
-			printf("Operand set element address: \033[32m%p\033[0m\n", (void*)op_set->elements[i]);
-			printf("Argument operand address: \033[32m%p\033[0m\n\n", (void*)operand);
+			// printf("Operand set element address: \033[32m%p\033[0m\n", (void*)op_set->elements[i]);
+			// printf("Argument operand address: \033[32m%p\033[0m\n\n", (void*)operand);
 			return true;
 		}
 	}
@@ -1007,7 +1007,7 @@ LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key, char* ta
 	if (!current) {
 		return NULL;
 	} else {
-		printf("We have valid LivenessInfo holding address: %p\n", (void*)current);
+		// printf("We have valid LivenessInfo holding address: %p\n", (void*)current);
 	}
 	while (current) {
 		LivenessInfo* link = current->link;
@@ -1050,8 +1050,8 @@ void determine_operand_liveness_and_next_use(CompilerContext* ctx, LivenessTable
 			LivenessInfo* stored_info = NULL;
 			switch (role) {	
 				case OP_RESULT: {
-					printf("Before Retrieving Liveness Info:\nHash Key: \033[32m%d\033[0m -> Name: \033[32m%s\033[0m\n\n", 
-						hash_key, operand->value.sym->name);
+					// printf("Before Retrieving Liveness Info:\nHash Key: \033[32m%d\033[0m -> Name: \033[32m%s\033[0m\n\n", 
+					// 	hash_key, operand->value.sym->name);
 					
 					stored_info = retrieve_livenessinfo(live_variables, hash_key, operand->value.sym->name, OP_SYMBOL); 
 					if (!stored_info) {
