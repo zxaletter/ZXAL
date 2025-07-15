@@ -6,91 +6,14 @@
 #include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
-#include "compilercontext.h"
+
+typedef struct CompilerContext CompilerContext;
+typedef struct Token Token;
+typedef enum token_t token_t;
 
 #define KEYWORDS 20
 #define INITIAL_TOKEN_CAPACITY 250
-extern char* keyword[KEYWORDS];
-
-typedef enum {
-	TOKEN_ID, 
-	TOKEN_CHAR_LITERAL,
-	TOKEN_STR, 
-	TOKEN_FUNCTION_KEYWORD, 
-	TOKEN_LET_KEYWORD, // 4
-	TOKEN_INT_KEYWORD, 
-	TOKEN_CHAR_KEYWORD, 
-	TOKEN_BOOL_KEYWORD, 
-	TOKEN_VOID_KEYWORD, 
-	TOKEN_STRUCT_KEYWORD, // 9
-	TOKEN_ENUM_KEYWORD, // 10
-	TOKEN_IF_KEYWORD, 
-	TOKEN_ELSE_KEYWORD, 
-	TOKEN_FOR_KEYWORD, 
-	TOKEN_WHILE_KEYWORD, // 14
-	TOKEN_CONTINUE_KEYWORD, // 15
-	TOKEN_BREAK_KEYWORD, 
-	TOKEN_RETURN_KEYWORD, 
-	TOKEN_SWITCH_KEYWORD, 
-	TOKEN_CASE_KEYWORD, // 19
-	TOKEN_TRUE_KEYWORD,
-	TOKEN_FALSE_KEYWORD,
-
-	TOKEN_INTEGER, 
-	TOKEN_LEFT_PARENTHESES, // 23
-	TOKEN_RIGHT_PARENTHESES,  
-	TOKEN_LEFT_BRACE, 
-	TOKEN_RIGHT_BRACE, 
-	TOKEN_LEFT_BRACKET, 
-	TOKEN_RIGHT_BRACKET,
-
-	TOKEN_ADD,  // 29
-	TOKEN_SUB, 
-	TOKEN_DIV, 
-	TOKEN_MUL, 
-	TOKEN_MODULO, 
-	TOKEN_ADD_EQUAL,  // 34
-	TOKEN_SUB_EQUAL, 
-	TOKEN_DIV_EQUAL, 
-	TOKEN_MUL_EQUAL, 
-	
-	TOKEN_LESS, 
-	TOKEN_GREATER, // 39
-	TOKEN_LESS_EQUAL, 
-	TOKEN_GREATER_EQUAL, 
-	TOKEN_NOT, 
-	TOKEN_EQUAL, 
-	TOKEN_NOT_EQUAL,  // 44
-	TOKEN_INCREMENT, 
-	TOKEN_DECREMENT, 
-	TOKEN_LOGICAL_AND, 
-	TOKEN_LOGICAL_OR, 
-	TOKEN_ARROW,  // 49
-
-	TOKEN_ASSIGNMENT, // 50
-	TOKEN_COMMA, 
-	TOKEN_COLON, // 52
-	TOKEN_SEMICOLON, 
-	TOKEN_AMPERSAND,  // 54
-	TOKEN_PERIOD, 
-
-	TOKEN_UNKNOWN, // 56
-	TOKEN_EOF,
-	TOKEN_STR_KEYWORD
-} token_t;
-
-typedef union {
-	int val;
-	char c;
-	char* str;
-} TokenValue;
-
-typedef struct {
-	token_t type;
-	TokenValue value;
-	int line;
-	int column;
-} Token;
+// extern char* keywords[KEYWORDS];
 
 typedef struct FileInfo {
 	char* filename;
@@ -100,13 +23,16 @@ typedef struct FileInfo {
 } FileInfo;
 
 typedef struct Lexer {
-	char* start;
-	char* end;
-	int line;
-	int column;
-	Token* tokens;
 	int size;
 	int capacity;
+	
+	char* start;
+	char* end;
+
+	int line;
+	int column;
+	
+	Token* tokens;
 	FileInfo* info;
 } Lexer;
 
@@ -167,6 +93,4 @@ Lexer* initialze_lexer(CompilerContext* ctx, FileInfo* info);
 Lexer* lex(CompilerContext* ctx, char* filename);
 
 void print_tokens(Token* tokens);
-void free_token(Token* tokens);
-void free_duplicate_token(Token* token);
 #endif

@@ -1,4 +1,6 @@
 #include "lexer.h"
+#include "compilercontext.h"
+#include "token.h"
 
 char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",

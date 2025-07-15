@@ -2,8 +2,10 @@
 #define COMPILER_CONTEXT_H
 
 #include "bumpallocator.h"
+typedef struct SymbolTable SymbolTable;
+typedef struct SymbolStack SymbolStack;
 
-typedef struct {
+typedef struct CompilerContext {
 	Arena* lexer_arena;
 	Arena* ast_arena;
 	Arena* type_arena;
@@ -11,6 +13,9 @@ typedef struct {
 	Arena* ir_arena;
 	Arena* codegen_arena;
 	Arena* error_arena;
+
+	SymbolTable* global_table;
+	SymbolStack* symbol_stack;
 } CompilerContext;
 
 CompilerContext* create_compiler_context();

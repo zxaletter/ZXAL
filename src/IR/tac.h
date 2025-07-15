@@ -2,19 +2,26 @@
 #define TAC_H
 
 #include "compilercontext.h"
-#include "Semantics/symbols.h"
+#include "symbols.h"
 #include "Parser/parser.h"
-// #include "dag.h"
-#include "auxiliaries.h"
 
 #define INITIAL_TABLE_CAPACITY 500 
 #define INITIAL_TACCONTEXT_CAPACITY 100
 
 typedef enum {
+	VIRTUAL, 
+	ARG_LABEL,  
+	PARAM_LABEL,
+	REG_LABEL
+} LabelKind;
+
+// For Liveness Info
+// ----------------
+typedef enum {
 	OP_RESULT,
 	OP_USE
 } operand_role;
-
+// ----------------
 typedef enum {
 	OP_SYMBOL,
 	OP_ADD,
@@ -137,60 +144,60 @@ typedef struct {
 typedef struct {
 	int size;
 	int capacity;
-	int tac_index;
 	TACInstruction** tacs;
 } TACTable;
 
 typedef struct {
 	tac_t type;
-	int depth;
 	bool root_chain_mem;
 	char* next_label;
 	char* end_label;
 	char* update_label;
-	bool conditional_statement_next;
 } TACContext;
 
 typedef struct {
-	int size;
 	int capacity;
 	int top;
 	TACContext** contexts;
 } TACContextStack;
 
-bool contains_logical_operator(Node* node);
+bool determine_if_next_conditional(Node* node, bool has_next_statement);
+void emit_label(CompilerContext* ctx, char* label);
+void emit_if_false(CompilerContext* ctx, Operand* condition, char* target);
+void emit_goto(CompilerContext* ctx, char* target);
+
 bool is_op(operand_t type);
 operand_t node_to_operand_type(node_t type);
 operand_t get_operand_type(Operand* op);
 Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value);
 
-char* convert_subtype_to_string(struct type* subtype);
+char* convert_subtype_to_string(struct Type* subtype);
 TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_identifier, Node* array_list);
+
 TACContext* tac_context_lookup(tac_t* target_types, size_t length); 
 TACContext* peek_tac_context();
 bool is_tac_context_stack_empty();
 void pop_tac_context();
-void clear_tac_contexts(int target_depth);
+void clear_tac_contexts(tac_t target_type);
 void push_tac_context(CompilerContext* ctx, TACContext* context);
+
 TACContext* create_tac_context(CompilerContext* ctx, tac_t type, 
 	char* next_label, char* end_label, 
-	char* update_label, bool next_statement_conditional,
-	int depth, bool root_chain_mem);
+	char* update_label, bool root_chain_mem);
 bool init_tac_context_stack(CompilerContext* ctx);
 TACContextStack create_tac_context_stack(CompilerContext* ctx);
 
-char* generate_label(CompilerContext* ctx);
-char* tac_variable_create(CompilerContext* ctx);
-char* tac_function_argument_label(CompilerContext* ctx);
-char* tac_parameter_label(CompilerContext* ctx);
+char* generate_label(CompilerContext* ctx, LabelKind kind);
 char* tac_function_name(CompilerContext* ctx, char* name);
 tac_t get_tac_type(node_t type);
 
 TACInstruction* create_tac(CompilerContext* ctx, tac_t type, 
 	Operand* result, Operand* op1, Operand* op2, Operand* op3);
-TACTable* create_tac_table(CompilerContext* ctx);
-void init_tac_table(CompilerContext* ctx);
+
 void add_tac_to_table(CompilerContext* ctx, TACInstruction* tac);
+bool init_tac_table(CompilerContext* ctx);
+TACTable* create_tac_table(CompilerContext* ctx);
+
 
 void build_tac_from_parameter_dag(CompilerContext* ctx, Node* node);
 TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node);

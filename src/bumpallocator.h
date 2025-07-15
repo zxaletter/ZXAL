@@ -1,5 +1,6 @@
 #ifndef ALLOCATOR_H
 #define ALLOCATOR_H
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -25,7 +26,7 @@ typedef struct MemoryBlock {
 	struct MemoryBlock* next;
 } MemoryBlock;
 
-typedef struct {
+typedef struct Arena {
 	arena_t type;
 	MemoryBlock* head;
 	MemoryBlock* current_block;

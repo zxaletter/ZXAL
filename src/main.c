@@ -1,13 +1,15 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include "compilercontext.h" 
 #include "Lexer/lexer.h"
 #include "Parser/parser.h"
+#include "Semantics/nameresolution.h"
+#include "Semantics/typechecker.h"
 #include "IR/tac.h"
-#include "IR/cfg.h"
-#include "RegAlloc/regalloc.h"
+// #include "IR/cfg.h"
+// #include "RegAlloc/regalloc.h"
 // #include "Codegen/codegen.h"
-#include "compilercontext.h" 
-#include "auxiliaries.h"
+// #include "auxiliaries.h"
 
 char* make_output_string(CompilerContext* ctx, char* filename) {
 	char* output = NULL;
@@ -37,11 +39,10 @@ int main(int argc, char** argv) {
 
 	CompilerContext* ctx = create_compiler_context();
 	if (!ctx) {
+		printf("compiler context is NULL\n");
 		return 1;
 	} 
-
 	char* filename = argv[1];
-
 	Lexer* lexer = lex(ctx, filename);
 	print_tokens(lexer->tokens);
 
@@ -50,8 +51,8 @@ int main(int argc, char** argv) {
 	typecheck_tree(ctx, ast_root);
 	
 	TACTable* tac_table = build_tacs(ctx, ast_root);
-	FunctionList* function_list = build_cfg(ctx, tac_table);
-	reg_alloc(ctx, function_list);
+	// FunctionList* function_list = build_cfg(ctx, tac_table);
+	// reg_alloc(ctx, function_list);
 	
 
 	// char* output = make_output_string(ctx, filename);

@@ -1,31 +1,33 @@
 CC = gcc
-CFLAGS = -g -Isrc
+CFLAGS = -g -Isrc -Wall -Wextra
 
-DIRS = src/Lexer src/Parser src/Semantics src/IR src/RegAlloc
-SOURCES = $(shell find $(DIRS) -name "*.c")  src/RegAlloc/regalloc.c src/IR/cfg.c src/IR/tac.c src/Semantics/types.c src/main.c src/bumpallocator.c src/compilercontext.c
+DIRS = src/Lexer src/Parser src/Semantics src/IR
+# src/Semantics src/IR src/RegAlloc
+SOURCES = $(shell find $(DIRS) -name "*.c") src/main.c src/types.c src/symbols.c src/compilercontext.c src/bumpallocator.c
+# src/RegAlloc/regalloc.c src/IR/cfg.c src/IR/tac.c src/Semantics/types.c
+# OUTPUT = program
 
-OUTPUT = program
+# INCLUDES = -I src -I src/Lexer -I src/Parser -I src/Semantics 
+# # -I src/Semantics -I src/IR -I src/RegAlloc 
 
-INCLUDES = -I src -I src/Lexer -I src/Parser -I src/Semantics -I src/IR -I src/RegAlloc 
+# all: $(OUTPUT)
 
-all: $(OUTPUT)
-
-$(OUTPUT): $(SOURCES)
-	gcc -g  $(INCLUDES) -o $@ $^
-
-clean:
-	rm -f $(OUTPUT)
-
-# OBJECTS = $(SOURCES:.c=.o)
-# all: zxal
-
-# zxal: $(OBJECTS)
-# 	$(CC) -o zxal $(OBJECTS)
-
-# %.o: %.c
-# 	$(CC) $(CFLAGS) -c $< -o $@
+# $(OUTPUT): $(SOURCES)
+# 	gcc -g  $(INCLUDES) -o $@ $^
 
 # clean:
-# 	rm -f $(OBJECTS) zxal
+# 	rm -f $(OUTPUT)
 
-# .PHONY: all clean
+OBJECTS = $(SOURCES:.c=.o)
+all: zxal
+
+zxal: $(OBJECTS)
+	$(CC) -o zxal $(OBJECTS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) zxal
+
+.PHONY: all clean

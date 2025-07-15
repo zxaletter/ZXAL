@@ -3,7 +3,6 @@
 FunctionList* function_list = NULL;
 TACLabelEntries tac_entries;
 TACLeaders leaders_list;
-// static int block_id = 0;
 
 FunctionList* create_function_list(CompilerContext* ctx) {
 	FunctionList* list = arena_allocate(ctx->ir_arena, sizeof(FunctionList));
@@ -869,56 +868,54 @@ void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 	}
 }
 
-bool operands_equal(Operand* op1, Operand* op2) {
-	if (!op1 || !op2) return false;
+// bool operands_equal(Operand* op1, Operand* op2) {
+// 	if (!op1 || !op2) return false;
 
-	if (op1->kind == op2->kind) {
-		switch (op1->kind) {
-			case OP_STORE:
-			case OP_ADD:
-			case OP_SUB:
-			case OP_DIV:
-			case OP_MUL:
-			case OP_MODULO:
-			case OP_LESS:
-			case OP_GREATER:
-			case OP_LESS_EQUAL:
-			case OP_GREATER_EQUAL:
-			case OP_EQUAL:
-			case OP_NOT_EQUAL:
-			case OP_NOT:
-			case OP_UNARY_ADD:
-			case OP_UNARY_SUB:
-			case OP_LOGICAL_OR:
-			case OP_LOGICAL_AND: {
-				if (!op1->value.label_name || !op2->value.label_name) return false;
-				return strcmp(op1->value.label_name, op2->value.label_name) == 0;
-			}
+// 	if (op1->kind == op2->kind) {
+// 		switch (op1->kind) {
+// 			case OP_STORE:
+// 			case OP_ADD:
+// 			case OP_SUB:
+// 			case OP_DIV:
+// 			case OP_MUL:
+// 			case OP_MODULO:
+// 			case OP_LESS:
+// 			case OP_GREATER:
+// 			case OP_LESS_EQUAL:
+// 			case OP_GREATER_EQUAL:
+// 			case OP_EQUAL:
+// 			case OP_NOT_EQUAL:
+// 			case OP_NOT:
+// 			case OP_UNARY_ADD:
+// 			case OP_UNARY_SUB:
+// 			case OP_LOGICAL_OR:
+// 			case OP_LOGICAL_AND: {
+// 				if (!op1->value.label_name || !op2->value.label_name) return false;
+// 				return strcmp(op1->value.label_name, op2->value.label_name) == 0;
+// 			}
 
-			case OP_INT_LITERAL: {
-				return op1->value.int_val == op2->value.int_val;
-			}
+// 			case OP_INT_LITERAL: {
+// 				return op1->value.int_val == op2->value.int_val;
+// 			}
 
-			case OP_SYMBOL: {
-				if (!op1->value.sym || !op2->value.sym) return false;
-				return op1->value.sym == op2->value.sym;
-			}
+// 			case OP_SYMBOL: {
+// 				if (!op1->value.sym || !op2->value.sym) return false;
+// 				return op1->value.sym == op2->value.sym;
+// 			}
 
-			default: return false;
+// 			default: return false;
 
 		
-		}
-	}
-	return false;
-}
+// 		}
+// 	}
+// 	return false;
+// }
 
 bool contains_operand(OperandSet* op_set, Operand* operand) {
 	if (!op_set || !operand) return false;
 
 	for (int i = 0; i < op_set->size; i++) {
 		if (op_set->elements[i] == operand) {
-			// printf("Operand set element address: \033[32m%p\033[0m\n", (void*)op_set->elements[i]);
-			// printf("Argument operand address: \033[32m%p\033[0m\n\n", (void*)operand);
 			return true;
 		}
 	}
@@ -1004,11 +1001,8 @@ LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key, char* ta
 	bool is_symbol = (type == OP_SYMBOL) ? true : false;
 
 	LivenessInfo* current = table->liveness_infos[hash_key];
-	if (!current) {
-		return NULL;
-	} else {
-		// printf("We have valid LivenessInfo holding address: %p\n", (void*)current);
-	}
+	if (!current) return NULL;
+	
 	while (current) {
 		LivenessInfo* link = current->link;
 		if (current->type == type) {
@@ -1283,12 +1277,12 @@ bool is_operand_label_or_symbol(Operand* op) {
 }
 
 FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
-	if (!instructions) return;
+	if (!instructions) return NULL;
 
 	function_list = create_function_list(ctx);
 	tac_entries = create_tac_label_entries(ctx);
 	leaders_list = create_tac_leaders(ctx);
-	if (!function_list || !tac_entries.labels || !leaders_list.leaders) return;
+	if (!function_list || !tac_entries.labels || !leaders_list.leaders) return NULL;
 	
 	mark_function_boundaries(ctx, instructions);
 	// mark_labels(ctx, instructions);

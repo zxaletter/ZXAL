@@ -7,7 +7,7 @@
 #include "Lexer/lexer.h"
 #include "compilercontext.h"
 
-typedef enum {
+typedef enum error_t {
 	EXPECTED_LEFT_PARENTHESES,
 	EXPECTED_RIGHT_PARENTHESES,
 	EXPECTED_LEFT_BRACE,
