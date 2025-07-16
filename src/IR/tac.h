@@ -2,8 +2,13 @@
 #define TAC_H
 
 #include "compilercontext.h"
+#include "bumpallocator.h"
 #include "symbols.h"
+#include "Parser/node.h"
 #include "Parser/parser.h"
+#include "types.h"
+#include "errorsandcontext.h"
+#include <stdbool.h>
 
 #define INITIAL_TABLE_CAPACITY 500 
 #define INITIAL_TACCONTEXT_CAPACITY 100
@@ -147,12 +152,13 @@ typedef struct {
 	TACInstruction** tacs;
 } TACTable;
 
-typedef struct {
-	tac_t type;
+typedef struct TACContext {
+	context_t type;
 	bool root_chain_mem;
 	char* next_label;
 	char* end_label;
 	char* update_label;
+	struct TACContext* parent;
 } TACContext;
 
 typedef struct {
@@ -174,14 +180,14 @@ Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value
 char* convert_subtype_to_string(struct Type* subtype);
 TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_identifier, Node* array_list);
 
-TACContext* tac_context_lookup(tac_t* target_types, size_t length); 
+ 
+TACContext* context_loop_lookup(TACContext* starting_context);
 TACContext* peek_tac_context();
 bool is_tac_context_stack_empty();
 void pop_tac_context();
-void clear_tac_contexts(tac_t target_type);
 void push_tac_context(CompilerContext* ctx, TACContext* context);
 
-TACContext* create_tac_context(CompilerContext* ctx, tac_t type, 
+TACContext* create_tac_context(CompilerContext* ctx, context_t type, 
 	char* next_label, char* end_label, 
 	char* update_label, bool root_chain_mem);
 bool init_tac_context_stack(CompilerContext* ctx);
@@ -198,6 +204,10 @@ void add_tac_to_table(CompilerContext* ctx, TACInstruction* tac);
 bool init_tac_table(CompilerContext* ctx);
 TACTable* create_tac_table(CompilerContext* ctx);
 
+void set_end_label_based_on_context(TACContext* context, char** end_label);
+
+void reset_context_stack();
+void reset_tac_indices();
 
 void build_tac_from_parameter_dag(CompilerContext* ctx, Node* node);
 TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node);

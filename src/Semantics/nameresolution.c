@@ -30,7 +30,6 @@ ContextStack* create_context(CompilerContext* ctx) {
 	}
 
 	context_stack->top = -1;
-	context_stack->size = 0;
 	context_stack->capacity = CONTEXT_CAPACITY;
 	context_stack->contexts = arena_allocate(ctx->symbol_arena, sizeof(context_t) * context_stack->capacity);
 	if (!context_stack->contexts) {
@@ -42,7 +41,7 @@ ContextStack* create_context(CompilerContext* ctx) {
 }
 
 void push_context(CompilerContext* ctx, context_t new_context) {
-	if (context_stack->size >= context_stack->capacity) {
+	if (context_stack->top >= context_stack->capacity) {
 		size_t prev_capacity = context_stack->capacity;
 		
 		context_stack->capacity *= 2;
@@ -61,13 +60,11 @@ void push_context(CompilerContext* ctx, context_t new_context) {
 	}
 
 	context_stack->contexts[++context_stack->top] = new_context;
-	context_stack->size++;
 }
 
 void pop_context() {
 	if (!is_context_stack_empty()) {
-		context_stack->contexts[context_stack->top--];
-		context_stack->size--;
+		context_stack->top--;
 	}
 }
 
@@ -995,6 +992,7 @@ void validate_node_signature(CompilerContext* ctx, Node* node) {
 						int hash_key = hash(ctx->global_table->capacity, func_symbol->name);
 						if (hash_key != -1) {
 							bind(ctx, FUNCTION, func_symbol, hash_key);
+							node->symbol = (void*)func_symbol;
 						}						
 						break;
 					}

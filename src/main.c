@@ -6,10 +6,9 @@
 #include "Semantics/nameresolution.h"
 #include "Semantics/typechecker.h"
 #include "IR/tac.h"
-// #include "IR/cfg.h"
-// #include "RegAlloc/regalloc.h"
+#include "IR/cfg.h"
+#include "RegAlloc/regalloc.h"
 // #include "Codegen/codegen.h"
-// #include "auxiliaries.h"
 
 char* make_output_string(CompilerContext* ctx, char* filename) {
 	char* output = NULL;
@@ -44,15 +43,15 @@ int main(int argc, char** argv) {
 	} 
 	char* filename = argv[1];
 	Lexer* lexer = lex(ctx, filename);
-	print_tokens(lexer->tokens);
+	// print_tokens(lexer->tokens);
 
 	Node* ast_root = parse(ctx, lexer);
 	resolve_tree(ctx, ast_root);
 	typecheck_tree(ctx, ast_root);
 	
 	TACTable* tac_table = build_tacs(ctx, ast_root);
-	// FunctionList* function_list = build_cfg(ctx, tac_table);
-	// reg_alloc(ctx, function_list);
+	FunctionList* function_list = build_cfg(ctx, tac_table);
+	reg_alloc(ctx, function_list);
 	
 
 	// char* output = make_output_string(ctx, filename);

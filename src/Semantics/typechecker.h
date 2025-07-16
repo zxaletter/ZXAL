@@ -2,6 +2,7 @@
 #define TYPECHECKER_H
 
 #include <stdbool.h>
+#include <stdio.h>
 
 typedef struct CompilerContext CompilerContext;
 typedef struct Node Node;

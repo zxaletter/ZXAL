@@ -404,8 +404,11 @@ Node* create_node(CompilerContext* ctx, node_t type,
 		printf("In 'create_node', unable to allocate space for node\n");
 		return NULL;
 	}
-
+	printf("In 'create_node', address: %p\n", node);
+	printf("Node Type is %d\n", type);
 	node->type = type;
+	printf("we assigned node type %d\n", node->type);
+	printf("here\n");
 	node->left = left;
 	node->right = right;
 	node->prev = prev;

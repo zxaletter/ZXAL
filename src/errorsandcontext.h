@@ -51,20 +51,20 @@ typedef struct {
 typedef enum {
 	CONTEXT_OP,
 	CONTEXT_IF,
+	CONTEXT_ELSE_IF,
+	CONTEXT_ELSE,
 	CONTEXT_CALL,
 	CONTEXT_RETURN,
 	CONTEXT_AUG,
 	CONTEXT_ASSIGNMENT,
-	CONTEXT_LOOP,
 	CONTEXT_SUBSCRIPT,
-	CONTEXT_SWITCH,
+	CONTEXT_LOOP,
 	CONTEXT_VOID_FUNCTION,
 	CONTEXT_NONVOID_FUNCTION
 } context_t;
 
 typedef struct ContextStack {
 	int top;
-	int size;
 	int capacity;
 	context_t* contexts;
 } ContextStack;
