@@ -9,21 +9,9 @@
 #define INIT_TAC_INSTRUCTIONS_CAPACITY 50
 #define INIT_PREDECESSOR_CAPACITY 20
 #define INIT_SUCCESSORS_CAPACITY 20
-#define INIT_TAC_LABEL_ENTRIES_CAPACITY 100
 #define INIT_LEADERS_CAPACITY 100
 #define INIT_LIVENESS_TABLE_CAPACITY 50
-#define INIT_OP_SET_CAPACITY 50
-
-typedef struct {
-	char* name;
-	int tac_index;
-} TACLabel;
-
-typedef struct {
-	int size;
-	int capacity;
-	TACLabel** labels;
-} TACLabelEntries;
+#define INIT_INTERFERENCE_BUNDLE_CAPACITY 50
 
 typedef struct {
 	int size;
@@ -50,14 +38,9 @@ typedef struct {
 	int capacity;
 } LivenessTable;
 
-typedef struct {
-	Operand** elements;
-	int size;
-	int capacity;
-} OperandSet;
-
 typedef struct BasicBlock BasicBlock;
 typedef struct BasicBlock {
+	int id;
 	int num_instructions;
 	int num_predecessors;
 	int num_successors;
@@ -67,7 +50,6 @@ typedef struct BasicBlock {
 	int num_successors_capacity;
 	
 	bool visited;
-	// int id;
 	
 	TACInstruction** instructions;
 	BasicBlock** predecessors;
@@ -89,10 +71,25 @@ typedef struct {
 } CFG;
 
 typedef struct {
+	Operand* operand;
+	OperandSet* interferes_with;
+	BasicBlock* associated_block;
+} InterferenceBundle;
+
+typedef struct {
+	int size;
+	int capacity;
+	InterferenceBundle** bundles;
+} InterferenceGraph;
+
+typedef struct {
 	Symbol* symbol;
+	int total_frame_bytes;
+	
 	int tac_start_index;
 	int tac_end_index;
 	CFG* cfg;
+	InterferenceGraph* graph;
 } FunctionInfo;
 
 typedef struct {
@@ -101,8 +98,14 @@ typedef struct {
 	FunctionInfo** infos;
 } FunctionList;
 
-bool operands_equal(Operand* op1, Operand* op2);
-OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
+void rmeove_from_operand_set(OperandSet* op_set, Operand* operand);
+void compute_instruction_live_out(CompilerContext* ctx, CFG* cfg);
+
+void add_bundle_to_interference_graph(CompilerContext* ctx, InterferenceGraph* graph, InterferenceBundle* bundle);
+InterferenceBundle* create_interference_bundle(CompilerContext* ctx, Operand* operand, BasicBlock* associated_block);
+InterferenceGraph* create_interference_graph(CompilerContext* ctx);
+
+void build_interference_graph(CompilerContext* ctx);
 
 LivenessInfo* retrieve_livenessinfo(LivenessTable* table, int hash_key, char* name, operand_t type);
 void init_operand_liveinfo(CompilerContext* ctx, CFG* cfg, Operand* operand);
@@ -110,18 +113,19 @@ void init_instruction_liveinfo(CompilerContext* ctx, CFG* cfg, TACInstruction* i
 void init_liveinfo_state(CompilerContext* ctx, CFG* cfg);
 bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, LivenessInfo* live_info, int hash_key);
 
+int get_operand_index(OperandSet* op_set, Operand* operand);
+bool operands_equal(Operand* op1, Operand* op2);
+bool contains_operand(OperandSet* op_set, Operand* operand);
+OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
 void union_sets(CompilerContext* ctx, OperandSet* dest, OperandSet* src);
 bool sets_equal(OperandSet* set1, OperandSet* set2);
 OperandSet* difference_sets(CompilerContext* ctx, OperandSet* set1, OperandSet* set2);
-// OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set);
-bool contains_operand(OperandSet* op_set, Operand* operand);
 void populate_and_use_defs(CompilerContext* ctx, BasicBlock* block);
 bool init_block_sets(CompilerContext* ctx, BasicBlock* block);
 
 
-void add_to_op_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand);
+void add_to_operand_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand);
 void populate_and_use_defs(CompilerContext* ctx, BasicBlock* block);
-OperandSet* create_operand_set(CompilerContext* ctx);
 bool init_block_sets(CompilerContext* ctx, BasicBlock* block);
 bool is_operand_label_or_symbol(Operand* op);
 void emit_liveness_info(TACInstruction* instruction);
@@ -144,19 +148,15 @@ void live_analysis(CompilerContext* ctx);
 
 void add_leader(CompilerContext* ctx, int leader_idx);
 void mark_function_boundaries(CompilerContext* ctx, TACTable* instructions);
-void mark_labels(CompilerContext* ctx, TACTable* instructions);
 void find_leaders(CompilerContext* ctx, TACTable* instructions);
 
 bool found_label(TACInstruction* instruction);
 bool found_leader(TACInstruction* instruction);
 
 void add_edges(CompilerContext* ctx, CFG* cfg, int index, BasicBlock* block);
-bool add_label_to_entries(CompilerContext* ctx, TACLabel* label);
 bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions);
 void link_function_cfgs(CompilerContext* ctx);
 TACLeaders crete_tac_leaders(CompilerContext* ctx);
-TACLabel* create_label_entry(CompilerContext* ctx, TACInstruction* instruction, int tac_index);
-TACLabelEntries create_tac_label_entries(CompilerContext* ctx);
 
 void emit_function_infos();
 void build_function_cfg(CompilerContext* ctx, TACTable* instructions, FunctionInfo* info);

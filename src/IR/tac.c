@@ -22,21 +22,26 @@ TACTable* create_tac_table(CompilerContext* ctx) {
 	table->size = 0;
 	table->capacity = INITIAL_TABLE_CAPACITY;
 	table->tacs = arena_allocate(ctx->ir_arena, sizeof(TACInstruction*) * table->capacity);
-
 	if (!table->tacs) return NULL;
+	
+	table->op_names = create_operand_set(ctx);
+	if (!table->op_names) return NULL;
+	
 	return table;
 }
 
-TACInstruction* create_tac(CompilerContext* ctx, tac_t type, Operand* result, Operand* op1, Operand* op2, Operand* op3) {
+TACInstruction* create_tac(CompilerContext* ctx, tac_t kind, Operand* result, Operand* op1, Operand* op2) {
 	TACInstruction* tac = arena_allocate(ctx->ir_arena, sizeof(TACInstruction));
 	if (!tac) return NULL;
 
-	tac->type = type;
+	tac->kind = kind;
 	tac->id = tac_instruction_index++;
 	tac->result = result;
 	tac->op1 = op1;
 	tac->op2 = op2;
-	tac->op3 = op3;
+
+	tac->handled = false;
+	tac->precedes_conditional = false;
 	return tac;
 }
 
@@ -257,11 +262,56 @@ tac_t get_tac_type(node_t type) {
 	}
 }
 
-Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value) {
-	Operand* new_operand = arena_allocate(ctx->ir_arena, sizeof(Operand));
-	if (!new_operand) return NULL;
+void add_to_operand_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand) {
+	if (!op_set || !operand) return;
 
-	new_operand->kind = kind;
+	if (op_set->size >= op_set->capacity) {
+		int prev_capacity = op_set->capacity;
+
+		op_set->capacity *= 2;
+		int new_capacity = op_set->capacity;
+		void** new_elements = arena_reallocate(
+			ctx->ir_arena,
+			op_set->elements,
+			prev_capacity * sizeof(Operand*),
+			new_capacity * sizeof(Operand*)
+		);
+
+		if (!new_elements) {
+			perror("In 'add_to_operand_set', unable to reallocate space for new elements\n");
+			return;
+		}
+		op_set->elements = new_elements;
+	}
+	op_set->elements[op_set->size++] = operand;
+}
+
+OperandSet* create_operand_set(CompilerContext* ctx) {
+	OperandSet* op_set = arena_allocate(ctx->ir_arena, sizeof(OperandSet));
+	if (!op_set) return NULL;
+
+	op_set->size = 0;
+	op_set->capacity = INIT_OP_SET_CAPACITY;
+	op_set->elements = arena_allocate(ctx->ir_arena, sizeof(Operand*) * op_set->capacity);
+	if (!op_set->elements) {
+		perror("In 'create_op_set', unable to allocate space and initialize op set elements\n");
+		return NULL;
+	}
+	return op_set;
+}
+
+Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value, TypeKind type) {
+	Operand* operand = arena_allocate(ctx->ir_arena, sizeof(Operand));
+	if (!operand) return NULL;
+
+	operand->link = NULL;
+	operand->assigned_register = -1;
+	operand->live_on_exit = 1;
+	operand->needs_spill = false;
+	operand->precedes_conditional = false;
+	operand->kind = kind;
+	operand->type = type;
+	
 	switch (kind) {	
 		case OP_ARG:
 		case OP_ADD:
@@ -288,24 +338,24 @@ Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value
 
 				strncpy(copy, value.label_name, length);
 				copy[length] = '\0';
-				new_operand->value.label_name = copy;
+				operand->value.label_name = copy;
 			} else {
-				new_operand->value.label_name = NULL;
+				operand->value.label_name = NULL;
 			}
 			break;
 		}
 
 		case OP_SYMBOL: {
-			new_operand->value.sym = value.sym;
+			operand->value.sym = value.sym;
 			break;
 		}
 		default: {
-			new_operand->value = value; 
+			operand->value = value; 
 			break;
 		}
 	}
 
-	return new_operand;
+	return operand;
 }
 
 char* convert_subtype_to_string(struct Type* t) {
@@ -329,14 +379,16 @@ TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_i
 	Operand* array_subtype_op = NULL;
 	if (array_identifier->left) {
 		array_subtype_val.label_name = convert_subtype_to_string(array_identifier->left->t);
-		array_subtype_op = create_operand(ctx, OP_SUBTYPE_STR, array_subtype_val);
+		array_subtype_op = create_operand(ctx, OP_SUBTYPE_STR, array_subtype_val, TYPE_INTEGER);
 	}
 
 	OperandValue array_identifier_val;
 	Operand* array_identifier_op = NULL;
 	if (array_identifier->left) {
 		array_identifier_val.sym = array_identifier->left->symbol;
-		array_identifier_op = create_operand(ctx, OP_SYMBOL, array_identifier_val);
+		Type* t = ((Symbol*)array_identifier->left->symbol)->type;
+		TypeKind type = t->kind;
+		array_identifier_op = create_operand(ctx, OP_SYMBOL, array_identifier_val, type);
 	}
 
 	int i = 0;
@@ -347,30 +399,30 @@ TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_i
 		OperandValue element_index_val = { 
 			.label_name = generate_label(ctx, VIRTUAL) 
 		};
-		Operand* element_index_op = create_operand(ctx, OP_MUL, element_index_val);
+		Operand* element_index_op = create_operand(ctx, OP_MUL, element_index_val, TYPE_INTEGER);
 		
 		OperandValue buffer_val = {
 			.int_val = i 
 		};
-		Operand* buffer_op = create_operand(ctx, OP_INT_LITERAL, buffer_val);
+		Operand* buffer_op = create_operand(ctx, OP_INT_LITERAL, buffer_val, TYPE_INTEGER);
 		
-		TACInstruction* element_index_tac = create_tac(ctx, TAC_MUL, element_index_op, buffer_op, array_subtype_op, NULL);
+		TACInstruction* element_index_tac = create_tac(ctx, TAC_MUL, element_index_op, buffer_op, array_subtype_op);
 		add_tac_to_table(ctx, element_index_tac);
 
 		OperandValue element_address_val = { 
 			.label_name = generate_label(ctx, VIRTUAL) 
 		};
-		Operand* element_address_op = create_operand(ctx, OP_STORE, element_address_val);
+		Operand* element_address_op = create_operand(ctx, OP_STORE, element_address_val, TYPE_INTEGER);
 
-		TACInstruction* pos_tac = create_tac(ctx, TAC_ADD, element_address_op, array_identifier_op, element_index_op, NULL);
+		TACInstruction* pos_tac = create_tac(ctx, TAC_ADD, element_address_op, array_identifier_op, element_index_op);
 		add_tac_to_table(ctx, pos_tac);
 
 		OperandValue element_val = { 
 			.int_val = element->value.val 
 		};
-		Operand* element_op = create_operand(ctx, OP_INT_LITERAL, element_val);
+		Operand* element_op = create_operand(ctx, OP_INT_LITERAL, element_val, TYPE_INTEGER);
 
-		TACInstruction* tac_store_element = create_tac(ctx, TAC_STORE, element_address_op, element_op, NULL, NULL); 
+		TACInstruction* tac_store_element = create_tac(ctx, TAC_STORE, element_address_op, element_op, NULL); 
 		add_tac_to_table(ctx, tac_store_element);
 		
 		i++;
@@ -401,10 +453,91 @@ operand_t node_to_operand_type(node_t type) {
 	}
 }
 
-TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) {
-	if (!node) {
-		return NULL;
+TypeKind node_to_type(node_t type) {
+	switch (type) {
+		case NODE_INTEGER: return TYPE_INTEGER;
+		case NODE_BOOL: return TYPE_BOOL;
+		case NODE_CHAR: return TYPE_CHAR;
 	}
+}
+
+void hash_operand(CompilerContext* ctx, OperandSet* op_set, Operand* op, int hash_key) {
+	if (!op) return;
+	
+	if (op_set->size >= op_set->capacity) {
+		int prev_capacity = op_set->capacity;
+
+		Operand** all_operands = op_set->elements;
+
+		op_set->capacity *= 2;
+		int new_capacity = op_set->capacity;
+		void* new_operands = arena_reallocate(
+			ctx->ir_arena,
+			op_set->elements,
+			prev_capacity,
+			new_capacity
+		);
+
+		if (!new_operands) return; 
+
+		op_set->elements = new_operands;
+		for (int i = 0; i < new_capacity; i++) {
+			op_set->elements[i] = NULL;
+		}
+
+		op_set->size = 0;
+
+		for (int i = 0; i < prev_capacity; i++) {
+			Operand* current_op = all_operands[i];
+
+			while (current_op) {
+				Operand* next_op_in_chain = current_op->link;
+				int updated_hash_key = hash(op_set->capacity, current_op->value.sym->name);
+				if (updated_hash_key == -1) return;
+
+				current_op->link = op_set->elements[updated_hash_key];
+				op_set->elements[updated_hash_key] = current_op;
+				if (!current_op->link) {
+					op_set->size++;
+				}
+
+				current_op = next_op_in_chain;
+			}
+		}
+
+		hash_key = hash(op_set->capacity, op->value.sym->name);
+	}
+
+
+	if (op_set->elements[hash_key]) {
+		op->link = op_set->elements[hash_key];
+		op_set->elements[hash_key];
+	} else {
+		op_set->elements[hash_key] = op;
+		op->link = NULL;
+		op_set->size++;
+	}
+
+	return true;
+}
+
+Operand* find_operand_in_op_set(OperandSet* op_set, Operand* sym_op, int hash_key) {
+	Operand* current = op_set->elements[hash_key];
+	
+	while (current) {
+		Operand* next_op_in_chain = current->link;
+		if (current->value.sym->name && 
+			current->value.sym->scope_level == sym_op->value.sym->scope_level &&
+			strcmp(current->value.sym->name, sym_op->value.sym->name) == 0) {
+			return current;
+		}
+		current = next_op_in_chain;
+	}
+	return NULL;
+}
+
+TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) {
+	if (!node) return NULL;
 	 
 	TACInstruction* result = NULL;
 	switch (node->type) {
@@ -412,7 +545,23 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 		case NODE_SUB:
 		case NODE_MUL:
 		case NODE_DIV:
-		case NODE_MODULO:
+		case NODE_MODULO: {
+			tac_t kind = get_tac_type(node->type);
+			TACInstruction* left = build_tac_from_expression_dag(ctx, node->left);
+			TACInstruction* right = build_tac_from_expression_dag(ctx, node->right);
+
+			if (!left || !right) return NULL;
+			OperandValue main_operand_value = {
+				.label_name = generate_label(ctx, VIRTUAL)
+			};
+			operand_t op_type = node_to_operand_type(node->type);
+			Operand* binary_operand = create_operand(ctx, op_type, main_operand_value, TYPE_INTEGER);
+			
+			result = create_tac(ctx, kind, binary_operand, left->result, right->result);
+			add_tac_to_table(ctx, result);
+			break;
+		}
+
 		case NODE_LESS:
 		case NODE_GREATER:
 		case NODE_LESS_EQUAL:
@@ -421,29 +570,25 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 		case NODE_NOT_EQUAL:
 		case NODE_LOGICAL_OR:
 		case NODE_LOGICAL_AND: {
-			printf("\033[32mIn BINARY NODE\033[0m\n");		
-			tac_t type = get_tac_type(node->type);
-			printf("got here\n");
+			tac_t kind = get_tac_type(node->type);
 			TACInstruction* left = build_tac_from_expression_dag(ctx, node->left);
 			TACInstruction* right = build_tac_from_expression_dag(ctx, node->right);
 
 			if (!left || !right) return NULL;
-			printf("here\n");
 			OperandValue main_operand_value = {
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
 			operand_t op_type = node_to_operand_type(node->type);
-			Operand* binary_operand = create_operand(ctx, op_type, main_operand_value);
-			printf("About to create tac\n");
-			result = create_tac(ctx, type, binary_operand, left->result, right->result, NULL);
+			Operand* binary_operand = create_operand(ctx, op_type, main_operand_value, TYPE_BOOL);
+			
+			result = create_tac(ctx, kind, binary_operand, left->result, right->result);
 			add_tac_to_table(ctx, result);
-			printf("\033[32mLeaving BINARY NODE\033[0m\n");
 			break;
 		}
 
 		case NODE_UNARY_ADD:
 		case NODE_UNARY_SUB: {
-			printf("\033[32mIn NODE_UNARY_ADD/SUB\033[0m\n");
+			// printf("\033[32mIn NODE_UNARY_ADD/SUB\033[0m\n");
 			TACInstruction* unary_tac = build_tac_from_expression_dag(ctx, node->right);
 			if (!unary_tac) return NULL;
 
@@ -451,28 +596,29 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
 			operand_t type = (node->type == NODE_UNARY_ADD) ? OP_UNARY_ADD : OP_UNARY_SUB;
-			Operand* op = create_operand(ctx, type, val);
+			Operand* op = create_operand(ctx, type, val, TYPE_INTEGER);
 
 			tac_t kind = (type == OP_UNARY_ADD) ? TAC_UNARY_ADD : TAC_UNARY_SUB; 
-			result = create_tac(ctx, kind, op, unary_tac->result, NULL, NULL);
+			
+			result = create_tac(ctx, kind, op, unary_tac->result, NULL);
 			add_tac_to_table(ctx, result);
-			printf("\033[32mLeaving NODE_UNARY_ADD/SUB\033[0m\n");
+			// printf("\033[32mLeaving NODE_UNARY_ADD/SUB\033[0m\n");
 			break;
 		}
 
 		case NODE_NOT: {
-			printf("\033[32mIn NODE_NOT\033[0m\n");
+			// printf("\033[32mIn NODE_NOT\033[0m\n");
 			TACInstruction* unary_tac = build_tac_from_expression_dag(ctx, node->right);
 			if (!unary_tac) return NULL;
 
 			OperandValue val = {
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
-			Operand* op = create_operand(ctx, OP_NOT, val);
+			Operand* op = create_operand(ctx, OP_NOT, val, TYPE_BOOL);
 			
-			result = create_tac(ctx, TAC_NOT, op, unary_tac->result, NULL, NULL);
+			result = create_tac(ctx, TAC_NOT, op, unary_tac->result, NULL);
 			add_tac_to_table(ctx, result);
-			printf("\033[32mLeaving NODE_NOT\033[0m\n");
+			// printf("\033[32mLeaving NODE_NOT\033[0m\n");
 			break;
 		}
 
@@ -485,14 +631,14 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			OperandValue tac_variable_union = {
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
-			Operand* left_operand = create_operand(ctx, OP_STORE, tac_variable_union);
+			Operand* left_operand = create_operand(ctx, OP_STORE, tac_variable_union, node_to_type(node->type));
 
 			OperandValue buffer_union = {
 				.int_val = node->value.val,
 			};
-			Operand* right_operand = create_operand(ctx, OP_INT_LITERAL, buffer_union);
+			Operand* right_operand = create_operand(ctx, OP_INT_LITERAL, buffer_union, TYPE_INTEGER);
 			
-			result = create_tac(ctx, type, left_operand, right_operand, NULL, NULL);
+			result = create_tac(ctx, type, left_operand, right_operand, NULL);
 			add_tac_to_table(ctx, result);
 			printf("\033[32mLeaving NODE_INTEGER|BOOL|CHAR\033[0m\n");
 			break;
@@ -518,10 +664,10 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			Operand* res_op = NULL;
 			if (node->left) {
 				res_val.sym = node->left->symbol;
-				res_op = create_operand(ctx, OP_SYMBOL, res_val);
+				res_op = create_operand(ctx, OP_SYMBOL, res_val, TYPE_INTEGER);
 			}
 
-			TACInstruction* tac_assignment = create_tac(ctx, TAC_ASSIGNMENT, res_op, NULL, tac->result, NULL);
+			TACInstruction* tac_assignment = create_tac(ctx, TAC_ASSIGNMENT, res_op, NULL, tac->result);
 			add_tac_to_table(ctx, tac_assignment);
 			
 			result = tac_assignment;		
@@ -533,6 +679,9 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 		case NODE_DECL:
 		case NODE_DEF: {
 			result = build_tac_from_expression_dag(ctx, node->left);
+			if (!result) {
+				printf("\033[31mNODE_DEF/DECL/AUG NULL\033[0m\n");
+			}
 			break;
 		}
 
@@ -541,12 +690,34 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			OperandValue sym_val;
 			Operand* sym_op = NULL;
 			
-			if (node->symbol) {
+			if (node->symbol && ((Symbol*)node->symbol)->type) {
 				sym_val.sym = node->symbol;
-				sym_op = create_operand(ctx, OP_SYMBOL, sym_val);
+				Type* t = ((Symbol*)node->symbol)->type;
+				sym_op = create_operand(ctx, OP_SYMBOL, sym_val, t->kind);
 			}
 
-			result = create_tac(ctx, TAC_NAME, sym_op, NULL, NULL, NULL);	
+			Operand* existing_sym_op = NULL;
+			char* sym_name = NULL;
+
+			if (sym_op) {
+				sym_name = ((Symbol*)node->symbol)->name;
+			}
+
+			int hash_key = hash(tac_table->op_names->capacity, sym_name);
+
+			if (sym_op && hash_key >= 0) {
+				existing_sym_op = find_operand_in_op_set(tac_table->op_names, sym_op, hash_key);
+			}
+
+			if (existing_sym_op) {
+				result = create_tac(ctx, TAC_NAME, existing_sym_op, NULL, NULL);
+			} else {
+				result = create_tac(ctx, TAC_NAME, sym_op, NULL, NULL);
+				hash_operand(ctx, tac_table->op_names, sym_op, hash_key);
+			}
+
+			// result = create_tac(ctx, TAC_NAME, sym_op, NULL, NULL);
+
 			printf("\033[32mLeaving NODE_NAME\033[0m\n");
 			break;
 		}
@@ -555,12 +726,12 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			OperandValue arg_value_label = {
 				.label_name = generate_label(ctx, ARG_LABEL)
 			};
-			Operand* left_operand = create_operand(ctx, OP_ARG, arg_value_label);
+			Operand* left_operand = create_operand(ctx, OP_ARG, arg_value_label, TYPE_UNKNOWN);
 
 			TACInstruction* arg = build_tac_from_expression_dag(ctx, node->right);
 			if (!arg) return NULL;
 
-			TACInstruction* arg_tac = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL, NULL);
+			TACInstruction* arg_tac = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL);
 			add_tac_to_table(ctx, arg_tac);
 			break;
 		}
@@ -576,20 +747,21 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			TACInstruction* function_name = build_tac_from_expression_dag(ctx, node->left);
 			if (!function_name) return NULL;
 
-			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL, NULL);
+			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL);
 			add_tac_to_table(ctx, tac_call);
 
 			OperandValue func_return_val = {
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
-			Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val);
+			Type* t = ((Symbol*)node->symbol)->type;
+			Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val, t->kind);
 
 			OperandValue _return_label = {
 				.label_name = "_RET"
 			};
-			Operand* _return_operand = create_operand(ctx, OP_RETURN, _return_label);
+			Operand* _return_operand = create_operand(ctx, OP_RETURN, _return_label, TYPE_UNKNOWN);
 
-			TACInstruction* tac_function_return = create_tac(ctx, TAC_ASSIGNMENT, function_label_operand, NULL, _return_operand, NULL);
+			TACInstruction* tac_function_return = create_tac(ctx, TAC_ASSIGNMENT, function_label_operand, NULL, _return_operand);
 			add_tac_to_table(ctx, tac_function_return);
 
 			result = tac_function_return;
@@ -603,27 +775,28 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			if (!array_tac || !index_tac) return NULL;
 
 			OperandValue array_val = { .label_name = convert_subtype_to_string(node->t) };
-			Operand* op_array_val = create_operand(ctx, OP_SUBTYPE_STR, array_val);
+			Operand* op_array_val = create_operand(ctx, OP_SUBTYPE_STR, array_val, TYPE_INTEGER);
 
 
 			OperandValue mul_label_val = {.label_name = generate_label(ctx, VIRTUAL)};
-			Operand* op_mul = create_operand(ctx, OP_MUL, mul_label_val);
+			Operand* op_mul = create_operand(ctx, OP_MUL, mul_label_val, TYPE_INTEGER);
 
-			TACInstruction* tac_index = create_tac(ctx, TAC_MUL, op_mul, index_tac->result, op_array_val, NULL);
+			TACInstruction* tac_index = create_tac(ctx, TAC_MUL, op_mul, index_tac->result, op_array_val);
 			add_tac_to_table(ctx, tac_index);
 
 			
 			OperandValue add_val = { .label_name = generate_label(ctx, VIRTUAL) };
-			Operand* op_add = create_operand(ctx, OP_ADD, add_val);
+			Operand* op_add = create_operand(ctx, OP_ADD, add_val, TYPE_INTEGER);
 
 
-			TACInstruction* address_tac = create_tac(ctx, TAC_ADD, op_add, array_tac->result, tac_index->result, NULL);
+			TACInstruction* address_tac = create_tac(ctx, TAC_ADD, op_add, array_tac->result, tac_index->result);
 			add_tac_to_table(ctx, address_tac);
 
 			OperandValue store_val = { .label_name = generate_label(ctx, VIRTUAL) };
-			Operand* store_op = create_operand(ctx, OP_STORE, store_val);
+			Type* t = ((Symbol*)node->symbol)->type;
+			Operand* store_op = create_operand(ctx, OP_STORE, store_val, t ? t->kind : TYPE_UNKNOWN);
 			
-			TACInstruction* dereference_tac = create_tac(ctx, TAC_DEREFERENCE, store_op, op_add, NULL, NULL);
+			TACInstruction* dereference_tac = create_tac(ctx, TAC_DEREFERENCE, store_op, op_add, NULL);
 			add_tac_to_table(ctx, dereference_tac);
 			result = dereference_tac;
 			break;
@@ -638,22 +811,22 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 
 void emit_label(CompilerContext* ctx, char* label) {
 	OperandValue val = {.label_name = label};
-	Operand* op = create_operand(ctx, OP_LABEL, val);
-	TACInstruction* tac = create_tac(ctx, TAC_LABEL, op, NULL, NULL, NULL);
+	Operand* op = create_operand(ctx, OP_LABEL, val, TYPE_UNKNOWN);
+	TACInstruction* tac = create_tac(ctx, TAC_LABEL, op, NULL, NULL);
 	add_tac_to_table(ctx, tac);
 }
 
 void emit_if_false(CompilerContext* ctx, Operand* condition, char* target) {
 	OperandValue val = {.label_name = target};
-	Operand* op = create_operand(ctx, OP_LABEL, val);
-	TACInstruction* tac = create_tac(ctx, TAC_IF_FALSE, NULL, condition, op, NULL);
+	Operand* op = create_operand(ctx, OP_LABEL, val, TYPE_UNKNOWN);
+	TACInstruction* tac = create_tac(ctx, TAC_IF_FALSE, NULL, condition, op);
 	add_tac_to_table(ctx, tac);
 }
 
 void emit_goto(CompilerContext* ctx, char* target) {
 	OperandValue val = {.label_name = target};
-	Operand* op = create_operand(ctx, OP_LABEL, val);
-	TACInstruction* tac = create_tac(ctx, TAC_GOTO, op, NULL, NULL, NULL);
+	Operand* op = create_operand(ctx, OP_LABEL, val, TYPE_UNKNOWN);
+	TACInstruction* tac = create_tac(ctx, TAC_GOTO, op, NULL, NULL);
 	add_tac_to_table(ctx, tac);
 }
 
@@ -705,22 +878,22 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 
 					OperandValue array_val = { .label_name = convert_subtype_to_string(node->left->left->t) };
-					Operand* op_array_val = create_operand(ctx, OP_SUBTYPE_STR, array_val);
+					Operand* op_array_val = create_operand(ctx, OP_SUBTYPE_STR, array_val, TYPE_UNKNOWN);
 					if (!op_array_val) return;
 
 
 					OperandValue mul_label_val = { .label_name = generate_label(ctx, VIRTUAL) };
-					Operand* op_mul = create_operand(ctx, OP_MUL, mul_label_val);
+					Operand* op_mul = create_operand(ctx, OP_MUL, mul_label_val, TYPE_INTEGER);
 					if (!op_mul) return;
 
 
-					TACInstruction* offset_tac = create_tac(ctx, TAC_MUL, op_mul, index_tac->result, op_array_val, NULL);
+					TACInstruction* offset_tac = create_tac(ctx, TAC_MUL, op_mul, index_tac->result, op_array_val);
 					add_tac_to_table(ctx, offset_tac);
 
 					OperandValue add_val = { .label_name = generate_label(ctx, VIRTUAL) };
-					Operand* op_add = create_operand(ctx, OP_ADD, add_val);
+					Operand* op_add = create_operand(ctx, OP_ADD, add_val, TYPE_INTEGER);
 
-					TACInstruction* address_tac = create_tac(ctx, TAC_ADD, op_add, array_tac->result, offset_tac->result, NULL);
+					TACInstruction* address_tac = create_tac(ctx, TAC_ADD, op_add, array_tac->result, offset_tac->result);
 					add_tac_to_table(ctx, address_tac);
 
 					if (address_tac) {
@@ -729,7 +902,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 							TAC_DEREFERENCE_AND_ASSIGN,
 							address_tac ? address_tac->result : NULL,
 							right ? right->result : NULL,
-							NULL,
 							NULL
 						);
 						
@@ -740,15 +912,20 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 					TACInstruction* left_instruction = build_tac_from_expression_dag(ctx, node->left);
 					TACInstruction* right_instruction = build_tac_from_expression_dag(ctx, node->right);
 					
-					if (!left_instruction || !right_instruction) {
-						printf("\033[31mIn node assignment case -> left or right child is NULL\033[0m\n");
+					if (!left_instruction) {
+						printf("\033[31mIn NODE_ASSIGNMENT Case -> left instruction is NULL\033[0m\n");
 						return;
 					}
 
-					if (!left_instruction->result || !right_instruction->result) {
-						printf("\033[31mIn Node assignment case -> left result or right result is NULL\033[0m\n");
+					if (!right_instruction) {
+						printf("\033[31mIn NODE_ASSIGNMENT Case -> right instruction is NULL\033[0m\n");
 						return;
 					}
+
+					// if (!left_instruction->result || !right_instruction->result) {
+					// 	printf("\033[31mIn Node assignment case -> left result or right result is NULL\033[0m\n");
+					// 	return;
+					// }
 
 
 					TACInstruction* tac_assignment = create_tac(
@@ -756,8 +933,7 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 						TAC_ASSIGNMENT, 
 						left_instruction->result, 
 						NULL, 
-						right_instruction->result, 
-						NULL
+						right_instruction->result
 					);
 
 					add_tac_to_table(ctx, tac_assignment);
@@ -772,8 +948,7 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 					TAC_ASSIGNMENT, 
 					left ? left->result : NULL, 
 					NULL, 
-					right ? right->result : NULL, 
-					NULL
+					right ? right->result : NULL
 				);
 
 				add_tac_to_table(ctx, tac_assignment);
@@ -794,21 +969,22 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 			TACInstruction* function_name = build_tac_from_expression_dag(ctx, node->left);
 			if (!function_name) return NULL;
 
-			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL, NULL);
+			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL);
 			add_tac_to_table(ctx, tac_call);
 
-			OperandValue func_return_val = {
-				.label_name = generate_label(ctx, VIRTUAL)
-			};
-			Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val);
+			// OperandValue func_return_val = {
+			// 	.label_name = generate_label(ctx, VIRTUAL)
+			// };
+			// Type* t = ((Symbol*)node->left->symbol)->type;
+			// Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val, t ? t->kind : TYPE_UNKNOWN);
 
-			OperandValue _return_label = {
-				.label_name = "_RET"
-			};
-			Operand* _return_operand = create_operand(ctx, OP_RETURN, _return_label);
+			// OperandValue _return_label = {
+			// 	.label_name = "_RET"
+			// };
+			// Operand* _return_operand = create_operand(ctx, OP_RETURN, _return_label, TYPE_UNKNOWN);
 
-			TACInstruction* tac_function_return = create_tac(ctx, TAC_ASSIGNMENT, function_label_operand, NULL, _return_operand, NULL);
-			add_tac_to_table(ctx, tac_function_return);
+			// TACInstruction* tac_function_return = create_tac(ctx, TAC_ASSIGNMENT, function_label_operand, NULL, _return_operand);
+			// add_tac_to_table(ctx, tac_function_return);
 			printf("\033[32mLeaving NODE_CALL\033[0m\n");
 			break;
 		}
@@ -1281,16 +1457,18 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 			TACInstruction* result = NULL;
 			if (node->right) {
 				TACInstruction* tac = build_tac_from_expression_dag(ctx, node->right);
+				OperandValue val = { .label_name = generate_label(ctx, VIRTUAL)};
+				Operand* storage = create_operand(ctx, OP_STORE, val, tac && tac->result ? tac->result->type : TYPE_UNKNOWN);
 				result = create_tac(
 					ctx,
 					TAC_RETURN,
-					NULL,
+					storage,
 					tac ? tac->result : NULL,
-					NULL,
 					NULL
 				);
+
 			} else {
-				result = create_tac(ctx, TAC_RETURN, NULL, NULL, NULL, NULL);
+				result = create_tac(ctx, TAC_RETURN, NULL, NULL, NULL);
 			}
 			add_tac_to_table(ctx, result);
 			printf("\033[32mLeaving NODE_RETURN\033[0m\n");
@@ -1324,8 +1502,7 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 				TAC_ASSIGNMENT, 
 				tac_var ? tac_var->result : NULL, 
 				NULL, 
-				tac_arithmetic ? tac_arithmetic->result : NULL, 
-				NULL
+				tac_arithmetic ? tac_arithmetic->result : NULL
 			);
 			printf("now were here\n");
 			add_tac_to_table(ctx, tac_assignment);
@@ -1380,11 +1557,11 @@ void build_tac_from_parameter_dag(CompilerContext* ctx, Node* wrapped_param) {
 		Node* next_wrapped_param = current_wrapped_param->next;
 
 		OperandValue parameter_val = { .label_name = generate_label(ctx, PARAM_LABEL) };
-		Operand* parameter_op = create_operand(ctx, OP_LABEL, parameter_val);
+		Operand* parameter_op = create_operand(ctx, OP_LABEL, parameter_val, TYPE_UNKNOWN);
 
 		TACInstruction* param_instruction = build_tac_from_expression_dag(ctx, current_wrapped_param->right);
 		if (param_instruction) {
-			result = create_tac(ctx, TAC_PARAM, parameter_op, param_instruction->result, NULL, NULL);
+			result = create_tac(ctx, TAC_PARAM, parameter_op, param_instruction->result, NULL);
 			add_tac_to_table(ctx, result);
 		}
 
@@ -1420,11 +1597,11 @@ void build_tac_from_global_dag(CompilerContext* ctx, Node* node) {
 						Operand* func_op = NULL;
 						if (node->symbol) {
 							OperandValue func_val = {.sym = node->symbol};
-							func_op = create_operand(ctx, OP_SYMBOL, func_val);
+							func_op = create_operand(ctx, OP_SYMBOL, func_val, t->kind);
 						}
 						printf("got here\n");
 						if (func_op) {
-							TACInstruction* tac_function = create_tac(ctx, TAC_NAME, func_op, NULL, NULL, NULL);
+							TACInstruction* tac_function = create_tac(ctx, TAC_NAME, func_op, NULL, NULL);
 							add_tac_to_table(ctx, tac_function);
 							
 							build_tac_from_parameter_dag(ctx, node->params);
@@ -1465,7 +1642,7 @@ TACTable* build_tacs(CompilerContext* ctx, Node* node) {
 char* get_tac_op(TACInstruction* tac) {
 	if (!tac) return NULL;
 
-	switch (tac->type) {
+	switch (tac->kind) {
 		case TAC_UNARY_ADD:
 		case TAC_ADD: {
 			return "+";
@@ -1513,12 +1690,11 @@ bool is_op(operand_t type) {
 
 void emit_tac_instructions() {
 	if (!tac_table || (tac_table && !tac_table->tacs)) return;
-	printf("we have tac table and tac table instructions\n");
-	printf("Number of tacs is %d\n", tac_table->size);
-	for (int i = 0; i < tac_table->capacity; i++) {
+	
+	for (int i = 0; i < tac_table->size; i++) {
 		TACInstruction* current = tac_table->tacs[i];
 		if (current) {
-			switch (current->type) {
+			switch (current->kind) {
 				case TAC_NAME: {
 					printf("\n%s\n", current->result->value.sym->name);
 					break;
@@ -1575,7 +1751,7 @@ void emit_tac_instructions() {
 					if (current->result) {
 						switch (current->result->kind) {
 							case OP_SYMBOL: {
-								printf("\t%s = ", current->result->value.sym->name ? current->result->value.sym->name : NULL);
+								printf("\t%s = ", current->result->value.sym ? current->result->value.sym->name : NULL);
 								break;
 							}
 
@@ -1589,7 +1765,7 @@ void emit_tac_instructions() {
 					if (current->op2) {
 						switch (current->op2->kind) {
 							case OP_SYMBOL: {
-								printf("%s\n", current->op2->value.sym->name ? current->op2->value.sym->name : NULL);
+								printf("%s\n", current->op2->value.sym ? current->op2->value.sym->name : NULL);
 								break;
 							}
 
@@ -1628,7 +1804,7 @@ void emit_tac_instructions() {
 					if (current->op1) {
 						switch (current->op1->kind) {
 							case OP_SYMBOL: {
-								printf(" %s GOTO", current->op1->value.sym->name ? current->op1->value.sym->name : NULL);
+								printf(" %s GOTO", current->op1->value.sym ? current->op1->value.sym->name : NULL);
 								break;
 							} 
 
@@ -1674,24 +1850,20 @@ void emit_tac_instructions() {
 					break;
 				}
 				
-				case TAC_ADD_EQUAL:
-				case TAC_SUB_EQUAL:
-				case TAC_DIV_EQUAL:
-				case TAC_MUL_EQUAL:
+
 				case TAC_EQUAL:
 				case TAC_NOT_EQUAL:
-				case TAC_MODULO:
 				case TAC_LESS:
 				case TAC_GREATER:
 				case TAC_GREATER_EQUAL:
 				case TAC_LESS_EQUAL:
 				case TAC_LOGICAL_OR:
 				case TAC_LOGICAL_AND:
+				case TAC_MODULO:
 				case TAC_ADD:
 				case TAC_SUB:
 				case TAC_MUL:
 				case TAC_DIV: {
-					
 					printf("\t%s = ", current->result->value.label_name);
 					if (current->op1) {
 						switch (current->op1->kind) {

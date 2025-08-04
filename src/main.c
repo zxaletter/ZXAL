@@ -8,27 +8,7 @@
 #include "IR/tac.h"
 #include "IR/cfg.h"
 #include "RegAlloc/regalloc.h"
-// #include "Codegen/codegen.h"
-
-char* make_output_string(CompilerContext* ctx, char* filename) {
-	char* output = NULL;
-
-	size_t filename_length = strlen(filename);
-	for (size_t i = 0; i < filename_length; i++) {
-		if (filename[i] == '.') {
-			int length = &filename[i] - filename;
-			output = arena_allocate(ctx->lexer_arena, length + 5);
-			if (!output) {
-				perror("Unable to allocate space for output string.\n");
-				return NULL;
-			}
-			strncpy(output, filename, length);
-			output[length] = '\0';
-			strcat(output, ".asm");
-		}
-	}
-	return output;
-}
+#include "Codegen/codegen.h"
 
 int main(int argc, char** argv) {
 	if (argc != 2) {
@@ -41,8 +21,8 @@ int main(int argc, char** argv) {
 		printf("compiler context is NULL\n");
 		return 1;
 	} 
-	char* filename = argv[1];
-	Lexer* lexer = lex(ctx, filename);
+	char* file = argv[1];
+	Lexer* lexer = lex(ctx, file);
 	// print_tokens(lexer->tokens);
 
 	Node* ast_root = parse(ctx, lexer);
@@ -52,9 +32,9 @@ int main(int argc, char** argv) {
 	TACTable* tac_table = build_tacs(ctx, ast_root);
 	FunctionList* function_list = build_cfg(ctx, tac_table);
 	reg_alloc(ctx, function_list);
+	codegen(ctx, function_list, file);
 	
 
-	// char* output = make_output_string(ctx, filename);
 	free_compiler_context(ctx);
 	return 0;
 }

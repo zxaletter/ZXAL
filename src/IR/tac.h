@@ -4,6 +4,7 @@
 #include "compilercontext.h"
 #include "bumpallocator.h"
 #include "symbols.h"
+#include "Semantics/nameresolution.h"
 #include "Parser/node.h"
 #include "Parser/parser.h"
 #include "types.h"
@@ -12,6 +13,7 @@
 
 #define INITIAL_TABLE_CAPACITY 500 
 #define INITIAL_TACCONTEXT_CAPACITY 100
+#define INIT_OP_SET_CAPACITY 50
 
 typedef enum {
 	VIRTUAL, 
@@ -27,6 +29,7 @@ typedef enum {
 	OP_USE
 } operand_role;
 // ----------------
+
 typedef enum {
 	OP_SYMBOL,
 	OP_ADD,
@@ -75,19 +78,44 @@ typedef union {
 	char* label_name;
 } OperandValue;
 
-typedef struct {
+typedef struct Operand {
 	operand_t kind;
 	OperandValue value;
+	TypeKind type;
+	struct Operand* link; 
+	
+	//---------
+	// for live analysis
 	bool is_live;
 	int next_use;
+	//----------
+
+
+	//----------
+	// for reg allocation 
+	bool precedes_conditional; 
+	int live_on_exit;
+	//-----------
+
+	int assigned_register;
+	bool needs_preservation;
+	bool needs_spill;
+
+	size_t frame_byte_offset;
 } Operand;
 
-typedef enum {
-	TAC_INTEGER,
-	TAC_CHAR,
-	TAC_BOOL,
+typedef struct {
+	Operand** elements;
+	int size;
+	int capacity;
+} OperandSet;
 
-	TAC_ADD,
+typedef enum {
+	TAC_INTEGER, // 0
+	TAC_CHAR, // 1
+	TAC_BOOL, // 2
+
+	TAC_ADD, // 3
 	TAC_SUB, // 4
 	TAC_MUL,
 	TAC_DIV,
@@ -112,7 +140,7 @@ typedef enum {
 	
 	TAC_NAME, // 23
 	TAC_BLOCK,
-	TAC_ASSIGNMENT,
+	TAC_ASSIGNMENT, // 25
 	TAC_ARG, // 26
 	TAC_PARAM,
 	TAC_CALL,
@@ -137,19 +165,25 @@ typedef enum {
 } tac_t;
 
 typedef struct {
-	tac_t type;
+	tac_t kind;
 	int id;
-	bool handled;
+	bool handled; 
+	
+	bool precedes_conditional; // for inteference graph
+
 	Operand* result;
 	Operand* op1;
 	Operand* op2;
-	Operand* op3;
+	
+	OperandSet* live_out;
 } TACInstruction;
+
 
 typedef struct {
 	int size;
 	int capacity;
 	TACInstruction** tacs;
+	OperandSet* op_names;
 } TACTable;
 
 typedef struct TACContext {
@@ -175,7 +209,12 @@ void emit_goto(CompilerContext* ctx, char* target);
 bool is_op(operand_t type);
 operand_t node_to_operand_type(node_t type);
 operand_t get_operand_type(Operand* op);
-Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value);
+TypeKind node_to_type(node_t type);
+
+int get_operand_index(OperandSet* op_set, Operand* operand);
+void add_to_operand_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand);
+OperandSet* create_operand_set(CompilerContext* ctx);
+Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value, TypeKind type);
 
 char* convert_subtype_to_string(struct Type* subtype);
 TACInstruction* build_tac_from_array_dagnode(CompilerContext* ctx, Node* array_identifier, Node* array_list);
@@ -198,7 +237,7 @@ char* tac_function_name(CompilerContext* ctx, char* name);
 tac_t get_tac_type(node_t type);
 
 TACInstruction* create_tac(CompilerContext* ctx, tac_t type, 
-	Operand* result, Operand* op1, Operand* op2, Operand* op3);
+	Operand* result, Operand* op1, Operand* op2);
 
 void add_tac_to_table(CompilerContext* ctx, TACInstruction* tac);
 bool init_tac_table(CompilerContext* ctx);
@@ -208,6 +247,9 @@ void set_end_label_based_on_context(TACContext* context, char** end_label);
 
 void reset_context_stack();
 void reset_tac_indices();
+
+void hash_operand(CompilerContext* ctx, OperandSet* op_set, Operand* op, int hash_key);
+Operand* find_operand_in_op_set(OperandSet* op_set, Operand* sym_op, int hash_key);
 
 void build_tac_from_parameter_dag(CompilerContext* ctx, Node* node);
 TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node);

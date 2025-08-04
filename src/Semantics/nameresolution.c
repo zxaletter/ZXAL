@@ -2,12 +2,6 @@
 #include "compilercontext.h"
 #include "symbols.h"
 
-static size_t total_param_bytes = 0;
-static size_t param_byte_offset = 0;
-static size_t local_byte_offset = 0;
-static size_t total_local_bytes = 0;
-static bool start_at_param_bytes = false;
-
 ContextStack* context_stack = NULL;
 
 void init_context_stack(CompilerContext* ctx) {
@@ -174,95 +168,11 @@ Symbol* lookup_symbol_in_current_scope(CompilerContext* ctx, Symbol* symbol) {
 	return NULL;
 }
 
-size_t get_num_bytes(Symbol* symbol) {
-	if (!symbol || (symbol && !symbol->type)) return 0;
-
-	switch (symbol->type->kind) {
-		case TYPE_INTEGER: {
-			return sizeof(int);
-		}
-
-		case TYPE_CHAR:
-		case TYPE_BOOL: {
-			return sizeof(char);
-		}
-
-		case TYPE_ARRAY: {
-			if (symbol->type->subtype) {
-				switch (symbol->type->subtype->kind) {
-					case TYPE_INTEGER: return sizeof(int);
-					case TYPE_CHAR:
-					case TYPE_BOOL: return sizeof(char);
-					default: 
-						return 0;
-				}
-			} 
-		}
-
-		case TYPE_FUNCTION:
-		case TYPE_VOID:
-		case TYPE_STRUCT:
-		case TYPE_UNKNOWN:
-		default:
-			printf("Warning: get_num_bytes: Unhandled or UNKNOWN type kind %d for symbol '%s'. Returning 0 bytes.\n", symbol->type->kind, symbol->name ? symbol->name : "N/A");
-			return 0;
-	}	
-}
-
 TypeKind get_kind(struct Type* t) {
 	if (t) {
 		return t->kind;
 	}
 	return TYPE_UNKNOWN;
-}
-
-void update_node_info(Node* node, UpdateNodeInfoType kind, size_t size) {
-	switch (kind) {
-		case PARAM_UPDATE: {
-			Symbol* param_symbol = node->symbol;
-			if (param_symbol) {
-				param_symbol->param_byte_offset = param_byte_offset;
-				param_symbol->actual_bytes = size;
-			}
-			break;
-		}
-
-		case LOCAL_UPDATE: {
-			Symbol* sym = node->symbol;
-			if (sym) {
-				if (sym->type && sym->type->kind == TYPE_ARRAY) {
-					int element_count = node->right ? node->right->value.val : 0;
-					int new_size = size * element_count;
-
-					sym->local_byte_offset = local_byte_offset;
-					sym->actual_bytes = new_size; 
-					update_local_byte_offset(new_size);
-				} else {
-					sym->local_byte_offset = local_byte_offset;
-					sym->actual_bytes = size;
-				}
-			}
-			break;
-		}
-	}
-}
-
-void update_total_local_bytes(size_t size) {
-	if (total_local_bytes == 0) {
-	 	total_local_bytes = size; 
-	 } else { 
-	 	total_local_bytes += size; 
-	}
-}
-
-void update_local_byte_offset(size_t size) {
-	if (!start_at_param_bytes && param_byte_offset > 0) {
-		local_byte_offset = param_byte_offset;
-		local_byte_offset += size;
-		start_at_param_bytes = true;
-	} else { 
-		local_byte_offset += size; 
-	}
 }
 
 bool has_expression_context() {
@@ -281,6 +191,16 @@ bool has_expression_context() {
 		default:
 			return false;
 	}
+}
+
+int peek_scope_level(CompilerContext* ctx) {
+	int scope_level = -1;
+	
+	SymbolTable* table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
+	if (table) {
+		scope_level = table->level;
+	} 
+	return scope_level;
 }
 
 void resolve_expression(CompilerContext* ctx, Node* node) {
@@ -384,30 +304,22 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 			SymbolTable* current_table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
 			if (!current_table) return;
 				
-			int hash_key = hash(current_table->capacity, node->value.name);
-			
 			Symbol* node_symbol = node->symbol;
-			//for definitions
+
+			// for definitions
 			if (node->t && !node->symbol) {
 				Symbol* new_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, node->t);
 				int hash_key = hash(current_table->capacity, node->value.name);
 
-				if (new_symbol && (hash_key >= 0)) {
+				if (hash_key >= 0) {
 					bind(ctx, LOCAL, new_symbol, hash_key);
 					node->symbol = (void*)new_symbol;
 				}
 
 				// if array, resolving index
 				if (node->left) resolve_expression(ctx, node->left);
-
-				if (new_symbol) {
-					size_t size = get_num_bytes(new_symbol);
-					update_total_local_bytes(size);
-					update_local_byte_offset(size);
-					update_node_info(node, LOCAL_UPDATE, size);
-				}
 				break;
-			}
+			} 
 			
 			if (peek_context() == CONTEXT_CALL) {
 				Symbol* temp_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, NULL);
@@ -626,16 +538,6 @@ void resolve_statement(CompilerContext* ctx, Node* node) {
 	}
 }
 
-void update_global_parameter_variables(size_t param_size) {
-	if (param_byte_offset == 0) {
-		param_byte_offset = param_size;
-	} else {
-		param_byte_offset += param_size;
-	}
-
-	total_param_bytes += param_size;	
-}
-
 void resolve_params(CompilerContext* ctx, Node* node) {
 	SymbolTable* current_table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
 	if (!current_table) return;
@@ -651,33 +553,11 @@ void resolve_params(CompilerContext* ctx, Node* node) {
 				Symbol* sym = create_symbol(ctx, SYMBOL_PARAM, param->value.name, NULL, param->t);
 				bind(ctx, LOCAL, sym, hash_key);
 				param->symbol = (void*)sym;
-				
-				size_t size = get_num_bytes(sym);
-				update_global_parameter_variables(size);
-				update_node_info(param, PARAM_UPDATE, size);
 			}
 		}
 
 		current_wrapped_param = next_wrapped_param;
 	}	
-}
-
-void set_total_local_bytes(Node* node) {
-	Symbol* sym = node->symbol;
-	if (sym) {
-		sym->total_bytes = total_param_bytes + total_local_bytes;
-		if ((sym->total_bytes % 16) != 0) {
-			sym->total_bytes += 16 - (sym->total_bytes % 16);
-		}
-	}
-}
-
-void reset_offsets() {
-	total_param_bytes = 0;
-	param_byte_offset = 0;
-	local_byte_offset = 0;
-	total_local_bytes = 0;
-	start_at_param_bytes = false;
 }
 
 void resolve_globals(CompilerContext* ctx, Node* node) {
@@ -709,8 +589,6 @@ void resolve_globals(CompilerContext* ctx, Node* node) {
 
 			if (!type->subtype) return;
 
-			reset_offsets();
-
 			if (type->subtype->kind == TYPE_VOID) {
 				push_context(ctx, CONTEXT_VOID_FUNCTION);
 			} else {
@@ -726,8 +604,6 @@ void resolve_globals(CompilerContext* ctx, Node* node) {
 			if (node->right) {
 				resolve_statement(ctx, node->right);
 			}
-
-			set_total_local_bytes(node);
 
 			pop_scope(ctx);
 			pop_context();

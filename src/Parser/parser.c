@@ -85,7 +85,13 @@ void add_error_to_error_table(CompilerContext* ctx, Error* err) {
 		error_table.capacity *= 2;
 		size_t new_capacity = error_table.capacity;
 		// error_table.errors = realloc(error_table.errors, error_table.capacity);
-		void* new_errors = arena_reallocate(ctx->error_arena, error_table.errors, prev_capacity, new_capacity);
+		void* new_errors = arena_reallocate(
+			ctx->error_arena, 
+			error_table.errors, 
+			prev_capacity * sizeof(Error*), 
+			new_capacity *  sizeof(Error*)
+		);
+		
 		if (!new_errors) {
 			emit_errors(ctx);
 			// exit(EXIT_FAILURE);
@@ -904,7 +910,7 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				stmt = create_node(ctx, NODE_DECL, decl, NULL, NULL, NULL, NULL, NULL);
 			
 			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
-				Node* assignee = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, NULL,t);
+				Node* assignee = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, NULL, t);
 				if (!assignee) return NULL;
 
 				Node* def = create_node(ctx, NODE_DEF, assignee, NULL, NULL, NULL, NULL, NULL);

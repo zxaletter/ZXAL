@@ -1,8 +1,8 @@
 #include "cfg.h"
 
 FunctionList* function_list = NULL;
-TACLabelEntries tac_entries;
 TACLeaders leaders_list;
+static int block_id = 0;
 
 FunctionList* create_function_list(CompilerContext* ctx) {
 	FunctionList* list = arena_allocate(ctx->ir_arena, sizeof(FunctionList));
@@ -48,77 +48,6 @@ bool add_function_info_to_list(CompilerContext* ctx, FunctionInfo* info) {
 		function_list->infos = new_infos;
 	}
 	function_list->infos[function_list->size++] = info;
-	return true;
-}
-
-TACLabelEntries create_tac_label_entries(CompilerContext* ctx) {
-	TACLabel** labels = arena_allocate(ctx->ir_arena, sizeof(TACLabel*) * INIT_TAC_LABEL_ENTRIES_CAPACITY);
-	if (!labels) {
-		TACLabelEntries dummy_entries = {
-			.size = 0,
-			.capacity = 0,
-			.labels = NULL
-		};
-		return dummy_entries;
-	}
-
-	TACLabelEntries new_label_entries = {
-		.size = 0,
-		.capacity = INIT_TAC_LABEL_ENTRIES_CAPACITY,
-		.labels = labels
-	};
-	return new_label_entries;
-}
-
-TACLabel* create_label_entry(CompilerContext* ctx, TACInstruction* instruction, int tac_index) {
-	if (!instruction) return NULL;
-
-	TACLabel* new_label = arena_allocate(ctx->ir_arena, sizeof(TACLabel));
-	if (!new_label) return NULL;
-
-	new_label->tac_index = tac_index;
-	new_label->name = NULL;
-	switch (instruction->type) {
-		case TAC_GOTO:
-		case TAC_LABEL: {
-			new_label->name = instruction->result->value.label_name;
-			break;
-		}
-
-		case TAC_IF_FALSE: {
-			new_label->name = instruction->op1->value.label_name;
-			break;
-		}
-		default: {
-			printf("unknown instruction type\n");
-			break;
-		}
-	}
-	return new_label;
-}
-
-bool add_label_to_entries(CompilerContext* ctx, TACLabel* label) {
-	if (!label) return false;
-
-	if (tac_entries.size >= tac_entries.capacity) {
-		int prev_capacity = tac_entries.capacity;
-		
-		tac_entries.capacity *= 2;
-		int new_capacity = tac_entries.capacity;
-		void** new_labels = arena_reallocate(
-			ctx->ir_arena, 
-			tac_entries.labels, 
-			prev_capacity * sizeof(TACLabel*), 
-			new_capacity * sizeof(TACLabel*)
-		);
-		
-		if (!new_labels) {
-			printf("Error: unable to reallocate space for new labels\n");
-			return false;
-		}
-		tac_entries.labels = new_labels;
-	}
-	tac_entries.labels[tac_entries.size++] = label;
 	return true;
 }
 
@@ -173,11 +102,7 @@ CFG* create_cfg(CompilerContext* ctx) {
 
 	cfg->num_blocks = 0;
 	cfg->blocks_capacity = INIT_BLOCKS_CAPACITY;
-	cfg->head = create_basic_block(ctx);
-	if (!cfg->head) {
-		perror("In 'create_cfg', unable to initialize cfg->head\n");
-		return NULL;
-	}
+	cfg->head = NULL;
 	cfg->all_blocks = arena_allocate(ctx->ir_arena, sizeof(BasicBlock*) * cfg->blocks_capacity);
 	if (!cfg->all_blocks) {
 		perror("In 'create_cfg', unable to initialize cfg blocks\n");
@@ -217,6 +142,7 @@ BasicBlock* create_basic_block(CompilerContext* ctx) {
 		return NULL;
 	}
 
+	basic_block->id = block_id++;
 	basic_block->visited = false;
 	basic_block->num_instructions = 0;
 	basic_block->num_successors = 0;
@@ -240,7 +166,7 @@ BasicBlock* create_basic_block(CompilerContext* ctx) {
 bool found_function(TACInstruction* instruction) {
 	if (!instruction) return false;
 
-	if (instruction->type == TAC_NAME) {
+	if (instruction->kind == TAC_NAME) {
 		if (!instruction->result) return false;
 		if (!instruction->result->value.sym) return false;
 		if (!instruction->result->value.sym->type) return false;
@@ -307,23 +233,13 @@ void mark_function_boundaries(CompilerContext* ctx, TACTable* instructions) {
 
 bool found_label(TACInstruction* instruction) {
 	if (!instruction) return false;
-	switch (instruction->type) {
+	switch (instruction->kind) {
 		case TAC_LABEL:
 		case TAC_GOTO: return true;
 	}
 	return false;
 }
 
-void mark_labels(CompilerContext* ctx, TACTable* instructions) {
-	int i = 0;
-	while (instructions->tacs[i] && i < instructions->size) {
-		if (found_label(instructions->tacs[i])) {
-			TACLabel* label = create_label_entry(ctx, instructions->tacs[i], i);
-			add_label_to_entries(ctx, label);
-		}
-		i++;
-	}
-}
 
 int find_label_index(TACTable* instructions, char* target_name, int current_index) {
 	if (!target_name) return -1;
@@ -355,7 +271,7 @@ void find_leaders(CompilerContext* ctx, TACTable* instructions) {
 				current_index++;
 				continue;
 			}
-			switch (instructions->tacs[current_index]->type) {
+			switch (instructions->tacs[current_index]->kind) {
 				case TAC_IF_FALSE: {
 					add_leader_to_leader_list(ctx, current_index + 1 );
 					int label_start = find_label_index(instructions, instructions->tacs[current_index]->op1->value.label_name, current_index + 1);
@@ -382,7 +298,7 @@ void find_leaders(CompilerContext* ctx, TACTable* instructions) {
 					if (current_index + 1 < instructions->size) {
 						TACInstruction* next_tac = instructions->tacs[current_index + 1];
 						if (next_tac) {
-							switch (next_tac->type) {
+							switch (next_tac->kind) {
 								case TAC_GOTO: break;
 								case TAC_NAME: {
 									if (next_tac->result &&
@@ -425,12 +341,16 @@ bool index_is_leader(int index) {
 
 bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions) {
 	for (int i = 0; i < function_list->size; i++) {
+		block_id = 0;
 		FunctionInfo* info = function_list->infos[i];
 		info->cfg = create_cfg(ctx);
 
 		if (!info->cfg) {
 			return false;
 		}
+
+		info->cfg->head = create_basic_block(ctx);
+		if (!info->cfg->head) return false;
 
 		BasicBlock* block = info->cfg->head;
 
@@ -442,21 +362,26 @@ bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions) {
 		add_instruction_to_block(ctx, block, instructions->tacs[leader_offset]);
 
 		while (instructions->tacs[remaining_instructions_offset] && remaining_instructions_offset <= end) {			
-			if (!index_is_leader(remaining_instructions_offset)) {
+			bool is_leader = index_is_leader(remaining_instructions_offset);
+			if (!is_leader) {
 				add_instruction_to_block(ctx, block, instructions->tacs[remaining_instructions_offset]);
 			} else {
-				if (!add_block_to_cfg(ctx, info->cfg, block)) {
+				bool added = add_block_to_cfg(ctx, info->cfg, block); 
+				if (!added) {
 					return false;
 				}
 
 				BasicBlock* new_block = create_basic_block(ctx);
+				if (!new_block) return false;
+
 				block = new_block;
 				add_instruction_to_block(ctx, block, instructions->tacs[remaining_instructions_offset]);
 			}
 			remaining_instructions_offset++;
 		}
 
-		if (!add_block_to_cfg(ctx, info->cfg, block)) {
+		bool added = add_block_to_cfg(ctx, info->cfg, block);
+		if (!added) {
 			return false;
 		}
 	}
@@ -468,7 +393,7 @@ BasicBlock* find_matching_label_block(CFG* cfg,  char* target_name) {
 		BasicBlock* current_block = cfg->all_blocks[i];
 		if (current_block->num_instructions > 0) {
 			TACInstruction* first = current_block->instructions[0];
-			if (first->type == TAC_LABEL &&
+			if (first->kind == TAC_LABEL &&
 				first->result &&
 				first->result->value.label_name &&
 				strcmp(first->result->value.label_name, target_name) == 0) {
@@ -529,10 +454,11 @@ void link_function_cfgs(CompilerContext* ctx) {
 		if (!cfg) continue;
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
-			TACInstruction* last_instruction_in_current_block = cfg->all_blocks[j]->instructions[cfg->all_blocks[j]->num_instructions - 1];
+			BasicBlock* block = cfg->all_blocks[j];
+			TACInstruction* last_instruction_in_current_block = block->instructions[block->num_instructions - 1];
 			if (!last_instruction_in_current_block) continue;
 
-			switch (last_instruction_in_current_block->type) {
+			switch (last_instruction_in_current_block->kind) {
 				case TAC_GOTO: {
 					BasicBlock* matching_block = find_matching_label_block(cfg, last_instruction_in_current_block->result->value.label_name);
 					if (matching_block) {
@@ -546,23 +472,20 @@ void link_function_cfgs(CompilerContext* ctx) {
 						add_edges(ctx, cfg, j, cfg->all_blocks[j + 1]);
 					}
 					
-					BasicBlock* matching_block = find_matching_label_block(cfg, last_instruction_in_current_block->op1->value.label_name);
+					BasicBlock* matching_block = find_matching_label_block(cfg, last_instruction_in_current_block->op2->value.label_name);
 					if (matching_block) {
 						add_edges(ctx, cfg, j, matching_block);
 					}
-
 					break;
 				}
 				
-				case TAC_RETURN: {
+				case TAC_RETURN: 
 					break;
-				}
 
 				default: {
 					if (j + 1 < cfg->num_blocks) {
 						add_edges(ctx, cfg, j, cfg->all_blocks[j + 1]);
 					}
-
 					break;
 				}
 			}
@@ -719,20 +642,6 @@ bool add_liveinfo_to_liveness_table(CompilerContext* ctx, LivenessTable* table, 
 	return true;
 }
 
-OperandSet* create_operand_set(CompilerContext* ctx) {
-	OperandSet* op_set = arena_allocate(ctx->ir_arena, sizeof(OperandSet));
-	if (!op_set) return NULL;
-
-	op_set->size = 0;
-	op_set->capacity = INIT_OP_SET_CAPACITY;
-	op_set->elements = arena_allocate(ctx->ir_arena, sizeof(Operand*) * op_set->capacity);
-	if (!op_set->elements) {
-		perror("In 'create_op_set', unable to allocate space and initialize op set elements\n");
-		return NULL;
-	}
-	return op_set;
-}
-
 OperandSet* copy_set(CompilerContext* ctx, OperandSet* original_set) {
 	if (!original_set) return NULL;
 
@@ -765,46 +674,94 @@ bool init_block_sets(CompilerContext* ctx, BasicBlock* block) {
 	return true;
 }
 
-void add_to_operand_set(CompilerContext* ctx, OperandSet* op_set, Operand* operand) {
-	if (!op_set || !operand) return;
+bool operands_equal(Operand* op1, Operand* op2) {
+	if (!op1 || !op2) return false;
 
-	if (op_set->size >= op_set->capacity) {
-		int prev_capacity = op_set->capacity;
+	if (op1->kind != op2->kind) return false;
 
-		op_set->capacity *= 2;
-		int new_capacity = op_set->capacity;
-		void** new_elements = arena_reallocate(
-			ctx->ir_arena,
-			op_set->elements,
-			prev_capacity * sizeof(Operand*),
-			new_capacity * sizeof(Operand*)
-		);
-
-		if (!new_elements) {
-			perror("In 'add_to_operand_set', unable to reallocate space for new elements\n");
-			return;
+	switch (op1->kind) {
+		case OP_SYMBOL: {
+			return (op1->value.sym && op2->value.sym) && 
+				   (op1->value.sym == op2->value.sym) &&
+				    op1->value.sym->scope_level == op2->value.sym->scope_level &&
+				    strcmp(op1->value.sym->name, op2->value.sym->name) == 0;
 		}
-		op_set->elements = new_elements;
+
+		case OP_STORE:
+		case OP_NOT:
+		case OP_UNARY_SUB:
+		case OP_UNARY_ADD:
+		case OP_ADD:
+		case OP_SUB:
+		case OP_MUL:
+		case OP_DIV:
+		case OP_MODULO:
+		case OP_LESS:
+		case OP_GREATER:
+		case OP_LESS_EQUAL:
+		case OP_GREATER_EQUAL:
+		case OP_EQUAL:
+		case OP_NOT_EQUAL:
+		case OP_LOGICAL_AND:
+		case OP_LOGICAL_OR: {
+			return (op1->value.label_name && op2->value.label_name) && 
+				   (strcmp(op1->value.label_name, op2->value.label_name) == 0);
+		}
+		
+		default: 
+			return false;
 	}
-	op_set->elements[op_set->size++] = operand;
+
+}
+
+bool contains_operand(OperandSet* op_set, Operand* operand) {
+	if (!op_set || !operand) return false;
+
+	for (int i = 0; i < op_set->size; i++) {
+		if (operands_equal(op_set->elements[i], operand)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+int get_operand_index(OperandSet* op_set, Operand* operand) {
+	if (!op_set || !operand) return -1;
+
+	for (int i = 0; i < op_set->size; i++) {
+		if (op_set->elements[i] == operand) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void remove_from_operand_set(OperandSet* op_set, Operand* operand) {
+	int operand_index = get_operand_index(op_set, operand);
+	
+	if (operand_index != -1) {
+		op_set->elements[operand_index] = NULL;
+		for (int j = operand_index; j < op_set->size; j++) {
+			op_set->elements[j] = op_set->elements[j + 1];
+		}
+		op_set->size--;
+	}
 }
 
 void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 	if (!block) return;
 
+	OperandSet* ops_defined = create_operand_set(ctx);
 	for (int i = 0; i < block->num_instructions; i++) {
 		TACInstruction* tac = block->instructions[i];
-		if (!tac) return;
+		if (!tac) continue;
 
-		switch (tac->type) {
+		switch (tac->kind) {
 			case TAC_ADD:
 			case TAC_SUB:
 			case TAC_MUL:
 			case TAC_DIV:
-			case TAC_ADD_EQUAL:
-			case TAC_SUB_EQUAL:
-			case TAC_MUL_EQUAL:
-			case TAC_DIV_EQUAL:
 			case TAC_MODULO:
 			case TAC_LESS:
 			case TAC_GREATER:
@@ -814,43 +771,72 @@ void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 			case TAC_NOT_EQUAL:
 			case TAC_LOGICAL_OR:
 			case TAC_LOGICAL_AND: {
-				add_to_operand_set(ctx, block->use_set, tac->op1);
-				add_to_operand_set(ctx, block->use_set, tac->op2);
+				bool op1_already_def = contains_operand(ops_defined, tac->op1);
+				if (!op1_already_def) {
+					add_to_operand_set(ctx, block->use_set, tac->op1);
+				}
+
+				bool op2_already_def = contains_operand(ops_defined, tac->op2);
+				if (!op2_already_def) {
+					add_to_operand_set(ctx, block->use_set, tac->op2);
+				}
+
+				add_to_operand_set(ctx, ops_defined, tac->result);
 				add_to_operand_set(ctx, block->def_set, tac->result);
 				break;
 			}
 
-			case TAC_IF_FALSE:
+			case TAC_IF_FALSE: {
+				if (tac->op1) {
+					bool op1_already_def = contains_operand(ops_defined, tac->op1);
+					if (!op1_already_def) {
+						add_to_operand_set(ctx, block->use_set, tac->op1);
+					}
+				}
+				break;
+			}
+
 			case TAC_RETURN: {
-				add_to_operand_set(ctx, block->use_set, tac->op1);
+				if (tac->op1) {
+					bool op1_already_def = contains_operand(ops_defined, tac->op1);
+					if (!op1_already_def) {
+						add_to_operand_set(ctx, block->use_set, tac->op1);
+					}
+				}
 				break;
 			}
 
 			case TAC_CHAR:
 			case TAC_BOOL:
 			case TAC_INTEGER: {
+				add_to_operand_set(ctx, ops_defined, tac->result);
 				add_to_operand_set(ctx, block->def_set, tac->result);
 				break;
 			}
 
-			case TAC_STORE: {
-				add_to_operand_set(ctx, block->use_set, tac->result);
-				add_to_operand_set(ctx, block->use_set, tac->op1);
-				break;
-			}
+			case TAC_PARAM: break;
 
-			case TAC_PARAM:
 			case TAC_ARG: {
-				add_to_operand_set(ctx, block->use_set, tac->op1);
+				bool op1_already_def = contains_operand(ops_defined, tac->op1);
+				if (!op1_already_def) {
+					add_to_operand_set(ctx, ops_defined, tac->op1);
+				}
 				break;
 			}
 
+			case TAC_STORE:
 			case TAC_DEREFERENCE_AND_ASSIGN:
 			case TAC_DEREFERENCE: 
 			case TAC_UNARY_ADD:
 			case TAC_UNARY_SUB:
 			case TAC_NOT: {
-				add_to_operand_set(ctx, block->use_set, tac->op1);
+				if (tac->op1) {
+					bool op1_already_def = contains_operand(ops_defined, tac->op1);
+					if (!op1_already_def) {
+						add_to_operand_set(ctx, block->use_set, tac->op1);
+					}
+				}
+				add_to_operand_set(ctx, ops_defined, tac->result);
 				add_to_operand_set(ctx, block->def_set, tac->result);
 				break;
 			}
@@ -859,68 +845,17 @@ void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 				if (tac->op2 && tac->op2->kind == OP_RETURN) {
 					add_to_operand_set(ctx, block->def_set, tac->result);
 				} else {
-					add_to_operand_set(ctx, block->use_set, tac->op2);
+					bool op2_already_def = contains_operand(ops_defined, tac->op2);
+					if (!op2_already_def) {
+						add_to_operand_set(ctx, block->use_set, tac->op2);
+					}
 					add_to_operand_set(ctx, block->def_set, tac->result);
 				}
+				add_to_operand_set(ctx, ops_defined, tac->result);
 				break;
 			}
 		}
 	}
-}
-
-// bool operands_equal(Operand* op1, Operand* op2) {
-// 	if (!op1 || !op2) return false;
-
-// 	if (op1->kind == op2->kind) {
-// 		switch (op1->kind) {
-// 			case OP_STORE:
-// 			case OP_ADD:
-// 			case OP_SUB:
-// 			case OP_DIV:
-// 			case OP_MUL:
-// 			case OP_MODULO:
-// 			case OP_LESS:
-// 			case OP_GREATER:
-// 			case OP_LESS_EQUAL:
-// 			case OP_GREATER_EQUAL:
-// 			case OP_EQUAL:
-// 			case OP_NOT_EQUAL:
-// 			case OP_NOT:
-// 			case OP_UNARY_ADD:
-// 			case OP_UNARY_SUB:
-// 			case OP_LOGICAL_OR:
-// 			case OP_LOGICAL_AND: {
-// 				if (!op1->value.label_name || !op2->value.label_name) return false;
-// 				return strcmp(op1->value.label_name, op2->value.label_name) == 0;
-// 			}
-
-// 			case OP_INT_LITERAL: {
-// 				return op1->value.int_val == op2->value.int_val;
-// 			}
-
-// 			case OP_SYMBOL: {
-// 				if (!op1->value.sym || !op2->value.sym) return false;
-// 				return op1->value.sym == op2->value.sym;
-// 			}
-
-// 			default: return false;
-
-		
-// 		}
-// 	}
-// 	return false;
-// }
-
-bool contains_operand(OperandSet* op_set, Operand* operand) {
-	if (!op_set || !operand) return false;
-
-	for (int i = 0; i < op_set->size; i++) {
-		if (op_set->elements[i] == operand) {
-			return true;
-		}
-	}
-
-	return false;
 }
 
 void union_sets(CompilerContext* ctx, OperandSet* dest, OperandSet* src) {
@@ -961,25 +896,28 @@ void fixed_point_iteration(CompilerContext* ctx, CFG* cfg) {
 		changed = false;
 
 		for (int i = cfg->num_blocks - 1; i >= 0; i--) {
-			BasicBlock* current_block = cfg->all_blocks[i];
-			
-			current_block->out_set->size = 0;
+			BasicBlock* block = cfg->all_blocks[i];
 
-			for (int j = 0;j < current_block->num_successors; j++) {			
-				BasicBlock* successor = current_block->successors[j];
-				union_sets(ctx, current_block->out_set, successor->in_set);
+			OperandSet* old_out = copy_set(ctx, block->out_set);
+			OperandSet* old_in = copy_set(ctx, block->in_set);
+
+			OperandSet* new_out = create_operand_set(ctx);
+			for (int j = 0; j < block->num_successors; j++) {			
+				BasicBlock* successor = block->successors[j];
+				union_sets(ctx, new_out, successor->in_set);
 			}
 
-			OperandSet* old_in = copy_set(ctx, current_block->in_set);
+			OperandSet* out_minus_def = difference_sets(ctx, new_out, block->def_set);
+			OperandSet* new_in = create_operand_set(ctx);
+			union_sets(ctx, new_in, block->use_set);
+			union_sets(ctx, new_in, out_minus_def);
 
-			OperandSet* out_minus_def = difference_sets(ctx, current_block->out_set, current_block->def_set);
-			current_block->in_set->size = 0;
-			union_sets(ctx, current_block->in_set, current_block->use_set);
-			union_sets(ctx, current_block->in_set, out_minus_def);
-
-			if (!sets_equal(old_in, current_block->in_set)) {
+			if (!sets_equal(old_in, new_in) || !sets_equal(old_out, new_out)) {
 				changed = true;
 			}
+
+			block->out_set = new_out;
+			block->in_set = new_in;
 		}		
 	}
 }
@@ -1159,7 +1097,6 @@ void determine_instruction_liveness_info(CompilerContext* ctx, LivenessTable* li
 	determine_operand_liveness_and_next_use(ctx, live_variables, instruction->result, OP_RESULT, instruction->id);
 	determine_operand_liveness_and_next_use(ctx, live_variables, instruction->op1, OP_USE, instruction->id);
 	determine_operand_liveness_and_next_use(ctx, live_variables, instruction->op2, OP_USE, instruction->id);
-	determine_operand_liveness_and_next_use(ctx, live_variables, instruction->op3, OP_USE, instruction->id);
 }
 
 void determine_next_use(CompilerContext* ctx, CFG* cfg) {
@@ -1176,10 +1113,7 @@ void determine_next_use(CompilerContext* ctx, CFG* cfg) {
 					LiveInfoVar var = {.symbol = op->value.sym};
 					if (op->value.sym && op->value.sym->name) {
 						hash_key = hash_variable(live_variables, op->value.sym->name);
-					} else {
-						// printf("Error: Symbol is NULL or name in symbol is NULL\n");
-						return;
-					}
+					} 
 
 					if (hash_key != -1) {
 						LivenessInfo* live_info = create_liveness_info(ctx, OP_SYMBOL, var, true, -1);
@@ -1230,24 +1164,320 @@ void determine_next_use(CompilerContext* ctx, CFG* cfg) {
 	}
 }
 
+void compute_instruction_live_out(CompilerContext* ctx, CFG* cfg) {
+	printf("==================================\n");
+	printf("Displaying Out sets for each block\n\n");
+	for (int i = 0; i < cfg->num_blocks; i++) {
+		BasicBlock* block = cfg->all_blocks[i];
+		printf("Block \033[32m%d\033[0m\n", i);
+		printf("Out: {");
+		for (int k = 0; k < block->out_set->size; k++) {
+			Operand* out_op = block->out_set->elements[k];
+			bool last_op = (k == block->out_set->size - 1);
+			if (out_op) {
+				switch (out_op->kind) {
+					case OP_SYMBOL: {
+						if (last_op) {
+							printf("%s", out_op->value.sym->name);
+						} else {
+							printf("%s, ", out_op->value.sym->name);
+						}
+						break;
+					}
+
+					case OP_ADD:
+					case OP_SUB:
+					case OP_MUL:
+					case OP_DIV:
+					case OP_MODULO:
+					case OP_LESS:
+					case OP_GREATER:
+					case OP_LESS_EQUAL:
+					case OP_GREATER_EQUAL:
+					case OP_EQUAL:
+					case OP_NOT_EQUAL:
+					case OP_NOT:
+					case OP_LOGICAL_AND:
+					case OP_LOGICAL_OR:
+					case OP_UNARY_ADD:
+					case OP_UNARY_SUB:
+					case OP_STORE: {
+						if (last_op) {
+							printf("%s", out_op->value.label_name);
+						} else {
+							printf("%s, ", out_op->value.label_name);
+						}
+						break;
+					}
+				}
+			}
+		}
+		printf("}\n");
+
+		printf("In: {");
+		for (int r = 0; r < block->in_set->size; r++) {
+			Operand* in_op = block->in_set->elements[r];
+			bool last_op = (r == block->in_set->size - 1);
+			if (in_op) {
+				switch (in_op->kind) {
+					case OP_SYMBOL: {
+						if (last_op) {
+							printf("%s", in_op->value.sym->name);
+						} else {
+							printf("%s, ", in_op->value.sym->name);
+						}
+						break;
+					}
+
+					case OP_ADD:
+					case OP_SUB:
+					case OP_MUL:
+					case OP_DIV:
+					case OP_MODULO:
+					case OP_LESS:
+					case OP_GREATER:
+					case OP_LESS_EQUAL:
+					case OP_GREATER_EQUAL:
+					case OP_EQUAL:
+					case OP_NOT_EQUAL:
+					case OP_NOT:
+					case OP_LOGICAL_AND:
+					case OP_LOGICAL_OR:
+					case OP_UNARY_ADD:
+					case OP_UNARY_SUB:
+					case OP_STORE: {
+						if (last_op) {
+							printf("%s", in_op->value.label_name);
+						} else {
+							printf("%s, ", in_op->value.label_name);
+						}
+						break;
+					}
+				}
+			}
+		}
+		printf("}\n\n");
+
+		OperandSet* current_live = copy_set(ctx, block->out_set);
+
+		for (int j = block->num_instructions - 1; j >= 0; j--) {
+			TACInstruction* instruction = block->instructions[j];
+
+			instruction->live_out = copy_set(ctx, current_live);
+
+			if (instruction->result && is_operand_label_or_symbol(instruction->result)) {
+				remove_from_operand_set(instruction->live_out, instruction->result);
+			}
+
+			if (instruction->op1 && is_operand_label_or_symbol(instruction->op1)) {
+				add_to_operand_set(ctx, instruction->live_out, instruction->op1);
+			}
+
+			if (instruction->op2 && is_operand_label_or_symbol(instruction->op2)) {
+				add_to_operand_set(ctx, instruction->live_out, instruction->op2);
+			}
+
+			
+		}
+	}
+	printf("==================================\n");
+}
+
 void live_analysis(CompilerContext* ctx) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
 		CFG* cfg = info->cfg;
 
 		for (int j = 0; j < cfg->num_blocks; j++) {
-			BasicBlock* current_block = cfg->all_blocks[j];
-			if (!init_block_sets(ctx, current_block)) return;
+			BasicBlock* block = cfg->all_blocks[j];
+			
+			bool has_block_sets = init_block_sets(ctx, block);
+			if (!has_block_sets) return;
 
-			populate_use_and_def_sets(ctx, current_block);
+			populate_use_and_def_sets(ctx, block);
+			printf("Block \033[32m%d\033[0m\n", j);
+			printf("Def: {");
+			for (int k = 0; k < block->def_set->size; k++) {
+				Operand* def_op = block->def_set->elements[k];
+				bool last_op = (k == block->def_set->size - 1);
+				if (def_op) {
+					switch (def_op->kind) {
+						case OP_SYMBOL: {
+							if (last_op) {
+								printf("%s", def_op->value.sym->name);
+							} else {
+								printf("%s, ", def_op->value.sym->name);
+							}
+							break;
+						}
+						default: {
+							if (last_op) {
+								printf("%s", def_op->value.label_name);
+							} else {
+								printf("%s, ", def_op->value.label_name);
+							}
+							break;
+						}
+					}
+				}
+			}
+			printf("}\n");
+
+			printf("Use: {");
+			for (int u = 0; u < block->use_set->size; u++) {
+				Operand* use_op = block->use_set->elements[u];
+				bool last_op = (u == block->use_set->size - 1);
+				if (use_op) {
+					switch (use_op->kind) {
+						case OP_SYMBOL: {
+							if (last_op) {
+								printf("%s", use_op->value.sym->name);
+							} else {
+								printf("%s, ", use_op->value.sym->name);
+							}
+							break;
+						}
+
+						default: {
+							if (last_op) {
+								printf("%s", use_op->value.label_name);
+							} else {
+								printf("%s, ", use_op->value.label_name);
+							}
+							break;
+						}
+					}
+				}
+			}
+			printf("}\n\n");
 		}
 
 		fixed_point_iteration(ctx, cfg);
+		compute_instruction_live_out(ctx, cfg);
 		determine_next_use(ctx, cfg);
 	}
 }
 /// END
 //////////////////////////////////////
+
+void add_bundle_to_interference_graph(CompilerContext* ctx, InterferenceGraph* graph, InterferenceBundle* bundle) {
+	if (!bundle) return;
+
+	if (graph->size >= graph->capacity) {
+		int prev_capacity = graph->capacity;
+
+		graph->capacity *= 2;
+		int new_capacity = graph->capacity;
+		void** new_bundles = arena_reallocate(
+			ctx->ir_arena,
+			graph->bundles,
+			prev_capacity * sizeof(InterferenceBundle*),
+			new_capacity * sizeof(InterferenceBundle*)
+		);
+
+		if (!new_bundles) return;
+
+		graph->bundles = new_bundles;
+	}
+
+	graph->bundles[graph->size++] = bundle;
+}
+
+InterferenceBundle* create_inteference_bundle(CompilerContext* ctx, Operand* operand, BasicBlock* associated_block) {
+	InterferenceBundle* bundle = arena_allocate(ctx->ir_arena, sizeof(InterferenceBundle));
+	if (!bundle) return NULL;
+
+	bundle->operand = operand;
+	bundle->associated_block = associated_block;
+	bundle->interferes_with = create_operand_set(ctx);
+	if (!bundle->interferes_with) return NULL;
+
+	return bundle;
+}
+
+InterferenceGraph* create_inteference_graph(CompilerContext* ctx) {
+	InterferenceGraph* graph = arena_allocate(ctx->ir_arena, sizeof(InterferenceGraph));
+	if (!graph) return NULL;
+
+	graph->size = 0;
+	graph->capacity = INIT_INTERFERENCE_BUNDLE_CAPACITY;
+	graph->bundles = arena_allocate(ctx->ir_arena, sizeof(InterferenceBundle*) * graph->capacity);
+	if (!graph->bundles) return NULL;
+
+	return graph;
+}
+
+void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGraph* graph) {
+	for (int i = 0; i < cfg->num_blocks; i++) {
+		BasicBlock* block = cfg->all_blocks[i];
+
+		for (int j = 0; j < block->num_instructions; j++) {
+			TACInstruction* instruction = block->instructions[j];
+			if (instruction) {
+				switch (instruction->kind) {
+					case TAC_ADD:
+					case TAC_SUB: {
+						bool live_on_exit = contains_operand(block->out_set, instruction->result);
+						if (!live_on_exit) {
+							instruction->result->live_on_exit = 0;
+						}
+						break;
+					}	
+
+					case TAC_RETURN: {
+						if (instruction->op1) {
+							instruction->op1->live_on_exit = 1;
+						}
+						break;
+					}
+
+					case TAC_LESS:
+					case TAC_GREATER:
+					case TAC_LESS_EQUAL:
+					case TAC_GREATER_EQUAL:
+					case TAC_EQUAL:
+					case TAC_NOT_EQUAL: {
+						if (j + 1 < block->num_instructions) {
+							TACInstruction* next_instruction = block->instructions[j + 1];
+							if ((next_instruction && next_instruction->result) && 
+								next_instruction->kind == TAC_IF_FALSE &&
+								strcmp(next_instruction->result->value.label_name, instruction->result->value.label_name) == 0) {
+								instruction->precedes_conditional = true;	
+							}
+						}
+						break;
+					}
+				}
+			}
+			
+			// if (instruction && instruction->precedes_conditional) continue;
+
+			if (instruction && instruction->result) {
+				InterferenceBundle* bundle = create_inteference_bundle(ctx, instruction->result, block);
+				if (!bundle) continue; 
+				
+				for (int k = 0; k < instruction->live_out->size; k++) {
+					if (instruction->result != instruction->live_out->elements[k]) {
+						add_to_operand_set(ctx, bundle->interferes_with, instruction->live_out->elements[k]); 
+					}
+				}
+
+				add_bundle_to_interference_graph(ctx, graph, bundle);	 
+			}
+		}
+	}
+}
+
+void populate_interference_graphs(CompilerContext* ctx) {
+	for (int i = 0; i < function_list->size; i++) {
+		FunctionInfo* info = function_list->infos[i];
+		info->graph = create_inteference_graph(ctx);
+
+		if (info->graph) {
+			populate_interference_graph(ctx, info->cfg, info->graph);
+		}
+	}
+}
 
 bool is_operand_label_or_symbol(Operand* op) {
 	if (!op) return false;
@@ -1267,6 +1497,8 @@ bool is_operand_label_or_symbol(Operand* op) {
 		case OP_NOT_EQUAL:
 		case OP_EQUAL:
 		case OP_NOT:
+		case OP_UNARY_SUB:
+		case OP_UNARY_ADD:
 		case OP_LOGICAL_OR:
 		case OP_LOGICAL_AND: {
 			return true;
@@ -1280,17 +1512,24 @@ FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 	if (!instructions) return NULL;
 
 	function_list = create_function_list(ctx);
-	tac_entries = create_tac_label_entries(ctx);
 	leaders_list = create_tac_leaders(ctx);
-	if (!function_list || !tac_entries.labels || !leaders_list.leaders) return NULL;
+	if (!function_list || !leaders_list.leaders) return NULL;
 	
 	mark_function_boundaries(ctx, instructions);
-	// mark_labels(ctx, instructions);
 	find_leaders(ctx, instructions);
 	make_function_cfgs(ctx, instructions);
 	link_function_cfgs(ctx);
  
 	live_analysis(ctx);
+	populate_interference_graphs(ctx);
+
+	return function_list;
+}
+	// emit_function_infos();
+	// emit_blocks();
+	// emit_leaders();
+
+void emit_function_infos() {
 	// printf("\n\n");
 	// printf("\033[31mLast Liveness check\033[0m\n");
 	// for (int i = 0; i < function_list->size; i++) {
@@ -1305,14 +1544,6 @@ FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 	// 		}
 	// 	}
 	// }
-	emit_function_infos();
-	// emit_leaders();
-	emit_blocks();
-
-	return function_list;
-}
-
-void emit_function_infos() {
 	for (int i = 0; i < function_list->size; i++) {
 		printf("Function name: \033[32m%s\033[0m -> Start Index: %d -> End Index: %d\n", function_list->infos[i]->symbol->name, function_list->infos[i]->tac_start_index, function_list->infos[i]->tac_end_index);
 	}
@@ -1332,110 +1563,10 @@ void emit_blocks() {
 				printf("\tBlock %d:\n", j);
 				BasicBlock* current_block = function_list->infos[i]->cfg->all_blocks[j];
 				for (int k = 0; k < current_block->num_instructions; k++) {
-					printf("\t\tTAC type %d\n", current_block->instructions[k]->type);
+					printf("\t\tTAC type %d\n", current_block->instructions[k]->kind);
 				}
 
 			}			
 		}
 	}
 }
-// void emit_liveness_info(TACInstruction* instruction) {
-// 	if (!instruction) return;
-
-// 	char* live_state = NULL;
-
-// 	if (is_operand_label_or_symbol(instruction->result)) {
-// 		switch (instruction->result->kind) {
-// 			case OP_SYMBOL: {
-// 				live_state = (instruction->result->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-// 					instruction->result->value.sym->name,
-// 					live_state,
-// 					instruction->result->next_use);
-// 				break;
-// 			}
-
-// 			case OP_STORE: {
-// 				live_state = (instruction->result->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-// 					instruction->result->value.label_name, 
-// 					live_state,
-// 					instruction->result->next_use);
-// 				break;
-// 			}
-
-// 		}
-// 	}
-
-// 	if (is_operand_label_or_symbol(instruction->op1)) {
-// 		switch (instruction->op1->kind) {
-// 			case OP_SYMBOL: {
-// 				live_state = (instruction->op1->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-// 					instruction->op1->value.sym->name,
-// 					live_state,
-// 					instruction->op1->next_use);
-// 				break;
-// 			}
-
-// 			case OP_BINARY:
-// 			case OP_UNARY:
-// 			case OP_STORE: {
-// 				live_state = (instruction->op1->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-// 					instruction->op1->value.label_name,
-// 					live_state,
-// 					instruction->op1->next_use);
-// 				break;
-// 			}
-// 		}
-// 	}
-
-// 	if (is_operand_label_or_symbol(instruction->op2)) {
-// 		switch (instruction->op2->kind) {
-// 			case OP_SYMBOL: {
-// 				live_state = (instruction->op2->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-// 					instruction->op2->value.sym->name,
-// 					live_state,
-// 					instruction->op2->next_use);
-// 				break;
-// 			}
-
-// 			case OP_BINARY:
-// 			case OP_UNARY:
-// 			case OP_STORE: {
-// 				live_state = (instruction->op2->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n",
-// 					instruction->op2->value.label_name,
-// 					live_state,
-// 					instruction->op2->next_use);
-// 				break;
-// 			}
-// 		}
-// 	}
-
-// 	if (is_operand_label_or_symbol(instruction->op3)) {
-// 		switch (instruction->op3->kind) {
-// 			case OP_SYMBOL: {
-// 				live_state = (instruction->op3->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n}",
-// 					instruction->op3->value.sym->name,
-// 					live_state,
-// 					instruction->op3->next_use);
-// 				break;
-// 			}
-
-// 			case OP_BINARY:
-// 			case OP_UNARY:
-// 			case OP_STORE: {
-// 				live_state = (instruction->op3->is_live) ? "true" : "false";
-// 				printf("{Variable: \033[32m%s\033[0m, live=\033[32m%s\033[0m, Next use=\033[32m%d\033[0m}\n}",
-// 					instruction->op3->value.label_name,
-// 					live_state,
-// 					instruction->op3->next_use);
-// 				break;
-// 			}
-// 		}
-// 	}
-// }

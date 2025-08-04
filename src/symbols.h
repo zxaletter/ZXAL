@@ -19,21 +19,19 @@ typedef enum {
 
 typedef struct Symbol {
 	symbol_t kind;
-	
 	char* name;
+
 	struct Type* type;	
 	struct Symbol* link;
 	struct Symbol* next;
 	Node* params;
 
-	size_t local_byte_offset;
-	size_t total_bytes;
-	size_t param_byte_offset;
-	size_t actual_bytes;
-	
+	int scope_level;
+	int frame_byte_offset;	
 } Symbol;
 
 typedef struct SymbolTable {
+	int level;
 	int size;
 	int capacity;
 	Symbol** symbols;

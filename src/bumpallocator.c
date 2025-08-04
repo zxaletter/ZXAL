@@ -62,7 +62,7 @@ void* arena_allocate(Arena* A, size_t req_size) {
 	}
 
 	A->current_block->offset += padding;
-	void* new_ptr = (char*)A->current_block->p + A->current_block->offset;
+	void* new_ptr = A->current_block->p + A->current_block->offset;
 
 	A->current_block->offset += req_size;
 	memset(new_ptr, 0, req_size);

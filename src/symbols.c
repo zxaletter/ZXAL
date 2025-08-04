@@ -4,21 +4,19 @@
 #include "Parser/node.h"
 #include "types.h"
 
-Symbol* create_symbol(CompilerContext* ctx, symbol_t kind, 
+Symbol* create_symbol(CompilerContext* ctx, symbol_t kind,
 	char* name, Node* params, struct Type* t) {
 	Symbol* sym = arena_allocate(ctx->symbol_arena, sizeof(Symbol));
 	if (!sym) return NULL;
 
 	sym->kind = kind;
+	sym->scope_level = ctx->symbol_stack->top;
 	sym->name = NULL;
 	sym->type = t;
 	sym->params = params;
 	sym->link = NULL;
 	sym->next = NULL;
-	sym->local_byte_offset = 0;
-	sym->total_bytes = 0;
-	sym->param_byte_offset = 0;
-	sym->actual_bytes = 0;
+	sym->frame_byte_offset = -1;
 
 	if (name) {
 		int length = strlen(name);
@@ -37,7 +35,7 @@ SymbolTable* create_symbol_table(CompilerContext* ctx) {
 		perror("Error: Unable to allocate space for symbol table\n");
 		return NULL;
 	}
-	
+
 	table->size = 0;
 	table->capacity = INIT_TABLE_CAPACITY;
 	table->symbols = arena_allocate(ctx->symbol_arena, sizeof(Symbol*) * table->capacity);

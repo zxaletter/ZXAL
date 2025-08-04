@@ -20,9 +20,8 @@ typedef enum {
 	LOCAL_UPDATE
 } UpdateNodeInfoType;
 
-size_t get_num_bytes(Symbol* symbol);
 TypeKind get_kind(struct Type* t);
-
+int peek_scope_level(CompilerContext* ctx);
 int hash(int table_capacity, char* name);
 
 bool scope_bind(CompilerContext* ctx, Symbol* symbol, int hash_key);
@@ -35,13 +34,6 @@ bool push_scope(CompilerContext* ctx);
 void pop_scope(CompilerContext* ctx);
 
 bool has_expression_context();
-
-void update_node_info(Node* node, UpdateNodeInfoType kind, size_t size);
-void update_total_local_bytes(size_t size);
-void update_local_byte_offset(size_t size);
-void update_global_parameter_variables(size_t size);
-void set_total_local_bytes(Node* node);
-void reset_offsets();
 
 void resolve_expression(CompilerContext* ctx, Node* node);
 void resolve_statement(CompilerContext* ctx, Node* node);

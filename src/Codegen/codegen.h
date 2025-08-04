@@ -1,67 +1,57 @@
-// #ifndef CODEGEN_H
-// #define CODEGEN_H
+#ifndef CODEGEN_H
+#define CODEGEN_H
 
-// #include "symbols.h"
+#include "compilercontext.h"
+#include "IR/cfg.h"
+#include "symbols.h"
+#include "string.h"
 
-// #define MAX_REGISTERS 10
-// #define FUNCTION_REGS_COUNT 6
+#define EIGHT_BYTE_ALIGNMENT 8
+#define SIXTEEN_BYTE_ALIGNMENT 16
 
-// typedef enum {
-// 	REGISTER_USED,
-// 	REGISTER_FREE
-// } register_state;
+typedef enum {
+	TRUE_LBL,
+	FALSE_LBL,
+	END_LBL
+} jmp_label_t;
 
-// struct Register {
-// 	register_state state;
-// 	char* name;
-// };
+typedef struct {
+	FILE* file;
+	char* filename;
+	size_t current_text_pos;
+	size_t current_data_pos;
+} ASMWriter;
 
-// struct RegisterTable {
-// 	struct Register* register_table[MAX_REGISTERS];
-// 	int capacity;
-// };
+char* generate_jmp_label(CompilerContext* ctx, jmp_label_t type);
 
-// typedef enum {
-// 	SECTION_TEXT,
-// 	SECTION_DATA
-// } section_t;
+void write_asm_to_file(ASMWriter* writer, char* text);
 
-// typedef struct {
-// 	FILE* file;
-// 	size_t current_text_pos;
-// 	size_t current_data_pos;
-// } asm_writer;
+bool is_caller_saved(int reg);
+bool is_callee_saved(int reg);
 
+char* operator_to_string(tac_t type);
 
-// #define LABEL_STACK_CAPACITY 50
-// typedef struct {
-// 	int size;
-// 	int capacity;
-// 	int top;
-// 	int* labels;
-// } label_stack;
+char* get_op_code(tac_t type);
+void generate_jmp_asm(TACInstruction* tac, char* label, ASMWriter* writer);
+void generate_logical_operator_asm(TACInstruction* instruction, Operand* jmp_op, ASMWriter* writer);
+void generate_function_body(CompilerContext* ctx, CFG* cfg, ASMWriter* writer);
+void generate_function_prologue(CompilerContext* ctx, FunctionInfo* info, ASMWriter* writer);
 
-// label_stack* create_label_stack();
-// void push_label(int label);
-// bool is_label_stack_empty();
-// int peek_label();
-// void free_label_stack();
+char* create_function_label(CompilerContext* ctx, char* func_name);
+void emit_asm_for_functions(CompilerContext* ctx, FunctionList* function_list, ASMWriter* writer);
+char* get_full_text(CompilerContext* ctx, char* func_name);
+void generate_globals(CompilerContext* ctx, ASMWriter* writer);
 
-// void expression_codegen(Node* expr);
-// void statement_codegen(Node* stmt);
-// void second_pass_globals_codegen(Node* global_node);
-// void first_pass_globals_codegen(Node* global_node);
-// void codegen(Node* root, char* output);
-// void write_asm_to_section(asm_writer* writer, char* text, section_t type);
-// void init_asm_writer(char* output);
+void ensure_alignment(int* op_size, int alignment);
+bool contains_operand_symbol(OperandSet* op_set, Symbol* target_symbol);
+void get_bytes_from_operand(CompilerContext* ctx, OperandSet* symbols_set, Operand* op);
+size_t get_size(Operand* operand);
+void adjust_bytes_for_frame(CompilerContext* ctx, OperandSet* symbols_set, TACInstruction* instruction);
+void accumulate_bytes(CompilerContext* ctx, CFG* cfg, OperandSet* symbols_set, Symbol* func_symbol);
+void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_list);
 
+char* get_filename(CompilerContext* ctx, char* file);
+ASMWriter* create_asm_writer(CompilerContext* ctx, char* file);
+void codegen(CompilerContext* ctx, FunctionList* function_list, char* file);
 
-// int label_create();
-// char* label_name(int label);
-// char* scratch_name(struct RegisterTable* rt_struct, int i);
-// int scratch_alloc(struct RegisterTable* rt_struct);
-// void scratch_free(struct RegisterTable* rt_struct, int i);
-
-// void free_register(struct Register* reg);
-// void free_register_table();
-// #endif
+#endif
