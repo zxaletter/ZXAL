@@ -15,7 +15,6 @@ Parser initialize_parser(Lexer* lexer) {
 bool validate_token(CompilerContext* ctx, Parser* parser, token_t target_type) {
 	Token tok = peek_token(parser);
 	
-	printf("\033[33m[DEBUG validate_token] Checking token type %d against target %d\033[0m\n", tok.type, target_type);
 	if (tok.type != target_type) {
 		log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 		return false;
@@ -51,7 +50,6 @@ void init_error_table(CompilerContext* ctx) {
 	error_table = create_error_table(ctx);
 	if (error_table.errors == NULL) {
 		printf("In 'init_error_table', errors are NULL.\n");
-		// free(node_table.nodes);
 		exit(EXIT_FAILURE);
 	}
 }
@@ -410,11 +408,8 @@ Node* create_node(CompilerContext* ctx, node_t type,
 		printf("In 'create_node', unable to allocate space for node\n");
 		return NULL;
 	}
-	printf("In 'create_node', address: %p\n", node);
-	printf("Node Type is %d\n", type);
+
 	node->type = type;
-	printf("we assigned node type %d\n", node->type);
-	printf("here\n");
 	node->left = left;
 	node->right = right;
 	node->prev = prev;
@@ -431,10 +426,7 @@ Node* create_int_node(CompilerContext* ctx, node_t type, int val,
 	Node* next, Node* params, struct Type* t) {
 
 	Node* node = create_node(ctx, type, left, right, prev, next, params, t);
-	if (!node) {
-		printf("In 'create_int_node', receieved NULL node from 'create_node'.\n");
-		return NULL;
-	}
+	if (!node) return NULL;
 	node->value.val = val;
 	return node;
 }
@@ -444,10 +436,7 @@ Node* create_string_node(CompilerContext* ctx, node_t type, char* id,
 	Node* next, Node* params, struct Type* t) {
 
 	Node* node = create_node(ctx, type, left, right, prev, next, params, t);
-	if (!node) {
-		printf("In 'create_string_node', received NULL node from 'create_node'.\n");
-		return NULL;
-	} 
+	if (!node) return NULL;
 	node->value.name = NULL;
 
 	if (id) {
@@ -519,11 +508,9 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 				
 				Node* call_node = create_node(ctx, NODE_CALL, identifier_node, NULL, NULL, NULL, args, NULL);
 				if (!call_node) {
-					printf("In parse_factor, unable to create node with type NODE_CALL.\n");
+					// printf("In parse_factor, unable to create node with type NODE_CALL.\n");
 					return NULL;
-				} else {
-					printf("\033[32mCreated Call Node with left node having name '%s'\0330m\n", call_node->left->value.name);
-				}
+				} 
 
 				node = call_node;
 				
@@ -1310,7 +1297,7 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				advance_parser(parser);
 				
 				Node* args = parse_args(ctx, parser);
-				stmt =  create_node(ctx, NODE_CALL, node, args, NULL, NULL, NULL, NULL);
+				stmt =  create_node(ctx, NODE_CALL, node, NULL, NULL, NULL, args, NULL);
 				if (!stmt) {
 					printf("\033[31mUnable to create NODE_CALL in parse_statement\033[0m\n");
 					return NULL;

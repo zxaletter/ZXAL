@@ -1,21 +1,28 @@
 #include "compilercontext.h"
 #include "symbols.h"
 
+char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
+							"void", "struct", "enum", "if",
+							"else", "for", "while",
+						    "continue", "break", "return",
+							"switch", "case", "true", "false", "str"
+						   };
+
 CompilerContext* create_compiler_context() {
-	printf("here in create_compiler_context\n");
 	CompilerContext* ctx = malloc(sizeof(CompilerContext));
 	if (!ctx) {
 		perror("\033[31mError\033[0m: unable to allocate space for compiler context\n");
 		return NULL;
 	}
 
+	ctx->keywords = keywords;
 	ctx->lexer_arena = create_arena(LEXER_ARENA);
 	if (!ctx->lexer_arena) {
 		printf("could not create lexer arena\n");
 		free(ctx);
 		return NULL;
 	}
-	printf("heeeeeeeeeelo\n");
+
 	ctx->ast_arena = create_arena(AST_ARENA);
 	if (!ctx->ast_arena) {
 		printf("could not create lexer arena\n");
@@ -23,7 +30,7 @@ CompilerContext* create_compiler_context() {
 		free(ctx);
 		return NULL;
 	}
-	printf("heeeeeeeeeelo2\n");
+
 	ctx->type_arena = create_arena(TYPE_ARENA);
 	if (!ctx->type_arena) {
 		printf("could not create type arena\n");
@@ -32,7 +39,7 @@ CompilerContext* create_compiler_context() {
 		free(ctx);
 		return NULL;
 	}
-	printf("heeeeeeeeeelo3\n");
+
 	ctx->symbol_arena = create_arena(SYMBOL_ARENA);
 	if (!ctx->symbol_arena) {
 		printf("could not create symbol arena\n");
@@ -42,11 +49,9 @@ CompilerContext* create_compiler_context() {
 		free(ctx);
 		return NULL;
 	}
-	printf("heeeeeeeeeelo4\n");
+
 	if (ctx->symbol_arena) {
-		printf("here\n");
 		ctx->global_table = create_symbol_table(ctx);
-		printf("global table\n");
 		if (!ctx->global_table) {
 			printf("could not create global symbol table\n");
 			free_arena(ctx->symbol_arena);
@@ -58,7 +63,6 @@ CompilerContext* create_compiler_context() {
 		}
 
 		ctx->symbol_stack = create_stack(ctx);
-		printf("symbol stack\n");
 		if (!ctx->symbol_stack) {
 			printf("could not create symbol stack\n");
 			free_arena(ctx->symbol_arena);
@@ -68,9 +72,8 @@ CompilerContext* create_compiler_context() {
 			free(ctx);
 			return NULL;
 		}
-
 	}
-	printf("heeeeeeeeeelo5\n");
+
 	ctx->ir_arena = create_arena(IR_ARENA);
 	if (!ctx->ir_arena) {
 		free_arena(ctx->symbol_arena);
@@ -103,7 +106,7 @@ CompilerContext* create_compiler_context() {
 		free(ctx);
 		return NULL;
 	}
-	printf("about to return compiler context\n");
+
 	return ctx;
 }
 

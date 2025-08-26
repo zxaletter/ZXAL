@@ -253,7 +253,6 @@ struct Type* typecheck_expression(CompilerContext* ctx, Node* node) {
 		}
 
 		case NODE_NAME: {
-			// printf("\033[32mIn node name case processing '%s'\033[0m\n", node->value.name);
 			void* sym = node->symbol;
 			if ((Symbol*)sym) {
 				Type* t = ((Symbol*)sym)->type;
@@ -341,7 +340,6 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 					return type_create(ctx, TYPE_UNKNOWN, NULL);
 				}			
 			}
-			printf("LEAVING NODE ASSIGNMENT CASE IN TYPECHECK STATEMENT\n");
 			break;
 		}
 
@@ -442,8 +440,6 @@ void typecheck_params(Node* params) {
 	if (!actual_param) { return; }
 	if (!type_equals(actual_param->t, ((Symbol*)actual_param->symbol)->type)) { 
 		return; 
-	} else {
-		printf("Types for '%s' are equal\n", actual_param->value.name);
 	}
 }
 
@@ -466,7 +462,7 @@ void typecheck_globals(CompilerContext* ctx, Node* node) {
 			if ((Type*)node->t) {
 				if (((Type*)node->t)->kind == TYPE_FUNCTION) {
 					add_func_symbol(ctx, (Symbol*)node->symbol);
-					printf("\033[32mAbout to typecheck function '%s'\033[0m\n", node->value.name);
+					// printf("\033[32mAbout to typecheck function '%s'\033[0m\n", node->value.name);
 					if (node->params) {
 						Node* wrapped_param = node->params;
 						while (wrapped_param) {
@@ -479,7 +475,7 @@ void typecheck_globals(CompilerContext* ctx, Node* node) {
 					if (node->right) {
 						typecheck_statement(ctx, node->right);
 					}
-					printf("\033[32mFinished typechecking function'%s'\033[0m\n", node->value.name);
+					// printf("\033[32mFinished typechecking function'%s'\033[0m\n", node->value.name);
 					pop_func_symbol();
 				}
 			}

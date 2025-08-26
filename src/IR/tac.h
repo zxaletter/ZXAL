@@ -8,7 +8,7 @@
 #include "Parser/node.h"
 #include "Parser/parser.h"
 #include "types.h"
-#include "errorsandcontext.h"
+#include "errors.h"
 #include <stdbool.h>
 
 #define INITIAL_TABLE_CAPACITY 500 
@@ -78,6 +78,7 @@ typedef union {
 	char* label_name;
 } OperandValue;
 
+
 typedef struct Operand {
 	operand_t kind;
 	OperandValue value;
@@ -90,18 +91,22 @@ typedef struct Operand {
 	int next_use;
 	//----------
 
+	int* restricted_regs;
+	int restricted_regs_count;
+	bool restricted;
 
 	//----------
 	// for reg allocation 
-	bool precedes_conditional; 
-	int live_on_exit;
+	bool precedes_conditional;
 	//-----------
 
 	int assigned_register;
-	bool needs_preservation;
-	bool needs_spill;
-
+	int temp_register;
+	bool permanent_frame_position;
 	size_t frame_byte_offset;
+
+	void* interference_bundle;
+	bool pre_colored;
 } Operand;
 
 typedef struct {
@@ -161,7 +166,8 @@ typedef enum {
 	TAC_LABEL,
 	TAC_DEREFERENCE_AND_ASSIGN,
 	TAC_UNARY_ADD,
-	TAC_UNARY_SUB
+	TAC_UNARY_SUB,
+	TAC_FUNCTION_RET_VAL
 } tac_t;
 
 typedef struct {
@@ -183,6 +189,7 @@ typedef struct {
 	int size;
 	int capacity;
 	TACInstruction** tacs;
+
 	OperandSet* op_names;
 } TACTable;
 
@@ -200,6 +207,8 @@ typedef struct {
 	int top;
 	TACContext** contexts;
 } TACContextStack;
+
+void add_to_local_table(CompilerContext* ctx, TACTable* local_table, TACInstruction* tac);
 
 bool determine_if_next_conditional(Node* node, bool has_next_statement);
 void emit_label(CompilerContext* ctx, char* label);
@@ -248,8 +257,7 @@ void set_end_label_based_on_context(TACContext* context, char** end_label);
 void reset_context_stack();
 void reset_tac_indices();
 
-void hash_operand(CompilerContext* ctx, OperandSet* op_set, Operand* op, int hash_key);
-Operand* find_operand_in_op_set(OperandSet* op_set, Operand* sym_op, int hash_key);
+Operand* find_operand_in_op_set(OperandSet* op_set, Operand* sym_op);
 
 void build_tac_from_parameter_dag(CompilerContext* ctx, Node* node);
 TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node);

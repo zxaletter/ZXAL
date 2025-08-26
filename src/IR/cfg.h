@@ -38,7 +38,80 @@ typedef struct {
 	int capacity;
 } LivenessTable;
 
-typedef struct BasicBlock BasicBlock;
+typedef enum {
+	REG,
+	STACK
+} arg_location;
+
+typedef struct {
+	char* func_name;
+	int start;
+	int end;
+	int instr_id;
+} CallInstruction;
+
+typedef struct {
+	arg_location loc;
+	TACInstruction* tac;
+} ArgumentInfo;
+
+typedef struct {
+	int size;
+	int capacity;
+	ArgumentInfo** args;
+	CallInstruction* c_instr;
+} ArgumentList;
+
+typedef struct {
+	int call_instr_count;
+	ArgumentList** lists;
+} StructuredArgs;
+
+typedef enum {
+	REG_TO_FRAME,
+	FRAME_TO_REG,
+	PUSH_TO_STACK,
+	POP_FROM_STACK
+} direction_t;
+
+typedef struct {
+	int assigned_register;
+	int frame_byte_offset;
+	int push_index;
+	int block_index;
+	direction_t direction;
+} Spill;
+
+typedef struct {
+	int size;
+	Spill* spills;
+} SpillBundle;
+
+typedef struct {
+	int size;
+	int capacity;
+	Spill* spills;
+} SpillSchedule;
+
+typedef struct {
+	int assigned_register;
+	int frame_byte_offset;
+	int pop_index;
+	int block_index;
+	direction_t direction;
+} Reload;
+
+typedef struct {
+	int size;
+	Reload* reloads;
+} ReloadBundle;
+
+typedef struct {
+	int size;
+	int capacity;
+	Reload* reloads;
+} ReloadSchedule;
+
 typedef struct BasicBlock {
 	int id;
 	int num_instructions;
@@ -52,14 +125,18 @@ typedef struct BasicBlock {
 	bool visited;
 	
 	TACInstruction** instructions;
-	BasicBlock** predecessors;
-	BasicBlock** successors;
+	struct BasicBlock** predecessors;
+	struct BasicBlock** successors;
 
 	OperandSet* use_set;
 	OperandSet* def_set;
 	OperandSet* in_set;
 	OperandSet* out_set;
 
+	StructuredArgs* sargs;
+	SpillSchedule* spill_schedule; // for standard emission of push instructions
+	ReloadSchedule* reload_schedule;
+	ReloadBundle* reload_bundle; // for emission of pop instructions for callee regs in correct order
 } BasicBlock;
 
 typedef struct {
@@ -68,6 +145,7 @@ typedef struct {
 	int blocks_capacity;
 	BasicBlock** all_blocks;
 	LivenessTable* table;
+	ArgumentList* args
 } CFG;
 
 typedef struct {
@@ -81,6 +159,19 @@ typedef struct {
 	int capacity;
 	InterferenceBundle** bundles;
 } InterferenceGraph;
+
+typedef struct {
+	int start;
+	int end;
+	TACInstruction* tac;
+	int block_index;
+} CallSite;
+
+typedef struct {
+	int size;
+	int capacity;
+	CallSite* sites;	
+} CallGraph;
 
 typedef struct {
 	Symbol* symbol;
@@ -158,7 +249,6 @@ bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions);
 void link_function_cfgs(CompilerContext* ctx);
 TACLeaders crete_tac_leaders(CompilerContext* ctx);
 
-void emit_function_infos();
 void build_function_cfg(CompilerContext* ctx, TACTable* instructions, FunctionInfo* info);
 bool found_label(TACInstruction* instruction);
 bool found_function(TACInstruction* instruction);

@@ -1,24 +1,92 @@
 #include "regalloc.h"
+#include "assert.h"
+#include "IR/tac.h"
 
-void ensure_calling_convention(TACInstruction* instruction, int* arg_index, int* param_index) {
+void find_new_register(InterferenceBundle* bundle, int* remaining_registers, Operand* op) {
+	for (int i = 0; i < NUM_REGISTERS; i++) {
+		if (remaining_registers[i] == -1) continue;
+		bool can_use = true;
+	
+		for (int j = 0; j < bundle->interferes_with->size; j++) {
+			Operand* interfering_op = bundle->interferes_with->elements[j];
+			if (interfering_op->permanent_frame_position) continue;
+			if (interfering_op->assigned_register == remaining_registers[i]) {
+				can_use = false;
+				break;
+			}
+		}
+
+		if (can_use) {
+			switch (op->kind) {
+				case OP_SYMBOL: {
+					printf("\033[32m%s found register %d\033[0m\n", op->value.sym->name, remaining_registers[i]);
+					break;
+				}
+
+				default: {
+					printf("\033[32m%s found register %d\033[0m\n", op->value.label_name, remaining_registers[i]);
+					break;
+				}
+			}
+			op->assigned_register = remaining_registers[i];
+			break;
+		} else {
+			switch (op->kind) {
+				case OP_SYMBOL: {
+					printf("\033[31m%s could not find register\033[0m\n", op->value.sym->name);
+					break;
+				}
+
+				default: {
+					printf("\033[31m%s could not find register\033[0m\n", op->value.label_name);
+					break;
+				}
+			}
+		}
+	}
+}
+
+bool is_restricted(int* restricted_regs, int restricted_regs_count, int reg) {
+	for (int i = 0; i < restricted_regs_count; i++) {
+		if (restricted_regs[i] == reg) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void application_binary_interface(TACInstruction* instruction, int* arg_index, int* param_index) {
 	if (instruction) {
 		switch (instruction->kind) {
 			case TAC_ARG: {
-				if (*arg_index < 6) {
-					instruction->op1->assigned_register = ARG_OFFSET + *arg_index;
-					(*arg_index)++;
-				} else {
-					instruction->op1->needs_spill = true;
+				if (instruction->op1) {
+					if (*arg_index < 6) {
+						instruction->result->assigned_register = ARG_OFFSET + *arg_index;
+						(*arg_index)++;
+					} else {
+						instruction->op1->permanent_frame_position = true;
+					}
+
 				}
 				break;
 			}
 
 			case TAC_PARAM: {
 				if (*param_index < 6) {
+					switch (instruction->op1->kind) {
+						case OP_SYMBOL: {
+							printf("Param '%s' with address: %p assigned register=%d\n", instruction->op1->value.sym->name, (void*)instruction->op1, ARG_OFFSET + *param_index);
+							break;
+						}
+						default: {
+							printf("Param '%s' with address: %p assigned address=%d\n", instruction->op1->value.label_name, (void*)instruction->op1, ARG_OFFSET + *param_index);
+							break;
+						}
+					}
 					instruction->op1->assigned_register = ARG_OFFSET + *param_index;
 					(*param_index)++;
 				} else {
-					instruction->op1->needs_spill = true;
+					instruction->op1->permanent_frame_position = true;
 				}
 				break;
 			}
@@ -28,13 +96,13 @@ void ensure_calling_convention(TACInstruction* instruction, int* arg_index, int*
 				break;
 			}
 
-			case TAC_ASSIGNMENT: {
-				if (!instruction->result || !instruction->op2) break;
-				if (instruction->result->kind != OP_STORE) break;
-				if (instruction->op2->kind != OP_RETURN) break;
-				instruction->op2->assigned_register = 0;
-				break;
-			}
+			// case TAC_MODULO:
+			// case TAC_DIV: {
+			// 	if (instruction->op1) {
+			// 		instruction->op1->assigned_register = 0;
+			// 	}
+			// 	break;
+			// }
 
 			case TAC_RETURN: {
 				if (instruction->result && instruction->op1) {
@@ -58,14 +126,33 @@ void pre_color_nodes(FunctionInfo* info) {
 		BasicBlock* block = cfg->all_blocks[i];
 		for (int j = 0; j < block->num_instructions; j++) {
 			TACInstruction* instruction = block->instructions[j];
-			ensure_calling_convention(instruction, &arg_index, &param_index);
+			application_binary_interface(instruction, &arg_index, &param_index);
 		}
 	}
+}
+
+int* get_remaining_registers(CompilerContext* ctx, int* restricted_regs, int restricted_regs_count) {
+	int* remaining_registers = arena_allocate(ctx->codegen_arena, sizeof(int) * NUM_REGISTERS);
+	if (!remaining_registers) return NULL;
+
+	for (int i = 0; i < NUM_REGISTERS; i++) {
+		remaining_registers[i] = i;
+	}
+
+	for (int i = 0; i < restricted_regs_count; i++) {
+		for (int j = 0; j < NUM_REGISTERS; j++) {
+			if (restricted_regs[i] == remaining_registers[j]) {
+				remaining_registers[j] = -1;
+			}
+		}
+	}
+	return remaining_registers;
 }
 
 void color_interference_graphs(CompilerContext* ctx, FunctionList* function_list) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
+		printf("\nAbout to color interference graph for function \033[32m%s\033[0m\n", info->symbol->name);
 		InterferenceGraph* graph = info->graph;
 
 		pre_color_nodes(info);
@@ -73,22 +160,50 @@ void color_interference_graphs(CompilerContext* ctx, FunctionList* function_list
 		for (int j = 0; j < graph->size; j++) {
 			InterferenceBundle* bundle = graph->bundles[j];
 			Operand* op = bundle->operand;
-
-			// from interference graph construction
-			if (op->live_on_exit == 0) continue;
-			if (op->precedes_conditional) continue;
-
+			if (strcmp(info->symbol->name, "classify_numbers") == 0) {
+				switch (op->kind) {
+					case OP_SYMBOL: {
+						printf("Processing '%s' with address: %p\n", op->value.sym->name, (void*)op);
+						break;
+					}
+					default: {
+						printf("Processing '%s'\n", op->value.label_name);
+						break;
+					}
+				}
+			}
 			// pre colored
-			if (op->assigned_register != -1 || op->needs_spill) continue;
+			if (op->assigned_register != -1 || op->permanent_frame_position) {
+				switch (op->kind) {
+					case OP_SYMBOL: {
+						printf("%s was precolored\n", op->value.sym->name);
+						if (op->permanent_frame_position) {
+							printf("%s has permanent_frame_position\n", op->value.sym->name);
+						} else if (op->assigned_register != -1) {
+							printf("%s has assigned register=%d\n", op->value.sym->name, op->assigned_register);
+						}
+						break;
+					}
+					default: {
+						printf("%s was precolored\n", op->value.label_name);
+						if (op->permanent_frame_position) {
+							printf("%s has permanent_frame_position\n", op->value.label_name);
+						} else if (op->assigned_register != -1) {
+							printf("%s has assigned register=%d\n",op->value.label_name, op->assigned_register);
+						}
+						break;
+					}
+				}
 
+				continue;
+			}
 			for (int reg = 0; reg < NUM_REGISTERS; reg++) {
 				bool can_use = true;
 
 				for (int k = 0; k < bundle->interferes_with->size; k++) {
 					Operand* interfering_op = bundle->interferes_with->elements[k];
 
-					if (interfering_op->needs_spill) continue;
-					if (interfering_op->precedes_conditional) continue;
+					if (interfering_op->permanent_frame_position) continue;
 					if (interfering_op->assigned_register == reg) {
 						can_use = false;
 						break;
@@ -96,13 +211,29 @@ void color_interference_graphs(CompilerContext* ctx, FunctionList* function_list
 				}
 
 				if (can_use) {
-					op->assigned_register = reg;
+					if (op->restricted && is_restricted(op->restricted_regs, op->restricted_regs_count, reg)) {
+						int* remaining_registers = get_remaining_registers(ctx, op->restricted_regs, op->restricted_regs_count);
+						assert(remaining_registers);
+						find_new_register(bundle, remaining_registers, op);	
+					} else {
+						op->assigned_register = reg;
+						switch (op->kind) {
+							case OP_SYMBOL: {
+								printf("'%s' has been assigned register=%d\n", op->value.sym->name, reg);
+								break;
+							}
+							default: {
+								printf("'%s' has been assigned register=%d\n", op->value.label_name, reg);
+								break;
+							}
+						}
+					}
 					break;
 				}
 			}
 
 			if (op->assigned_register == -1) {
-				op->needs_spill = true;
+				op->permanent_frame_position = true;
 			}
 		}
 	}

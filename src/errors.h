@@ -2,7 +2,6 @@
 #define ERRORS_AND_CONTEXT_H
 
 #define ERROR_CAPACITY 100
-#define CONTEXT_CAPACITY 10
 
 #include "Lexer/lexer.h"
 #include "compilercontext.h"
@@ -48,35 +47,6 @@ typedef struct {
 	int error_index;
 } ErrorTable;
 
-typedef enum {
-	CONTEXT_OP,
-	CONTEXT_IF,
-	CONTEXT_ELSE_IF,
-	CONTEXT_ELSE,
-	CONTEXT_CALL,
-	CONTEXT_RETURN,
-	CONTEXT_AUG,
-	CONTEXT_ASSIGNMENT,
-	CONTEXT_SUBSCRIPT,
-	CONTEXT_LOOP,
-	CONTEXT_VOID_FUNCTION,
-	CONTEXT_NONVOID_FUNCTION
-} context_t;
-
-typedef struct ContextStack {
-	int top;
-	int capacity;
-	context_t* contexts;
-} ContextStack;
-
-bool is_context_stack_empty();
-bool context_lookup(context_t context);
-void push_context(CompilerContext* ctx, context_t context);
-void pop_context();
-// void init_context();
-ContextStack* create_context(CompilerContext* ctx);
-void free_context_stack();
-
 void log_error(CompilerContext* ctx, Token* tok, FileInfo* info, error_t error);
 void init_error_table(CompilerContext* ctx);
 void add_error_to_error_table(CompilerContext* ctx, Error* err);
@@ -86,6 +56,5 @@ void emit_errors(CompilerContext* ctx);
 
 ErrorTable create_error_table(CompilerContext* ctx);
 void free_error(Error* error);
-void free_error_table();
 
 #endif

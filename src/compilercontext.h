@@ -5,6 +5,7 @@
 typedef struct SymbolTable SymbolTable;
 typedef struct SymbolStack SymbolStack;
 
+#define KEYWORDS 20
 typedef struct CompilerContext {
 	Arena* lexer_arena;
 	Arena* ast_arena;
@@ -14,8 +15,10 @@ typedef struct CompilerContext {
 	Arena* codegen_arena;
 	Arena* error_arena;
 
-	SymbolTable* global_table;
-	SymbolStack* symbol_stack;
+	SymbolTable* global_table; // for having access to function symbols, say with CALL Nodes
+	SymbolStack* symbol_stack; // for scopes
+
+	char** keywords;
 } CompilerContext;
 
 CompilerContext* create_compiler_context();

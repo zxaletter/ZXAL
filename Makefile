@@ -28,6 +28,6 @@ zxal: $(OBJECTS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJECTS) prac.asm zxal
+	rm -f $(OBJECTS) prac.asm zxal prac
 
 .PHONY: all clean

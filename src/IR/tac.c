@@ -1,4 +1,5 @@
 #include "tac.h"
+#include "assert.h"
 
 static int label_counter = 0;
 static int tac_variable_index = 0;
@@ -283,7 +284,11 @@ void add_to_operand_set(CompilerContext* ctx, OperandSet* op_set, Operand* opera
 		}
 		op_set->elements = new_elements;
 	}
-	op_set->elements[op_set->size++] = operand;
+
+	bool op_exists = contains_operand(op_set, operand);
+	if (!op_exists) {
+		op_set->elements[op_set->size++] = operand;
+	}
 }
 
 OperandSet* create_operand_set(CompilerContext* ctx) {
@@ -302,15 +307,24 @@ OperandSet* create_operand_set(CompilerContext* ctx) {
 
 Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value, TypeKind type) {
 	Operand* operand = arena_allocate(ctx->ir_arena, sizeof(Operand));
-	if (!operand) return NULL;
-
-	operand->link = NULL;
-	operand->assigned_register = -1;
-	operand->live_on_exit = 1;
-	operand->needs_spill = false;
-	operand->precedes_conditional = false;
+	if (!operand) {
+		printf("unable to allocate space for operand\n");
+		return NULL;
+	}
 	operand->kind = kind;
 	operand->type = type;
+	operand->link = NULL;
+	
+	operand->restricted_regs = NULL;
+	operand->restricted = false;
+	operand->restricted_regs_count = -1;
+
+	operand->assigned_register = -1;
+	operand->temp_register = -1;
+	operand->permanent_frame_position = false;
+	operand->precedes_conditional = false;
+	operand->interference_bundle = NULL;
+	operand->pre_colored = false;
 	
 	switch (kind) {	
 		case OP_ARG:
@@ -461,79 +475,34 @@ TypeKind node_to_type(node_t type) {
 	}
 }
 
-void hash_operand(CompilerContext* ctx, OperandSet* op_set, Operand* op, int hash_key) {
-	if (!op) return;
-	
-	if (op_set->size >= op_set->capacity) {
-		int prev_capacity = op_set->capacity;
+Operand* find_operand_in_op_set(OperandSet* op_set, Operand* sym_op) {
+	for (int i = 0; i < op_set->size; i++) {
+		Operand* current_op = op_set->elements[i];
+		if (current_op && current_op->value.sym  == sym_op->value.sym) {
+			return current_op;
+		}
+	}
+	return NULL;
+}
 
-		Operand** all_operands = op_set->elements;
+void add_to_local_table(CompilerContext* ctx, TACTable* arg_table, TACInstruction* arg) {
+	if (arg_table->size >= arg_table->capacity) {
+		int prev_capacity = arg_table->capacity;
 
-		op_set->capacity *= 2;
-		int new_capacity = op_set->capacity;
-		void* new_operands = arena_reallocate(
+		arg_table->capacity *= 2;
+		int new_capacity = arg_table->capacity;
+		void* new_tacs = arena_reallocate(
 			ctx->ir_arena,
-			op_set->elements,
+			arg_table->tacs,
 			prev_capacity,
 			new_capacity
 		);
 
-		if (!new_operands) return; 
+		assert(new_tacs);
 
-		op_set->elements = new_operands;
-		for (int i = 0; i < new_capacity; i++) {
-			op_set->elements[i] = NULL;
-		}
-
-		op_set->size = 0;
-
-		for (int i = 0; i < prev_capacity; i++) {
-			Operand* current_op = all_operands[i];
-
-			while (current_op) {
-				Operand* next_op_in_chain = current_op->link;
-				int updated_hash_key = hash(op_set->capacity, current_op->value.sym->name);
-				if (updated_hash_key == -1) return;
-
-				current_op->link = op_set->elements[updated_hash_key];
-				op_set->elements[updated_hash_key] = current_op;
-				if (!current_op->link) {
-					op_set->size++;
-				}
-
-				current_op = next_op_in_chain;
-			}
-		}
-
-		hash_key = hash(op_set->capacity, op->value.sym->name);
+		arg_table->tacs = new_tacs;
 	}
-
-
-	if (op_set->elements[hash_key]) {
-		op->link = op_set->elements[hash_key];
-		op_set->elements[hash_key];
-	} else {
-		op_set->elements[hash_key] = op;
-		op->link = NULL;
-		op_set->size++;
-	}
-
-	return true;
-}
-
-Operand* find_operand_in_op_set(OperandSet* op_set, Operand* sym_op, int hash_key) {
-	Operand* current = op_set->elements[hash_key];
-	
-	while (current) {
-		Operand* next_op_in_chain = current->link;
-		if (current->value.sym->name && 
-			current->value.sym->scope_level == sym_op->value.sym->scope_level &&
-			strcmp(current->value.sym->name, sym_op->value.sym->name) == 0) {
-			return current;
-		}
-		current = next_op_in_chain;
-	}
-	return NULL;
+	arg_table->tacs[arg_table->size++] = arg;
 }
 
 TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) {
@@ -550,7 +519,15 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			TACInstruction* left = build_tac_from_expression_dag(ctx, node->left);
 			TACInstruction* right = build_tac_from_expression_dag(ctx, node->right);
 
-			if (!left || !right) return NULL;
+			if (!left || (left && !left->result)) {
+				printf("\033[31mProcessing node type %d, left or left result is NULL\n", node->type);
+				return NULL;
+			}
+
+			if (!right || (right && !right->result)) {
+				printf("\033[31mProcessing node type %d, right or right result is NULL\n", node->type);
+				return NULL;
+			}
 			OperandValue main_operand_value = {
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
@@ -558,7 +535,11 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			Operand* binary_operand = create_operand(ctx, op_type, main_operand_value, TYPE_INTEGER);
 			
 			result = create_tac(ctx, kind, binary_operand, left->result, right->result);
-			add_tac_to_table(ctx, result);
+			if (result) {
+				printf("finished processing node type %d\n", node->type);
+				printf("\033[32mWe got result in binary op\033[0m\n");
+				add_tac_to_table(ctx, result);
+			}
 			break;
 		}
 
@@ -639,7 +620,10 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			Operand* right_operand = create_operand(ctx, OP_INT_LITERAL, buffer_union, TYPE_INTEGER);
 			
 			result = create_tac(ctx, type, left_operand, right_operand, NULL);
-			add_tac_to_table(ctx, result);
+			if (result) {
+				printf("\033[32mWe got result in NODE_INTEGER/CHAR/BOOL\033[0m\n");
+				add_tac_to_table(ctx, result);
+			}
 			printf("\033[32mLeaving NODE_INTEGER|BOOL|CHAR\033[0m\n");
 			break;
 		}
@@ -686,62 +670,84 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 		}
 
 		case NODE_NAME: {		
-			printf("\033[32mIn NODE_NAME\033[0m\n");	
+			printf("\033[32mIn NODE_NAME\033[0m\n");
+			printf("Processing name: %s\n", node->value.name);	
 			OperandValue sym_val;
 			Operand* sym_op = NULL;
 			
 			if (node->symbol && ((Symbol*)node->symbol)->type) {
+				printf("\033[33mAttempting to create SYM op\033[0m\n");
 				sym_val.sym = node->symbol;
 				Type* t = ((Symbol*)node->symbol)->type;
 				sym_op = create_operand(ctx, OP_SYMBOL, sym_val, t->kind);
+				if (!sym_op) {printf("\033[31mSym op is NULL\033[0m\n");}
 			}
-
 			Operand* existing_sym_op = NULL;
-			char* sym_name = NULL;
-
 			if (sym_op) {
-				sym_name = ((Symbol*)node->symbol)->name;
-			}
-
-			int hash_key = hash(tac_table->op_names->capacity, sym_name);
-
-			if (sym_op && hash_key >= 0) {
-				existing_sym_op = find_operand_in_op_set(tac_table->op_names, sym_op, hash_key);
+				existing_sym_op = find_operand_in_op_set(tac_table->op_names, sym_op);
 			}
 
 			if (existing_sym_op) {
 				result = create_tac(ctx, TAC_NAME, existing_sym_op, NULL, NULL);
+				printf("Found existing sym op with address: %p\n", (void*)existing_sym_op);
 			} else {
 				result = create_tac(ctx, TAC_NAME, sym_op, NULL, NULL);
-				hash_operand(ctx, tac_table->op_names, sym_op, hash_key);
+				printf("Does not have existing sym op, using sym op with address: %p\n", (void*)sym_op);
+				add_to_operand_set(ctx, tac_table->op_names, sym_op);
 			}
 
-			// result = create_tac(ctx, TAC_NAME, sym_op, NULL, NULL);
-
 			printf("\033[32mLeaving NODE_NAME\033[0m\n");
+
 			break;
 		}
 
 		case NODE_ARG: {
+			// printf("\033[33mIN NODE_ARG CASE\033[0m\n");
 			OperandValue arg_value_label = {
 				.label_name = generate_label(ctx, ARG_LABEL)
 			};
 			Operand* left_operand = create_operand(ctx, OP_ARG, arg_value_label, TYPE_UNKNOWN);
-
+			// printf("Type of node->right is %d\n", node->right->type);
 			TACInstruction* arg = build_tac_from_expression_dag(ctx, node->right);
-			if (!arg) return NULL;
-
-			TACInstruction* arg_tac = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL);
-			add_tac_to_table(ctx, arg_tac);
+			if (!arg || (arg && !arg->result)) {
+				printf("\033[31mARG is NULL\033[0m\n");
+				return NULL;
+			}
+			printf("\033[33mWe got ARG\033[0m\n");
+			
+			result = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL);
+			
+			// add_tac_to_table(ctx, arg_tac);
 			break;
 		}
 
 		case NODE_CALL: {
-			Node* arg = node->right;
+			printf("\033[33mIN NODE_CALL CASE\033[0m\n");
+			TACTable* arg_table = create_tac_table(ctx);
+
+			Node* arg = node->params;
 			while (arg) {
+				printf("\033[33mWE HAVE ARGS\033[0m\n");
 				Node* next_arg = arg->next;
-				build_tac_from_expression_dag(ctx, arg);
+				TACInstruction* tac = build_tac_from_expression_dag(ctx, arg);
+				if (tac) {
+					add_to_local_table(ctx, arg_table, tac);
+				}
 				arg = next_arg;
+			}
+
+			tac_function_argument_index = 0;
+
+			printf("Size of arg_table=%d\n", arg_table->size);
+			for (int i = 0; i < arg_table->size; i++) {
+				printf("\033[34mProcessing tacs in local arg table\033[0m\n");
+				TACInstruction* tac_arg = arg_table->tacs[i];
+				if (tac_arg) {
+					printf("\033[32mTAC is valid, will add to local arg table\033[0m\n");
+					add_tac_to_table(ctx, tac_arg);
+				} else {
+					printf("\033[31mIndex=%d, TAC is NULL, cannot add to local arg table\033[0m\n", i);
+				}
 			}
 
 			TACInstruction* function_name = build_tac_from_expression_dag(ctx, node->left);
@@ -750,11 +756,21 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL);
 			add_tac_to_table(ctx, tac_call);
 
+			// OperandValue _return_label = {
+			// 	.label_name = "_RET"
+			// };
+			// Operand* return_op = create_operand(ctx, OP_RETURN, _return_label, TYPE_UNKNOWN);
+			// result = create_tac(ctx, TAC_FUNCTION_RET_VAL, return_op, NULL, NULL);
+			
 			OperandValue func_return_val = {
 				.label_name = generate_label(ctx, VIRTUAL)
 			};
-			Type* t = ((Symbol*)node->symbol)->type;
-			Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val, t->kind);
+
+			Type* t = NULL;
+			if ((Symbol*)node->symbol) {
+				t = ((Symbol*)node->symbol)->type;
+			}
+			Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val, t ? t->kind : TYPE_UNKNOWN);
 
 			OperandValue _return_label = {
 				.label_name = "_RET"
@@ -922,12 +938,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 						return;
 					}
 
-					// if (!left_instruction->result || !right_instruction->result) {
-					// 	printf("\033[31mIn Node assignment case -> left result or right result is NULL\033[0m\n");
-					// 	return;
-					// }
-
-
 					TACInstruction* tac_assignment = create_tac(
 						ctx, 
 						TAC_ASSIGNMENT, 
@@ -971,206 +981,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL);
 			add_tac_to_table(ctx, tac_call);
-
-			// OperandValue func_return_val = {
-			// 	.label_name = generate_label(ctx, VIRTUAL)
-			// };
-			// Type* t = ((Symbol*)node->left->symbol)->type;
-			// Operand* function_label_operand = create_operand(ctx, OP_STORE, func_return_val, t ? t->kind : TYPE_UNKNOWN);
-
-			// OperandValue _return_label = {
-			// 	.label_name = "_RET"
-			// };
-			// Operand* _return_operand = create_operand(ctx, OP_RETURN, _return_label, TYPE_UNKNOWN);
-
-			// TACInstruction* tac_function_return = create_tac(ctx, TAC_ASSIGNMENT, function_label_operand, NULL, _return_operand);
-			// add_tac_to_table(ctx, tac_function_return);
 			printf("\033[32mLeaving NODE_CALL\033[0m\n");
 			break;
 		}
 
-		// case NODE_IF: {	
-		// 	printf("\033[32mIn NODE_IF\033[0m\n");
-		// 	bool has_next_statement = node->next != NULL;
-		// 	bool has_next_conditional = determine_if_next_conditional(node, has_next_statement);
-			 						
-		// 	char* if_false_label = NULL;
-		// 	char* next_jmp_label = NULL;
-		// 	char* end_label = NULL;
-
-		// 	TACContext* retrieved_context = peek_tac_context();
-		// 	if (retrieved_context) {
-		// 		set_end_label_based_on_context(retrieved_context, &end_label);				
-		// 	} else {
-		// 		end_label = generate_label(ctx, REG_LABEL);
-		// 	}
-
-		// 	if (has_next_conditional) {
-		// 		if_false_label = generate_label(ctx, REG_LABEL);
-		// 	}
-
-		// 	if (has_next_statement && !has_next_conditional) {
-		// 		next_jmp_label = generate_label(ctx, REG_LABEL);
-		// 	}
-
-		// 	TACContext* context_if = create_tac_context(
-		// 		ctx,
-		// 		CONTEXT_IF,
-		// 		if_false_label,
-		// 		end_label,
-		// 		NULL,
-		// 		retrieved_context ? false : true
-		// 	);
-		// 	push_tac_context(ctx, context_if);
-
-		// 	TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, node->left);
-		// 	if (!condition_tac) return;
-
-		// 	char* jump_target = NULL;
-		// 	if (has_next_conditional) {
-		// 		jump_target = if_false_label;
-		// 	} else if (has_next_statement) {
-		// 		jump_target = next_jmp_label;
-		// 	} else {
-		// 		jump_target = end_label;
-		// 	}
-
-		// 	emit_if_false(ctx, condition_tac->result, jump_target);
-
-		// 	if (node->right) {
-		// 		build_tac_from_statement_dag(ctx, node->right);
-		// 	}
-				
-		// 	if (has_next_conditional) {
-		// 		emit_goto(ctx, end_label);
-		// 	} else if (has_next_statement) {
-		// 		emit_goto(ctx, next_jmp_label);
-		// 		emit_label(ctx, next_jmp_label);
-		// 	}
-
-		// 	if (!has_next_statement && context_if->root_chain_mem) {
-		// 		emit_label(ctx, end_label);
-		// 	}	
-
-		// 	if (!has_next_conditional) {
-		// 		pop_tac_context(ctx);
-		// 	}
-		// 	printf("\033[32mLeaving NODE_IF\033[0m\n");
-		// 	break;
-		// }
-
-		// case NODE_ELSE_IF: {
-		// 	printf("\033[32mIn NODE_ELSE_IF\033[0m\n");
-		// 	TACContext* retrieved_context = peek_tac_context();
-		// 	if (!retrieved_context) return;
-
-		// 	bool has_next_statement = node->next != NULL;
-		// 	bool has_next_conditional = determine_if_next_conditional(node, has_next_statement);
-
-		// 	char* if_false_label = NULL;
-		// 	char* next_jmp_label = NULL;
-		// 	char* end_label = retrieved_context->end_label;
-
-		// 	if (has_next_conditional) {
-		// 		if_false_label = generate_label(ctx, REG_LABEL);
-		// 	}
-
-		// 	if (has_next_statement && !has_next_conditional) {
-		// 		next_jmp_label = generate_label(ctx, REG_LABEL);
-		// 	}
-
-		// 	pop_tac_context(ctx);
-		// 	TACContext* context_else_if = create_tac_context(
-		// 		ctx,
-		// 		CONTEXT_ELSE_IF,
-		// 		if_false_label,
-		// 		end_label,
-		// 		NULL,
-		// 		retrieved_context->root_chain_mem
-		// 	);
-		// 	push_tac_context(ctx, context_else_if);
-
-		// 	emit_label(ctx, retrieved_context->next_label);			
-			
-		// 	TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, node->left);
-		// 	if (!condition_tac) return;
-
-		// 	char* jump_target = NULL;
-		// 	if (has_next_conditional) {
-		// 		jump_target = if_false_label;
-		// 	} else if (has_next_statement) {
-		// 		jump_target = next_jmp_label;
-		// 	} else {
-		// 		jump_target = end_label;
-		// 	}
-
-		// 	emit_if_false(ctx, condition_tac->result, jump_target);
-
-		// 	if (node->right) {
-		// 		build_tac_from_statement_dag(ctx, node->right);
-		// 	}
-
-		// 	if (has_next_conditional) {
-		// 		emit_label(ctx, end_label);
-		// 	} else if (has_next_statement) {
-		// 		emit_goto(ctx, next_jmp_label);
-		// 		emit_label(ctx, next_jmp_label);
-		// 	}
-
-		// 	if (!has_next_statement && context_else_if->root_chain_mem) {
-		// 		emit_label(ctx, end_label);
-		// 	}
-
-		// 	if (!has_next_conditional) {
-		// 		pop_tac_context(ctx);
-		// 	}
-		// 	printf("\033[32mLeaving NODE_ELSE_IF\033[0m\n");
-		// 	break;
-		// }
-
-		// case NODE_ELSE: {
-		// 	printf("\033[32mIn NODE_ELSE\033[0m\n");
-		// 	TACContext* retrieved_context = peek_tac_context();
-		// 	if (!retrieved_context) return;
-
-		// 	bool has_next_statement = node->next != NULL;
-		//     char* next_jmp_label = NULL;
-		//     if (has_next_statement) {
-		//         next_jmp_label = generate_label(ctx, REG_LABEL);
-		//     }
-
-		// 	pop_tac_context(ctx);
-		// 	TACContext* context_else = create_tac_context(
-		// 		ctx,
-		// 		CONTEXT_ELSE,
-		// 		NULL,
-		// 		retrieved_context->end_label,
-		// 		NULL,
-		// 		retrieved_context->root_chain_mem
-		// 	);
-		// 	push_tac_context(ctx, context_else);
-
-		// 	emit_label(ctx, retrieved_context->next_label);
-
-		// 	if (node->right) {
-		// 		build_tac_from_statement_dag(ctx, node->right);
-		// 	}
-
-		// 	if (has_next_statement) {
-		//         emit_goto(ctx, next_jmp_label);
-		//         emit_label(ctx, next_jmp_label);
-		//     }
-
-		// 	if (context_else->root_chain_mem) {
-		// 		emit_label(ctx, retrieved_context->end_label);
-		// 	}
-
-		// 	pop_tac_context(ctx);
-		// 	printf("\033[32mLeaving NODE_ELSE\033[0m\n");
-		// 	break;
-		// }
-
-		// Fixed NODE_IF case
 		case NODE_IF: {
 		    printf("\033[32mIn NODE_IF\033[0m\n");
 		    bool has_next_statement = node->next != NULL;
@@ -1180,10 +994,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    char* next_jmp_label = NULL;
 		    char* end_label = generate_label(ctx, REG_LABEL);
 
-		    // TACContext* retrieved_context = peek_tac_context();
-
-		    
-		    // Generate labels for control flow
 		    if (has_next_conditional) {
 		        if_false_label = generate_label(ctx, REG_LABEL);
 		    }
@@ -1202,11 +1012,9 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    
 		    push_tac_context(ctx, context_if);
 
-		    // Generate condition
 		    TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, node->left);
 		    if (!condition_tac) return;
 
-		    // Determine jump target for false condition
 		    char* jump_target = NULL;
 		    if (has_next_conditional) {
 		        jump_target = if_false_label;
@@ -1218,12 +1026,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 		    emit_if_false(ctx, condition_tac->result, jump_target);
 
-		    // Generate body
 		    if (node->right) {
 		        build_tac_from_statement_dag(ctx, node->right);
 		    }
 
-		    // Handle control flow after body
 		    if (has_next_conditional) {
 		        emit_goto(ctx, end_label);
 		    } else if (has_next_statement) {
@@ -1234,22 +1040,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    	emit_label(ctx, next_jmp_label);
 		    	pop_tac_context(ctx);
 		    }
-
-		    // Only emit end label if this is the root of the chain and no next statement
-		    // if (context_if->root_chain_mem && !has_next_conditional) {
-		    //     emit_label(ctx, end_label);
-		    //     pop_tac_context(ctx);
-		    // }
-
-		    // Don't pop context if there's a next conditional (else/else-if)
-		    // if (!has_next_conditional) {
-		    	// emit_label(ctx, end_label);
-		    // }
 		    printf("\033[32mLeaving NODE_IF\033[0m\n");
 		    break;
 		}
 
-		// Fixed NODE_ELSE_IF case
 		case NODE_ELSE_IF: {
 		    printf("\033[32mIn NODE_ELSE_IF\033[0m\n");
 		    TACContext* retrieved_context = peek_tac_context();
@@ -1262,7 +1056,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    char* next_jmp_label = NULL;
 		    char* end_label = retrieved_context->end_label;
 
-		    // Generate new labels as needed
 		    if (has_next_conditional) {
 		        if_false_label = generate_label(ctx, REG_LABEL);
 		    }
@@ -1270,7 +1063,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		        next_jmp_label = generate_label(ctx, REG_LABEL);
 		    }
 
-		    // Pop the previous context and create new one
 		    pop_tac_context(ctx);
 		    TACContext* context_else_if = create_tac_context(
 		        ctx,
@@ -1282,14 +1074,11 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    );
 		    push_tac_context(ctx, context_else_if);
 
-		    // Emit the label for this else-if block
 		    emit_label(ctx, retrieved_context->next_label);
 
-		    // Generate condition
 		    TACInstruction* condition_tac = build_tac_from_expression_dag(ctx, node->left);
 		    if (!condition_tac) return;
 
-		    // Determine jump target for false condition
 		    char* jump_target = NULL;
 		    if (has_next_conditional) {
 		        jump_target = if_false_label;
@@ -1301,12 +1090,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 		    emit_if_false(ctx, condition_tac->result, jump_target);
 
-		    // Generate body
 		    if (node->right) {
 		        build_tac_from_statement_dag(ctx, node->right);
 		    }
 
-		    // Handle control flow after body
 		    if (has_next_conditional) {
 		        emit_goto(ctx, end_label);
 		    } else if (has_next_statement) {
@@ -1314,12 +1101,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		        emit_label(ctx, next_jmp_label);
 		    }
 
-		    // Only emit end label if this is the end of the chain and no next statement
 		    if (!has_next_statement && context_else_if->root_chain_mem) {
 		        emit_label(ctx, end_label);
 		    }
 
-		    // Don't pop context if there's a next conditional
 		    if (!has_next_conditional) {
 		        pop_tac_context(ctx);
 		    }
@@ -1327,7 +1112,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    break;
 		}
 
-		// Fixed NODE_ELSE case
 		case NODE_ELSE: {
 		    printf("\033[32mIn NODE_ELSE\033[0m\n");
 		    TACContext* retrieved_context = peek_tac_context();
@@ -1339,7 +1123,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		        next_jmp_label = generate_label(ctx, REG_LABEL);
 		    }
 
-		    // Pop the previous context and create new one
 		    pop_tac_context(ctx);
 		    TACContext* context_else = create_tac_context(
 		        ctx,
@@ -1351,21 +1134,17 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    );
 		    push_tac_context(ctx, context_else);
 
-		    // Emit the label for this else block
 		    emit_label(ctx, retrieved_context->next_label);
 
-		    // Generate body
 		    if (node->right) {
 		        build_tac_from_statement_dag(ctx, node->right);
 		    }
 
-		    // Handle control flow after body
 		    if (has_next_statement) {
 		        emit_goto(ctx, next_jmp_label);
 		        emit_label(ctx, next_jmp_label);
 		    }
 
-		    // Always emit end label for else (end of chain)
 		    if (context_else->root_chain_mem) {
 		        emit_label(ctx, retrieved_context->end_label);
 		    }
@@ -1696,7 +1475,7 @@ void emit_tac_instructions() {
 		if (current) {
 			switch (current->kind) {
 				case TAC_NAME: {
-					printf("\n%s\n", current->result->value.sym->name);
+					printf("\n%s:\n", current->result->value.sym->name);
 					break;
 				}
 				case TAC_CHAR:
@@ -1783,7 +1562,10 @@ void emit_tac_instructions() {
 							case OP_NOT_EQUAL:
 							case OP_NOT:
 							case OP_LOGICAL_OR:
-							case OP_LOGICAL_AND:
+							case OP_LOGICAL_AND: {
+								printf("%s\n", current->op2->value.label_name);
+								break;
+							}
 							case OP_RETURN: {
 								printf("%s\n", current->op2->value.label_name);
 								break;
@@ -1872,12 +1654,16 @@ void emit_tac_instructions() {
 								break;
 							}
 
+							case OP_RETURN:
 							case OP_SUBTYPE_STR:
 							case OP_STORE:
 							case OP_ADD:
 							case OP_SUB:
 							case OP_MUL:
 							case OP_DIV:
+							case OP_EQUAL:
+							case OP_NOT_EQUAL:
+							case OP_NOT:
 							case OP_LESS:
 							case OP_GREATER:
 							case OP_LESS_EQUAL:
@@ -1903,12 +1689,16 @@ void emit_tac_instructions() {
 								break;
 							}
 
+							case OP_RETURN:
 							case OP_SUBTYPE_STR:
 							case OP_STORE:
 							case OP_ADD:
 							case OP_SUB:
 							case OP_DIV:
 							case OP_MUL:
+							case OP_EQUAL:
+							case OP_NOT_EQUAL:
+							case OP_NOT:
 							case OP_LESS:
 							case OP_GREATER:
 							case OP_LESS_EQUAL:
@@ -1950,11 +1740,21 @@ void emit_tac_instructions() {
 					break;
 				}
 				case TAC_ARG: {
-					if (is_op(current->op1->kind) || current->op1->kind == OP_STORE) {
-						printf("\tARG %s, %s\n", current->result->value.label_name, current->op1->value.label_name);
-					
-					} else if (current->op1->kind == OP_SYMBOL) {
-						printf("\tARG %s, %s\n", current->result->value.label_name, current->op1->value.sym->name);
+					printf("\tARG %s, ", current->result->value.label_name);
+					if (current->op1) {
+						switch (current->op1->kind) {
+							case OP_SYMBOL: {
+								printf("%s\n", current->op1->value.sym->name);
+								break;
+							}
+
+							default: {
+								printf("%s\n", current->op1->value.label_name);
+								break;
+							}
+						}
+					} else {
+						printf("\033[31mARG DOES NOT HAVE name\033[0m\n");
 					}
 					break;
 				}
@@ -1967,13 +1767,13 @@ void emit_tac_instructions() {
 				case TAC_RETURN: {
 					printf("\tRETURN");
 					if (current->op1) {
+						// printf("\033[34mop1 kind=%d\033[0m\n", current->op1->kind);
 						switch (current->op1->kind) {
 							case OP_SYMBOL: {
 								printf(" %s\n", current->op1->value.sym->name);
 								break;
 							}
-							case OP_UNARY_ADD:
-							case OP_UNARY_SUB:
+
 							case OP_ADD:
 							case OP_SUB:
 							case OP_MUL:
@@ -1989,17 +1789,19 @@ void emit_tac_instructions() {
 							case OP_LOGICAL_AND:
 							case OP_NOT:
 							case OP_SUBTYPE_STR:
+							case OP_UNARY_ADD:
+							case OP_UNARY_SUB:
 							case OP_STORE: {
 								printf(" %s\n", current->op1->value.label_name);
 								break;
 							}
 						}
+					} else {
+						printf("\033[34mdont have op1\033[0m\n");
 					}
 					break;
 				}
 			}
-		} else {
-			// printf("\033[31mError\033[0m: tac at index %d is NULL\n", i);
 		}
 	}
 } 

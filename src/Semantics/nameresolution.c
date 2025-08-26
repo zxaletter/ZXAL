@@ -1,22 +1,10 @@
 #include "nameresolution.h"
 #include "compilercontext.h"
-#include "symbols.h"
+#include "assert.h"
 
 ContextStack* context_stack = NULL;
 
-void init_context_stack(CompilerContext* ctx) {
-	context_stack = create_context(ctx);
-	if (!context_stack) {
-		perror("Failed to initialize global context stack\n");
-		return;	
-	}
-}
-
-bool is_context_stack_empty() {
-	return context_stack->top == -1;
-}
-
-ContextStack* create_context(CompilerContext* ctx) {
+ContextStack* create_context_stack(CompilerContext* ctx) {
 	ContextStack *context_stack = arena_allocate(ctx->symbol_arena, sizeof(ContextStack));
 	if (!context_stack) {
 		perror("Unable to allocate space for context stack\n");
@@ -47,9 +35,7 @@ void push_context(CompilerContext* ctx, context_t new_context) {
 			new_capacity* sizeof(context_t)
 		);
 		
-		if (!new_contexts) {
-			perror("Unable to reallocate space for context types\n");
-		}
+		assert(new_contexts);
 		context_stack->contexts = new_contexts;
 	}
 
@@ -57,13 +43,15 @@ void push_context(CompilerContext* ctx, context_t new_context) {
 }
 
 void pop_context() {
-	if (!is_context_stack_empty()) {
+	if (context_stack->top != -1) {
 		context_stack->top--;
 	}
 }
 
 context_t peek_context() {
-	return context_stack->contexts[context_stack->top];
+	if (context_stack->top != -1) {
+		return context_stack->contexts[context_stack->top];
+	}
 }
 
 bool context_lookup(context_t context) {
@@ -82,33 +70,27 @@ bool push_scope(CompilerContext* ctx) {
 		
 		ctx->symbol_stack->capacity *= 2;
 		size_t new_capacity = ctx->symbol_stack->capacity;
-		void** new_tables = arena_reallocate(
+		void* new_tables = arena_reallocate(
 			ctx->symbol_arena, 
 			ctx->symbol_stack->tables, 
 			prev_capacity * sizeof(SymbolTable*), 
 			new_capacity * sizeof(SymbolTable*)
 		);
 
-		if (!new_tables) {
-			perror("Unable to reallocate stack tables\n");
-			return false;
-		}
+		assert(new_tables);
 		ctx->symbol_stack->tables = new_tables;
 	}
 
-	ctx->symbol_stack->tables[++ctx->symbol_stack->top] = create_symbol_table(ctx);
-	if (!ctx->symbol_stack->tables[ctx->symbol_stack->top]) {
-		perror("Unable to create new symbol table\n");
-		return false;
-	} else {
-		SymbolTable* current = ctx->symbol_stack->tables[ctx->symbol_stack->top];
-		printf("Created new table at level %d with address %p\n", ctx->symbol_stack->top, (void*)current);
-	}
+	SymbolTable* new_table = create_symbol_table(ctx);
+	assert(new_table);
+
+	ctx->symbol_stack->tables[++ctx->symbol_stack->top] = new_table;
 	return true;
 }
 
 void pop_scope(CompilerContext* ctx) {
-	if (!is_stack_empty(ctx)) {
+	bool empty = is_stack_empty(ctx);
+	if (!empty) {
 		ctx->symbol_stack->top--;
 	}
 }
@@ -203,6 +185,15 @@ int peek_scope_level(CompilerContext* ctx) {
 	return scope_level;
 }
 
+bool distinct_from_keywords(CompilerContext* ctx, char* variable_name) {
+	for (int i = 0; i < KEYWORDS; i++) {
+		if (strcmp(ctx->keywords[i], variable_name) == 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
 void resolve_expression(CompilerContext* ctx, Node* node) {
 	if (!node) return;
 
@@ -277,19 +268,20 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 
 		case NODE_CALL: {
 			push_context(ctx, CONTEXT_CALL);
+			
 			if (node->left) {
 				resolve_expression(ctx, node->left);
 			}
+			pop_context();
 
-			if (node->right) {
-				Node* arg = node->right;
+			if (node->params) {
+				Node* arg = node->params;
 				while (arg) {
 					Node* next = arg->next;
 					resolve_expression(ctx, arg);
 					arg = next;	
 				}
 			}
-			pop_context();
 			break;
 		}
 
@@ -308,6 +300,12 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 
 			// for definitions
 			if (node->t && !node->symbol) {
+				// ensure def names are distinct from function names and keywords
+				bool valid_def = distinct_from_keywords(ctx, node->value.name);
+				if (!valid_def) {
+					assert(false);
+				} 
+
 				Symbol* new_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, node->t);
 				int hash_key = hash(current_table->capacity, node->value.name);
 
@@ -317,42 +315,52 @@ void resolve_expression(CompilerContext* ctx, Node* node) {
 				}
 
 				// if array, resolving index
-				if (node->left) resolve_expression(ctx, node->left);
+				if (node->left) {
+					resolve_expression(ctx, node->left);
+				}
 				break;
 			} 
 			
-			if (peek_context() == CONTEXT_CALL) {
+			context_t type = peek_context();
+			if (type == CONTEXT_CALL) {
+				// log error if calling main function.
+				if (strcmp(node->value.name, "main") == 0) {
+					assert(false);
+				}
+				
 				Symbol* temp_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, NULL);
-
+				if (temp_symbol) {
+					printf("\033[32mSuccessfully created temp symbol for function '%s'\033[0m\n", node->value.name);
+				}
 				Symbol* func_symbol = lookup_function_symbol(ctx, temp_symbol);
 				if (!func_symbol) {
-					printf("\033[31mError\033[0m: attempting to invoke function that does not exist\n");
+					printf("\033[31mError\033[0m: attempting to invoke function '%s' that does not exist\n", node->value.name);
 				} 
 				node->symbol = func_symbol;
 				break;
 			}
 
-			if (has_expression_context()) {
-				context_t type = peek_context();
-				printf("\033[32m\nCurrent context type is %d\033[0m\n", type);
-				Symbol* temp_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, NULL);
+			// bool expression_context = has_expression_context();
+			// if (expression_context) {
+			// 	context_t type = peek_context();
+			Symbol* temp_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, NULL);
+			
+			Symbol* retrieved_symbol = lookup_symbol_in_current_scope(ctx, temp_symbol);
+			if (retrieved_symbol) {
+				node->symbol = (void*)retrieved_symbol;
+				node->t = (void*)retrieved_symbol->type;
+			
+			} else {
+				retrieved_symbol = lookup_symbol_in_all_scopes(ctx, temp_symbol);
 				
-				Symbol* retrieved_symbol = lookup_symbol_in_current_scope(ctx, temp_symbol);
 				if (retrieved_symbol) {
 					node->symbol = (void*)retrieved_symbol;
 					node->t = (void*)retrieved_symbol->type;
-				
 				} else {
-					retrieved_symbol = lookup_symbol_in_all_scopes(ctx, temp_symbol);
-					
-					if (retrieved_symbol) {
-						node->symbol = (void*)retrieved_symbol;
-						node->t = (void*)retrieved_symbol->type;
-					} else {
-						printf("\033[31mError\033[0m: did not find symbol in remaining scopes\n");
-					}
+					printf("\033[31mError\033[0m: did not find symbol in remaining scopes\n");
 				}
-			} 
+			}
+			// } 
 
 			break;
 		}
@@ -561,11 +569,11 @@ void resolve_params(CompilerContext* ctx, Node* node) {
 }
 
 void resolve_globals(CompilerContext* ctx, Node* node) {
-	SymbolTable* current_table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
-	if (!current_table) return;
-
 	switch (node->type) {
 		case NODE_ASSIGNMENT: {
+			SymbolTable* current_table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
+			assert(current_table);
+
 			int hash_key = -1;
 			if (node->left) {
 				hash_key = hash(current_table->capacity, node->left->value.name);
@@ -596,7 +604,19 @@ void resolve_globals(CompilerContext* ctx, Node* node) {
 			}
 
 			push_scope(ctx);
+			SymbolTable* current_table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
+			assert(current_table);
 
+			Symbol* local_func_symbol = create_symbol(ctx, SYMBOL_LOCAL, node->value.name, NULL, NULL);
+			assert(local_func_symbol);
+			
+			int hash_key = hash(current_table->capacity, node->value.name);
+			if (hash_key != -1) {
+				// treating func symbol as LOCAL to scope to prevent variable name conflicts
+				// for function calls, we'll still use global table
+				bind(ctx, LOCAL, local_func_symbol, hash_key);
+			}
+			
 			if (node->params) {
 				resolve_params(ctx, node->params);
 			}
@@ -638,7 +658,7 @@ bool rehash_variable_symbols(CompilerContext* ctx, Symbol** prev_symbols, int ne
 
 bool rehash_function_symbols(CompilerContext* ctx, Symbol** prev_symbols, int new_capacity, int prev_capacity) {
 	SymbolTable* global_table = ctx->global_table;
-
+	printf("\033[32mRehashing function symbols\033[0m\n");
 	for (int i = 0; i < prev_capacity; i++) {
 		Symbol* current_prev_symbol = prev_symbols[i];
 		while (current_prev_symbol) {
@@ -693,14 +713,14 @@ bool variable_symbol_bind(CompilerContext* ctx, Symbol* symbol, int hash_key) {
 
 	if (hash_key == -1) return false;
 
-	printf("In 'variable_symbol_bind', current table address: %p\n", (void*)current_table);
+	// printf("In 'variable_symbol_bind', current table address: %p\n", (void*)current_table);
 
 	if (current_table->symbols[hash_key]) {
-		printf("added symbol '%s' to table with address: %p at level %d\n", symbol->name, (void*)current_table, ctx->symbol_stack->top);
+		// printf("added symbol '%s' to table with address: %p at level %d\n", symbol->name, (void*)current_table, ctx->symbol_stack->top);
 		symbol->link = current_table->symbols[hash_key];
 		current_table->symbols[hash_key] = symbol;
 	} else {
-		printf("added symbol '%s' to table with address: %p at level %d\n", symbol->name, (void*)current_table, ctx->symbol_stack->top);
+		// printf("added symbol '%s' to table with address: %p at level %d\n", symbol->name, (void*)current_table, ctx->symbol_stack->top);
 		current_table->symbols[hash_key] = symbol;
 		symbol->link = NULL;
 		current_table->size++;
@@ -756,8 +776,8 @@ bool variable_symbol_exists(CompilerContext* ctx, Symbol* symbol) {
 	SymbolTable* current_table = ctx->symbol_stack->tables[ctx->symbol_stack->top];
 	if (!current_table) return false;
 
-	printf("In 'variable_symbol_exists'\n");
-	printf("\033[32mGot table at level %d\033[0m\n", ctx->symbol_stack->top);
+	// printf("In 'variable_symbol_exists'\n");
+	// printf("\033[32mGot table at level %d\033[0m\n", ctx->symbol_stack->top);
 
 	for (int i = 0; i < current_table->capacity; i++) {
 		Symbol* current_symbol = current_table->symbols[i];
@@ -788,7 +808,7 @@ bool function_symbol_exists(CompilerContext* ctx, Symbol* symbol) {
 	return false;
 }
 
-bool symbol_exists(CompilerContext* ctx, BindType kind, Symbol* symbol) {
+bool symbol_exists(CompilerContext* ctx, bind_t kind, Symbol* symbol) {
 	switch (kind) {
 		case GLOBAL:
 		case LOCAL: {
@@ -808,7 +828,7 @@ bool symbol_exists(CompilerContext* ctx, BindType kind, Symbol* symbol) {
 	return false;
 }
 
-bool bind(CompilerContext* ctx, BindType kind, Symbol* symbol, int hash_key) {
+bool bind(CompilerContext* ctx, bind_t kind, Symbol* symbol, int hash_key) {
 	if (!symbol || (symbol && !symbol->name)) return false;
 
 	if (symbol_exists(ctx, kind, symbol)) return false;
@@ -824,13 +844,18 @@ bool bind(CompilerContext* ctx, BindType kind, Symbol* symbol, int hash_key) {
 }
 
 Symbol* lookup_function_symbol(CompilerContext* ctx, Symbol* symbol) {
-	if (!symbol) return NULL;
+	if (!symbol || (symbol && !symbol->name)) {
+		printf("\033[31mSymbol is NULL\033[0m\n");
+		return NULL;
+	}
 
+	printf("Attemping to find symbol with name: '%s'\n", symbol->name);
 	for (int i = 0; i < ctx->global_table->capacity; i++) {
 		Symbol* current_func_symbol = ctx->global_table->symbols[i];
 		while (current_func_symbol) {
+			printf("Index: %d -> processing function symbol with name: '%s'\n", i, current_func_symbol->name);
 			Symbol* link_for_current_func_symbol = current_func_symbol->link;
-			if (symbol->name && strcmp(symbol->name, current_func_symbol->name) == 0) {
+			if (strcmp(symbol->name, current_func_symbol->name) == 0) {
 				return current_func_symbol;
 			}
 			current_func_symbol = link_for_current_func_symbol;
@@ -840,8 +865,6 @@ Symbol* lookup_function_symbol(CompilerContext* ctx, Symbol* symbol) {
 }
 
 void validate_node_signature(CompilerContext* ctx, Node* node) {
-	if (!node) return;
-
 	switch (node->type) {
 		case NODE_NAME: {
 			Type* type = node->t;
@@ -858,9 +881,9 @@ void validate_node_signature(CompilerContext* ctx, Node* node) {
 
 					case TYPE_FUNCTION: {
 						Symbol* func_symbol = create_symbol(
-							ctx,
-							SYMBOL_GLOBAL,
-							node->value.name,
+							ctx, 
+							SYMBOL_GLOBAL, 
+							node->value.name, 
 							node->params,
 							node->t
 						);
@@ -884,21 +907,31 @@ void validate_node_signature(CompilerContext* ctx, Node* node) {
 }
 
 void collect_function_symbols(CompilerContext* ctx, Node* root) {
-	if (!root) return;
-
 	Node* current = root;
 	while (current) {
 		Node* next = current->next;
 		validate_node_signature(ctx, current);
 		current = next;
 	}
+
+	printf("Function Symbols:\n");
+	for (int i = 0; i < ctx->global_table->capacity; i++) {
+		Symbol* current_symbol = ctx->global_table->symbols[i];
+		while (current_symbol) {
+			printf("Index: %d -> name: '%s'\n", i, current_symbol->name);
+			Symbol* link_for_current_symbol = current_symbol->link;
+			current_symbol = link_for_current_symbol;
+		}
+	}
 }
 
 void resolve_tree(CompilerContext* ctx, Node* root) {
 	if (!root) return;
 
+	context_stack = create_context_stack(ctx);
+	assert(context_stack);
+
 	collect_function_symbols(ctx, root);
-	init_context_stack(ctx);
 
 	push_scope(ctx);
 	

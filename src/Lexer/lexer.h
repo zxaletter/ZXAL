@@ -11,7 +11,6 @@ typedef struct CompilerContext CompilerContext;
 typedef struct Token Token;
 typedef enum token_t token_t;
 
-#define KEYWORDS 20
 #define INITIAL_TOKEN_CAPACITY 250
 // extern char* keywords[KEYWORDS];
 
@@ -66,7 +65,7 @@ typedef struct {
 } Keyword;
 
 token_t key_t_to_token_t(keyword_t type);
-keyword_t get_keyword_t(char* identififer);
+keyword_t get_keyword_t(CompilerContext* ctx, char* identififer);
 
 char peek_lexer(Lexer* lexer);
 char peek_lexer_next(Lexer* lexer);
@@ -75,6 +74,7 @@ bool lexer_at_end(Lexer* lexer);
 bool skip_lexer_whitespace(Lexer* lexer);
 bool skip_lexer_comment(Lexer* lexer);
 
+void get_string_literal(CompilerContext* ctx, Lexer* lexer);
 void get_identifier(CompilerContext* ctx, Lexer* lexer);
 void get_number(CompilerContext* ctx, Lexer* lexer);
 void get_operator(CompilerContext* ctx, Lexer* lexer);

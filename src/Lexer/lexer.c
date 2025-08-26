@@ -1,13 +1,7 @@
 #include "lexer.h"
 #include "compilercontext.h"
 #include "token.h"
-
-char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
-							"void", "struct", "enum", "if",
-							"else", "for", "while",
-						    "continue", "break", "return",
-							"switch", "case", "true", "false", "str"};
-
+#include "assert.h"
 
 Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {
 	Lexer* lexer = arena_allocate(ctx->lexer_arena, sizeof(Lexer));
@@ -102,9 +96,9 @@ token_t key_t_to_token_t(keyword_t type) {
 	}
 }
 
-keyword_t get_keyword_t(char* identifier) {
+keyword_t get_keyword_t(CompilerContext* ctx, char* identifier) {
 	for (int i = 0; i < KEYWORDS; i++) {
-		if (strcmp(keywords[i], identifier) == 0) {
+		if (strcmp(ctx->keywords[i], identifier) == 0) {
 			return (keyword_t)i;
 		}
 	}
@@ -171,10 +165,7 @@ void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 			new_capacity * sizeof(Token)
 		);
 		
-		if (!new_tokens) {
-			printf("Error: Unable to reallocate 'lexer->tokens' in 'add_token'\n");
-			return;
-		}
+		assert(new_tokens);
 		lexer->tokens = new_tokens;
 	}
 	// printf("Adding token with type %d to lexer\n", token.type);
@@ -188,12 +179,12 @@ void get_identifier(CompilerContext* ctx, Lexer* lexer) {
 
 	int length = lexer->end - lexer->start;
 	char* identifier = arena_allocate(ctx->lexer_arena, length + 1);
-	if (!identifier) return;
+	assert(identifier);
 
 	strncpy(identifier, lexer->start, length);
 	identifier[length] = '\0';
 
-	keyword_t key_t = get_keyword_t(identifier);
+	keyword_t key_t = get_keyword_t(ctx, identifier);
 	if (key_t != KEYWORD_UNKNOWN) {
 		token_t tok_t = key_t_to_token_t(key_t);
 		add_token(ctx, lexer, create_string_token(ctx, tok_t, identifier, lexer->line, lexer->column));
@@ -218,6 +209,23 @@ void get_number(CompilerContext* ctx, Lexer* lexer) {
 	add_token(ctx, lexer, create_int_token(TOKEN_INTEGER, number, lexer->line, lexer->column));
 }
 
+void get_string_literal(CompilerContext* ctx, Lexer* lexer) {
+	while (!lexer_at_end(lexer) && (isalnum(peek_lexer(lexer)) || peek_lexer(lexer) == '_')) {
+		advance_lexer(lexer);
+	}
+
+	if (peek_lexer(lexer) != '\"') return;
+
+	int length = lexer->end - lexer->start;
+	char* identifier = arena_allocate(ctx->lexer_arena, length + 1);
+	if (!identifier) return;
+
+	strncpy(identifier, lexer->start, length);
+	identifier[length] = '\0';
+
+	add_token(ctx, lexer, create_string_token(ctx, TOKEN_STR_LITERAL, identifier, lexer->line, lexer->column));
+}
+
 void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 	char c = advance_lexer(lexer);
 	token_t type = TOKEN_UNKNOWN;
@@ -240,6 +248,12 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 			} else {
 				advance_lexer(lexer);
 			}
+			return;
+		}
+
+		case '\"': {
+			advance_lexer(lexer);
+			get_string_literal(ctx, lexer);
 			return;
 		}
 	}
@@ -384,12 +398,11 @@ void get_operator(CompilerContext* ctx, Lexer* lexer) {
 
 	if (isCompoundOp) {
 		char str_opr[3] = {c, *(lexer->end - 1), '\0'};
-		printf("About to add compound op token with type %d\n", type);
 		add_token(ctx, lexer, create_string_token(ctx, type, str_opr, lexer->line, lexer->column - 2));
 	} else {
-		if (type == TOKEN_UNKNOWN) {
-			printf("About to add char token with type \033[31m%d\033[0m at \033[33m%d:%d\033[0m\n", type, lexer->line, lexer->column - 1);
-		}
+		// if (type == TOKEN_UNKNOWN) {
+			// printf("About to add char token with type \033[31m%d\033[0m at \033[33m%d:%d\033[0m\n", type, lexer->line, lexer->column - 1);
+		// }
 		add_token(ctx, lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
 	}
 }
@@ -423,7 +436,6 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 	
 	fsetpos(file, &position);
 
-	// char* buffer = malloc(file_size + 1);
 	char* buffer = arena_allocate(ctx->lexer_arena, file_size + 1);
 	if (!buffer) {
 		printf("Could not allocate buffer\n");
@@ -449,18 +461,14 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 
 	FileInfo* info = create_info(ctx, filename, line_count, buffer);
 	if (!info) {
-		// free(buffer);
 		fclose(file);
 		return NULL;
 	}
 
 	if (line_count > 0) {
-		// info->lines = malloc(sizeof(char*) * line_count);
 		info->lines = arena_allocate(ctx->lexer_arena, sizeof(char*) * line_count);
 		if (!info->lines) {
 			perror("Failed to allocate space for info->lines\n");
-			// free(buffer);
-			// free(info);
 			fclose(file);
 			return NULL;
 		}
@@ -474,7 +482,6 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 		if (buffer[i] == '\n') {
 			if (current_line_index < line_count) {
 				int length = &buffer[i] - line_start;
-				// info->lines[current_line_index] = malloc(length + 1);
 				info->lines[current_line_index] = arena_allocate(ctx->lexer_arena, length + 1);
 				if (!info->lines[current_line_index]) {
 					fclose(file);
@@ -492,7 +499,6 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 
 	if (line_start < (buffer + file_size) && current_line_index < line_count) {
 		long line_length = (buffer + file_size) - line_start;
-		// info->lines[current_line_index] = malloc(line_length + 1);
 		info->lines[current_line_index] = arena_allocate(ctx->lexer_arena, line_length + 1);
 		if (!info->lines[current_line_index]) {
 			perror("Failed to allocate memory for the last line\n");

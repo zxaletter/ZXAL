@@ -1,4 +1,5 @@
 #include "cfg.h"
+#include "assert.h"
 
 FunctionList* function_list = NULL;
 TACLeaders leaders_list;
@@ -151,6 +152,7 @@ BasicBlock* create_basic_block(CompilerContext* ctx) {
 	basic_block->num_predecessors_capacity = INIT_PREDECESSOR_CAPACITY;
 	basic_block->num_successors_capacity = INIT_SUCCESSORS_CAPACITY;
 
+	basic_block->sargs = NULL;
 	basic_block->instructions = arena_allocate(ctx->ir_arena, sizeof(TACInstruction*) * basic_block->num_instructions_capacity);
 	if (!basic_block->instructions) return NULL;
 
@@ -239,7 +241,6 @@ bool found_label(TACInstruction* instruction) {
 	}
 	return false;
 }
-
 
 int find_label_index(TACTable* instructions, char* target_name, int current_index) {
 	if (!target_name) return -1;
@@ -344,13 +345,10 @@ bool make_function_cfgs(CompilerContext* ctx, TACTable* instructions) {
 		block_id = 0;
 		FunctionInfo* info = function_list->infos[i];
 		info->cfg = create_cfg(ctx);
-
-		if (!info->cfg) {
-			return false;
-		}
+		assert(info->cfg);
 
 		info->cfg->head = create_basic_block(ctx);
-		if (!info->cfg->head) return false;
+		assert(info->cfg->head);
 
 		BasicBlock* block = info->cfg->head;
 
@@ -771,17 +769,25 @@ void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 			case TAC_NOT_EQUAL:
 			case TAC_LOGICAL_OR:
 			case TAC_LOGICAL_AND: {
-				bool op1_already_def = contains_operand(ops_defined, tac->op1);
-				if (!op1_already_def) {
-					add_to_operand_set(ctx, block->use_set, tac->op1);
+				if (tac->op1->kind != OP_RETURN) {
+					bool op1_already_def = contains_operand(ops_defined, tac->op1);
+					if (!op1_already_def) {
+						add_to_operand_set(ctx, block->use_set, tac->op1);
+					}					
 				}
 
-				bool op2_already_def = contains_operand(ops_defined, tac->op2);
-				if (!op2_already_def) {
-					add_to_operand_set(ctx, block->use_set, tac->op2);
+				if (tac->op2->kind != OP_RETURN) {
+					bool op2_already_def = contains_operand(ops_defined, tac->op2);
+					if (!op2_already_def) {
+						add_to_operand_set(ctx, block->use_set, tac->op2);
+					}
+
 				}
 
-				add_to_operand_set(ctx, ops_defined, tac->result);
+				bool result_already_def = contains_operand(ops_defined, tac->result);
+				if (!result_already_def) {
+					add_to_operand_set(ctx, ops_defined, tac->result);
+				}
 				add_to_operand_set(ctx, block->def_set, tac->result);
 				break;
 			}
@@ -819,7 +825,7 @@ void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 			case TAC_ARG: {
 				bool op1_already_def = contains_operand(ops_defined, tac->op1);
 				if (!op1_already_def) {
-					add_to_operand_set(ctx, ops_defined, tac->op1);
+					add_to_operand_set(ctx, block->use_set, tac->op1);
 				}
 				break;
 			}
@@ -836,6 +842,7 @@ void populate_use_and_def_sets(CompilerContext* ctx, BasicBlock* block) {
 						add_to_operand_set(ctx, block->use_set, tac->op1);
 					}
 				}
+
 				add_to_operand_set(ctx, ops_defined, tac->result);
 				add_to_operand_set(ctx, block->def_set, tac->result);
 				break;
@@ -1262,22 +1269,91 @@ void compute_instruction_live_out(CompilerContext* ctx, CFG* cfg) {
 
 		for (int j = block->num_instructions - 1; j >= 0; j--) {
 			TACInstruction* instruction = block->instructions[j];
+			if (instruction) {
+				switch (instruction->kind) {
+					case TAC_IF_FALSE:
+ 					case TAC_LABEL:
+					case TAC_GOTO: {
+						continue;
+					}
 
-			instruction->live_out = copy_set(ctx, current_live);
+					case TAC_ASSIGNMENT: {
+						if (instruction->op2) {
+							if (instruction->op2->kind != OP_RETURN) {
+								add_to_operand_set(ctx, current_live, instruction->op2);
+							}
+						}
+						remove_from_operand_set(current_live, instruction->result);
+						
+						break;
+					}
 
-			if (instruction->result && is_operand_label_or_symbol(instruction->result)) {
-				remove_from_operand_set(instruction->live_out, instruction->result);
-			}
+					case TAC_CHAR:
+					case TAC_BOOL:
+					case TAC_INTEGER: {
+						if (instruction->result) {
+							remove_from_operand_set(current_live, instruction->result);
+						}
+						break;
+					}
 
-			if (instruction->op1 && is_operand_label_or_symbol(instruction->op1)) {
-				add_to_operand_set(ctx, instruction->live_out, instruction->op1);
-			}
+					default: {
+						if (instruction->result) {
+							remove_from_operand_set(current_live, instruction->result);
+						}
 
-			if (instruction->op2 && is_operand_label_or_symbol(instruction->op2)) {
-				add_to_operand_set(ctx, instruction->live_out, instruction->op2);
-			}
+						if (instruction->op1) {
+							add_to_operand_set(ctx, current_live, instruction->op1);
+						}
 
-			
+						if (instruction->op2) {
+							add_to_operand_set(ctx, current_live, instruction->op2);
+						}
+						break;
+					}
+				}
+				instruction->live_out = copy_set(ctx, current_live);
+
+				if (instruction->result) {
+					switch (instruction->result->kind) {
+						case OP_SYMBOL: {
+							printf("\033[32m%s\033[0m -> current live: {", instruction->result->value.sym->name);
+							break;
+						}
+
+						default: {
+							printf("\033[32m%s\033[0m -> current live: {", instruction->result->value.label_name ? instruction->result->value.label_name : NULL);
+							break;
+						}
+					}
+
+					for (int i = 0; i < current_live->size; i++) {
+						Operand* current_op = current_live->elements[i];
+						bool last_op = (i == current_live->size - 1);
+						switch (current_op->kind) {
+							case OP_SYMBOL: {
+								if (last_op) {
+									printf("%s", current_op->value.sym->name);
+								} else {
+									printf("%s, ", current_op->value.sym->name);
+								}
+								break;
+							}
+
+							default: {
+								char* name = current_op->value.label_name ? current_op->value.label_name : NULL;
+								if (last_op) {
+									printf("%s", name);
+								} else {
+									printf("%s, ", name);
+								}
+								break;
+							}
+						} 
+					}
+					printf("}\n");
+				}
+			}	
 		}
 	}
 	printf("==================================\n");
@@ -1295,7 +1371,7 @@ void live_analysis(CompilerContext* ctx) {
 			if (!has_block_sets) return;
 
 			populate_use_and_def_sets(ctx, block);
-			printf("Block \033[32m%d\033[0m\n", j);
+			printf("\nBlock \033[32m%d\033[0m\n", j);
 			printf("Def: {");
 			for (int k = 0; k < block->def_set->size; k++) {
 				Operand* def_op = block->def_set->elements[k];
@@ -1415,18 +1491,90 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 			TACInstruction* instruction = block->instructions[j];
 			if (instruction) {
 				switch (instruction->kind) {
-					case TAC_ADD:
-					case TAC_SUB: {
-						bool live_on_exit = contains_operand(block->out_set, instruction->result);
-						if (!live_on_exit) {
-							instruction->result->live_on_exit = 0;
+					case TAC_CALL:
+					case TAC_LABEL:
+					case TAC_GOTO:
+					case TAC_IF_FALSE: {
+						continue;
+					}
+
+					case TAC_ARG: {
+						int length = snprintf(NULL, 0, instruction->result->value.label_name);
+						char* arg_num = NULL;
+
+						for (int i = 0; i < length; i++) {
+							bool found_digit = isdigit(instruction->result->value.label_name[i]);
+							if (found_digit) {
+								int new_length = length - i + 1;
+								arg_num = arena_allocate(ctx->codegen_arena, length - i + 1);
+								assert(arg_num);
+								strncpy(arg_num, &instruction->result->value.label_name[i], new_length);
+								arg_num[new_length] = '\0';
+							}
+						}	
+
+						instruction->op1->restricted_regs_count = 6;
+						instruction->op1->restricted_regs = arena_allocate(
+							ctx->codegen_arena, 
+							sizeof(int) * instruction->op1->restricted_regs_count
+						);
+						assert(instruction->op1->restricted_regs);
+
+						int arg_index = atoi(arg_num);
+						if (arg_index < 6) {
+							for (int i = 0; i < 6; i++) {
+								// 2 is offset for first arg register
+								instruction->op1->restricted_regs[i] = 2 + i;
+							}
+							instruction->op1->restricted = true;
+						} 
+						break;
+					}
+
+					case TAC_MODULO:
+					case TAC_DIV: {
+						if (instruction->result) {
+							instruction->result->restricted_regs_count = 1;
+							instruction->result->restricted_regs = arena_allocate(ctx->codegen_arena, sizeof(int));
+							assert(instruction->result->restricted_regs);
+
+							instruction->result->restricted_regs[0] = 0;
+							instruction->result->restricted = true;
+						}
+						
+						if (instruction->op2) {
+							instruction->op2->restricted_regs_count = 2;
+							instruction->op2->restricted_regs = arena_allocate(ctx->codegen_arena, sizeof(int) * instruction->op2->restricted_regs_count);
+							assert(instruction->op2->restricted_regs);
+
+							// rax & rdx
+							instruction->op2->restricted_regs[0] = 0;
+							instruction->op2->restricted_regs[1] = 4;
+							instruction->op2->restricted = true;
 						}
 						break;
-					}	
+					}
 
 					case TAC_RETURN: {
 						if (instruction->op1) {
-							instruction->op1->live_on_exit = 1;
+							instruction->op1->restricted_regs_count = 1;
+							instruction->op1->restricted_regs = arena_allocate(ctx->codegen_arena, sizeof(int));
+							assert(instruction->op1->restricted_regs);
+
+							instruction->op1->restricted_regs[0] = 0;
+							instruction->op1->restricted = true;
+						}
+						break;
+					}
+
+					case TAC_ASSIGNMENT: {
+						if (instruction->op2->kind == OP_RETURN) {
+							instruction->result->restricted_regs_count = 1;
+							instruction->result->restricted_regs = arena_allocate(ctx->codegen_arena, sizeof(int));
+							assert(instruction->result->restricted_regs);
+							
+							instruction->result->restricted_regs[0] = 0;
+							instruction->result->restricted = true;
 						}
 						break;
 					}
@@ -1439,10 +1587,11 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 					case TAC_NOT_EQUAL: {
 						if (j + 1 < block->num_instructions) {
 							TACInstruction* next_instruction = block->instructions[j + 1];
-							if ((next_instruction && next_instruction->result) && 
+
+							if ((next_instruction && next_instruction->op1) && 
 								next_instruction->kind == TAC_IF_FALSE &&
-								strcmp(next_instruction->result->value.label_name, instruction->result->value.label_name) == 0) {
-								instruction->precedes_conditional = true;	
+								strcmp(next_instruction->op1->value.label_name, instruction->result->value.label_name) == 0) {
+								instruction->result->precedes_conditional = true;
 							}
 						}
 						break;
@@ -1450,20 +1599,85 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 				}
 			}
 			
-			// if (instruction && instruction->precedes_conditional) continue;
+			if ((instruction && instruction->result) && instruction->result->precedes_conditional) continue;
 
-			if (instruction && instruction->result) {
-				InterferenceBundle* bundle = create_inteference_bundle(ctx, instruction->result, block);
-				if (!bundle) continue; 
-				
-				for (int k = 0; k < instruction->live_out->size; k++) {
-					if (instruction->result != instruction->live_out->elements[k]) {
-						add_to_operand_set(ctx, bundle->interferes_with, instruction->live_out->elements[k]); 
+			InterferenceBundle* bundle = NULL;
+			switch (instruction->kind) {
+				case TAC_PARAM:
+				case TAC_RETURN:
+				case TAC_ARG: {
+					if (instruction->op1) {
+						bundle = create_inteference_bundle(ctx, instruction->op1, block);
+						instruction->op1->interference_bundle = bundle;
 					}
+					break;
 				}
 
-				add_bundle_to_interference_graph(ctx, graph, bundle);	 
+				default: {
+					bundle = create_inteference_bundle(ctx, instruction->result, block);
+					instruction->result->interference_bundle = bundle;
+					break;	
+				}
 			}
+			assert(bundle);
+
+			if (instruction->kind == TAC_ASSIGNMENT && instruction->op2 != OP_RETURN) {
+				bool ops_equal = operands_equal(instruction->result, instruction->op2);
+				if (!ops_equal) {
+					switch (instruction->op2->kind) {
+						case OP_SYMBOL: {
+							printf("\033[31mWARNING\033[0m: '%s' interferes with assignment of ", instruction->op2->value.sym->name);
+							break;
+						}
+
+						default: {
+							printf("\033[31mWARNING\033[0m: '%s' interferes with assignment of ", instruction->op2->value.label_name);
+							break;
+						}
+					}
+
+					switch (instruction->result->kind) {
+						case OP_SYMBOL: {
+							printf("'%s'\n", instruction->result->value.sym->name);
+							break;
+						}
+
+						default: {
+							printf("'%s'\n", instruction->result->value.label_name);
+							break;
+						}
+					}
+					add_to_operand_set(ctx, bundle->interferes_with, instruction->op2);
+					InterferenceBundle* prev_bundle = instruction->op2->interference_bundle;
+					if (prev_bundle) {
+						add_to_operand_set(ctx, prev_bundle->interferes_with, instruction->result);
+					}
+				}
+			}
+
+			for (int k = 0; k < instruction->live_out->size; k++) {
+				bool last_op = (k == instruction->live_out->size - 1); 
+
+				if (instruction->live_out->elements[k]->precedes_conditional) continue;
+				switch (instruction->kind) {
+					case TAC_ARG: {
+						bool ops_equal = operands_equal(instruction->op1, instruction->live_out->elements[k]);
+						if (!ops_equal) {
+							add_to_operand_set(ctx, bundle->interferes_with, instruction->live_out->elements[k]);
+						}
+						break;
+					}
+
+					default: {
+						bool ops_equal = operands_equal(instruction->result, instruction->live_out->elements[k]);
+						if (!ops_equal) {
+							add_to_operand_set(ctx, bundle->interferes_with, instruction->live_out->elements[k]); 
+						} 
+						break;
+					}
+				}
+			}					
+			add_bundle_to_interference_graph(ctx, graph, bundle);	 
 		}
 	}
 }
@@ -1471,11 +1685,10 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 void populate_interference_graphs(CompilerContext* ctx) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
+		// printf("\nBundles for function \033[32m%s\033[0m\n", info->symbol->name);
 		info->graph = create_inteference_graph(ctx);
-
-		if (info->graph) {
-			populate_interference_graph(ctx, info->cfg, info->graph);
-		}
+		assert(info->graph);
+		populate_interference_graph(ctx, info->cfg, info->graph);	
 	}
 }
 
@@ -1513,7 +1726,7 @@ FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 
 	function_list = create_function_list(ctx);
 	leaders_list = create_tac_leaders(ctx);
-	if (!function_list || !leaders_list.leaders) return NULL;
+	assert(function_list && leaders_list.leaders);
 	
 	mark_function_boundaries(ctx, instructions);
 	find_leaders(ctx, instructions);
@@ -1523,30 +1736,9 @@ FunctionList* build_cfg(CompilerContext* ctx, TACTable* instructions) {
 	live_analysis(ctx);
 	populate_interference_graphs(ctx);
 
-	return function_list;
-}
-	// emit_function_infos();
-	// emit_blocks();
 	// emit_leaders();
-
-void emit_function_infos() {
-	// printf("\n\n");
-	// printf("\033[31mLast Liveness check\033[0m\n");
-	// for (int i = 0; i < function_list->size; i++) {
-	// 	FunctionInfo* info = function_list->infos[i];
-	// 	CFG* cfg = info->cfg;
-
-	// 	for (int j = 0; j < cfg->num_blocks; j++) {
-	// 		BasicBlock* current_block = cfg->all_blocks[j];
-
-	// 		for (int k = 0; k < current_block->num_instructions; k++) {
-	// 			emit_liveness_info(current_block->instructions[k]);
-	// 		}
-	// 	}
-	// }
-	for (int i = 0; i < function_list->size; i++) {
-		printf("Function name: \033[32m%s\033[0m -> Start Index: %d -> End Index: %d\n", function_list->infos[i]->symbol->name, function_list->infos[i]->tac_start_index, function_list->infos[i]->tac_end_index);
-	}
+	// emit_blocks();
+	return function_list;
 }
 
 void emit_leaders() {

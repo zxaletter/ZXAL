@@ -3,17 +3,13 @@
 
 #include "Lexer/lexer.h"
 #include "Lexer/token.h"
-#include "errorsandcontext.h"
+#include "errors.h"
 #include "types.h"
 #include "node.h"
 
 typedef struct CompilerContext CompilerContext;
 
-
-
 #define INIT_SPECIAL_STATEMENTS_CAPACITY 100
-
-
 
 typedef struct {
 	Token* tokens;
