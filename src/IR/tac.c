@@ -535,11 +535,7 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			Operand* binary_operand = create_operand(ctx, op_type, main_operand_value, TYPE_INTEGER);
 			
 			result = create_tac(ctx, kind, binary_operand, left->result, right->result);
-			if (result) {
-				printf("finished processing node type %d\n", node->type);
-				printf("\033[32mWe got result in binary op\033[0m\n");
-				add_tac_to_table(ctx, result);
-			}
+			add_tac_to_table(ctx, result);
 			break;
 		}
 
@@ -569,7 +565,6 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 
 		case NODE_UNARY_ADD:
 		case NODE_UNARY_SUB: {
-			// printf("\033[32mIn NODE_UNARY_ADD/SUB\033[0m\n");
 			TACInstruction* unary_tac = build_tac_from_expression_dag(ctx, node->right);
 			if (!unary_tac) return NULL;
 
@@ -583,12 +578,10 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			
 			result = create_tac(ctx, kind, op, unary_tac->result, NULL);
 			add_tac_to_table(ctx, result);
-			// printf("\033[32mLeaving NODE_UNARY_ADD/SUB\033[0m\n");
 			break;
 		}
 
 		case NODE_NOT: {
-			// printf("\033[32mIn NODE_NOT\033[0m\n");
 			TACInstruction* unary_tac = build_tac_from_expression_dag(ctx, node->right);
 			if (!unary_tac) return NULL;
 
@@ -599,14 +592,12 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			
 			result = create_tac(ctx, TAC_NOT, op, unary_tac->result, NULL);
 			add_tac_to_table(ctx, result);
-			// printf("\033[32mLeaving NODE_NOT\033[0m\n");
 			break;
 		}
 
 		case NODE_CHAR:
 		case NODE_BOOL:
 		case NODE_INTEGER: {
-			printf("\033[32mIn NODE INTEGER|BOOL|CHAR\033[0m\n");
 			tac_t type = get_tac_type(node->type);
 			
 			OperandValue tac_variable_union = {
@@ -620,17 +611,12 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			Operand* right_operand = create_operand(ctx, OP_INT_LITERAL, buffer_union, TYPE_INTEGER);
 			
 			result = create_tac(ctx, type, left_operand, right_operand, NULL);
-			if (result) {
-				printf("\033[32mWe got result in NODE_INTEGER/CHAR/BOOL\033[0m\n");
-				add_tac_to_table(ctx, result);
-			}
-			printf("\033[32mLeaving NODE_INTEGER|BOOL|CHAR\033[0m\n");
+			add_tac_to_table(ctx, result);
 			break;
 		}
 
 		case NODE_INCREMENT:
 		case NODE_DECREMENT: {
-			printf("\033[32mIn NODE_INCREMENT|DECREMENT\033[0m\n");
 			tac_t type = get_tac_type(node->type);
 			char* tac_variable = generate_label(ctx, VIRTUAL);
 
@@ -655,7 +641,6 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 			add_tac_to_table(ctx, tac_assignment);
 			
 			result = tac_assignment;		
-			printf("\033[32mLeaving NODE_INCREMENT|DECREMENT\033[0m\n");
 			break;
 		}
 
@@ -670,18 +655,15 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 		}
 
 		case NODE_NAME: {		
-			printf("\033[32mIn NODE_NAME\033[0m\n");
-			printf("Processing name: %s\n", node->value.name);	
 			OperandValue sym_val;
 			Operand* sym_op = NULL;
 			
 			if (node->symbol && ((Symbol*)node->symbol)->type) {
-				printf("\033[33mAttempting to create SYM op\033[0m\n");
 				sym_val.sym = node->symbol;
 				Type* t = ((Symbol*)node->symbol)->type;
 				sym_op = create_operand(ctx, OP_SYMBOL, sym_val, t->kind);
-				if (!sym_op) {printf("\033[31mSym op is NULL\033[0m\n");}
 			}
+
 			Operand* existing_sym_op = NULL;
 			if (sym_op) {
 				existing_sym_op = find_operand_in_op_set(tac_table->op_names, sym_op);
@@ -689,45 +671,33 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 
 			if (existing_sym_op) {
 				result = create_tac(ctx, TAC_NAME, existing_sym_op, NULL, NULL);
-				printf("Found existing sym op with address: %p\n", (void*)existing_sym_op);
 			} else {
 				result = create_tac(ctx, TAC_NAME, sym_op, NULL, NULL);
-				printf("Does not have existing sym op, using sym op with address: %p\n", (void*)sym_op);
 				add_to_operand_set(ctx, tac_table->op_names, sym_op);
 			}
-
-			printf("\033[32mLeaving NODE_NAME\033[0m\n");
-
 			break;
 		}
 
 		case NODE_ARG: {
-			// printf("\033[33mIN NODE_ARG CASE\033[0m\n");
 			OperandValue arg_value_label = {
 				.label_name = generate_label(ctx, ARG_LABEL)
 			};
 			Operand* left_operand = create_operand(ctx, OP_ARG, arg_value_label, TYPE_UNKNOWN);
-			// printf("Type of node->right is %d\n", node->right->type);
+
 			TACInstruction* arg = build_tac_from_expression_dag(ctx, node->right);
 			if (!arg || (arg && !arg->result)) {
-				printf("\033[31mARG is NULL\033[0m\n");
 				return NULL;
 			}
-			printf("\033[33mWe got ARG\033[0m\n");
 			
-			result = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL);
-			
-			// add_tac_to_table(ctx, arg_tac);
+			result = create_tac(ctx, TAC_ARG, left_operand, arg->result, NULL);			
 			break;
 		}
 
 		case NODE_CALL: {
-			printf("\033[33mIN NODE_CALL CASE\033[0m\n");
 			TACTable* arg_table = create_tac_table(ctx);
 
 			Node* arg = node->params;
 			while (arg) {
-				printf("\033[33mWE HAVE ARGS\033[0m\n");
 				Node* next_arg = arg->next;
 				TACInstruction* tac = build_tac_from_expression_dag(ctx, arg);
 				if (tac) {
@@ -738,16 +708,11 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 
 			tac_function_argument_index = 0;
 
-			printf("Size of arg_table=%d\n", arg_table->size);
 			for (int i = 0; i < arg_table->size; i++) {
-				printf("\033[34mProcessing tacs in local arg table\033[0m\n");
 				TACInstruction* tac_arg = arg_table->tacs[i];
 				if (tac_arg) {
-					printf("\033[32mTAC is valid, will add to local arg table\033[0m\n");
 					add_tac_to_table(ctx, tac_arg);
-				} else {
-					printf("\033[31mIndex=%d, TAC is NULL, cannot add to local arg table\033[0m\n", i);
-				}
+				} 
 			}
 
 			TACInstruction* function_name = build_tac_from_expression_dag(ctx, node->left);
@@ -755,12 +720,6 @@ TACInstruction* build_tac_from_expression_dag(CompilerContext* ctx, Node* node) 
 
 			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL);
 			add_tac_to_table(ctx, tac_call);
-
-			// OperandValue _return_label = {
-			// 	.label_name = "_RET"
-			// };
-			// Operand* return_op = create_operand(ctx, OP_RETURN, _return_label, TYPE_UNKNOWN);
-			// result = create_tac(ctx, TAC_FUNCTION_RET_VAL, return_op, NULL, NULL);
 			
 			OperandValue func_return_val = {
 				.label_name = generate_label(ctx, VIRTUAL)
@@ -880,7 +839,6 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 	switch (node->type) {
 		case NODE_ASSIGNMENT: {
-			printf("\033[32mIn NODE_ASSIGNMENT\033[0m\n");
 			if (node->right && node->right->type == NODE_ARRAY_LIST) {
 				build_tac_from_array_dagnode(ctx, node->left, node->right);
 
@@ -963,12 +921,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 				add_tac_to_table(ctx, tac_assignment);
 			}
-			printf("\033[32mLeaving NODE_ASSIGNMENT\033[0m\n");
 			break;
 		}
 
 		case NODE_CALL: {
-			printf("\033[32mIn NODE_CALL\033[0m\n");
 			Node* arg = node->right;
 			while (arg) {
 				Node* next_arg = arg->next;
@@ -981,12 +937,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 
 			TACInstruction* tac_call = create_tac(ctx, TAC_CALL, function_name->result, NULL, NULL);
 			add_tac_to_table(ctx, tac_call);
-			printf("\033[32mLeaving NODE_CALL\033[0m\n");
 			break;
 		}
 
 		case NODE_IF: {
-		    printf("\033[32mIn NODE_IF\033[0m\n");
 		    bool has_next_statement = node->next != NULL;
 		    bool has_next_conditional = determine_if_next_conditional(node, has_next_statement);
 		    
@@ -1040,12 +994,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    	emit_label(ctx, next_jmp_label);
 		    	pop_tac_context(ctx);
 		    }
-		    printf("\033[32mLeaving NODE_IF\033[0m\n");
 		    break;
 		}
 
 		case NODE_ELSE_IF: {
-		    printf("\033[32mIn NODE_ELSE_IF\033[0m\n");
 		    TACContext* retrieved_context = peek_tac_context();
 		    if (!retrieved_context) return;
 
@@ -1108,12 +1060,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    if (!has_next_conditional) {
 		        pop_tac_context(ctx);
 		    }
-		    printf("\033[32mLeaving NODE_ELSE_IF\033[0m\n");
 		    break;
 		}
 
 		case NODE_ELSE: {
-		    printf("\033[32mIn NODE_ELSE\033[0m\n");
 		    TACContext* retrieved_context = peek_tac_context();
 		    if (!retrieved_context) return;
 
@@ -1150,12 +1100,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		    }
 
 		    pop_tac_context(ctx);
-		    printf("\033[32mLeaving NODE_ELSE\033[0m\n");
 		    break;
 		}
 
 		case NODE_WHILE: {
-			printf("\033[32mIn NODE_WHILE\033[0m\n");
 			char* loop_start_label = generate_label(ctx, REG_LABEL);
 			char* end_label = generate_label(ctx, REG_LABEL);
 
@@ -1184,16 +1132,13 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 			emit_label(ctx, end_label);
 
 			pop_tac_context(ctx);
-			printf("\033[32mLeaving NODE_WHILE\033[0m\n");
 			break;
 		}
 
 		case NODE_FOR: {
-			printf("\033[32mIn NODE_FOR\033[0m\n");
 			char* loop_start_label = generate_label(ctx, REG_LABEL);
 			char* update_label = generate_label(ctx, REG_LABEL);
 			char* end_label = generate_label(ctx, REG_LABEL);
-
 	
 			TACContext* context = create_tac_context(
 				ctx, 
@@ -1227,12 +1172,10 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 			emit_label(ctx, end_label);
 
 			pop_tac_context(ctx);
-			printf("\033[32mLeaving NODE_FOR\033[0m\n");
 			break;
 		}
 
 		case NODE_RETURN: {
-			printf("\033[32mIn NODE_RETURN\033[0m\n");
 			TACInstruction* result = NULL;
 			if (node->right) {
 				TACInstruction* tac = build_tac_from_expression_dag(ctx, node->right);
@@ -1250,31 +1193,19 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 				result = create_tac(ctx, TAC_RETURN, NULL, NULL, NULL);
 			}
 			add_tac_to_table(ctx, result);
-			printf("\033[32mLeaving NODE_RETURN\033[0m\n");
 			break;
 		}
 
 		case NODE_INCREMENT:
 		case NODE_DECREMENT: {
-			printf("\033[32mIn NODE_INCREMENT/DECREMENT\033[0m\n");
 			Node* int_node = create_int_node(ctx, NODE_INTEGER, 1, NULL, NULL, NULL, NULL, NULL, NULL);
 			if (!int_node) return;
-			printf("HEEEEEELO\n");
+
 			node_t kind = (node->type == NODE_INCREMENT) ? NODE_ADD : NODE_SUB;
-			printf("Node kind is %d\n", kind);
 			Node* op_node = create_node(ctx, kind, node->left, int_node, NULL, NULL, NULL, NULL);	
-			if (op_node) {
-				printf("op node address: %p\n", (void*)op_node);
-				printf("Node has type %d\n", op_node->type);
-			} else {
-				printf("We dont have op node\n");
-			}
-			printf("or heeeeeeelo\n");
 
 			TACInstruction* tac_arithmetic = build_tac_from_expression_dag(ctx, op_node);
-			printf("no we're ee\n");
 			TACInstruction* tac_var = build_tac_from_expression_dag(ctx, node->left);
-			printf("here\n");
 			if (!tac_arithmetic || !tac_var) return;
 			TACInstruction* tac_assignment = create_tac(
 				ctx, 
@@ -1283,14 +1214,11 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 				NULL, 
 				tac_arithmetic ? tac_arithmetic->result : NULL
 			);
-			printf("now were here\n");
 			add_tac_to_table(ctx, tac_assignment);
-			printf("\033[32mLeaving NODE_INCREMENT/DECREMENT\033[0m\n");
 			break;
 		}
 
 		case NODE_BREAK: {
-			printf("\033[32mIn NODE_BREAK\033[0m\n");
 			TACContext* retrieved_context = peek_tac_context();
 
 			TACContext* loop_context = context_loop_lookup(retrieved_context);
@@ -1301,26 +1229,22 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 		}
 
 		case NODE_CONTINUE: {
-			printf("\033[32mIn NODE_CONTINUE\033[0m\n");
 			TACContext* retrieved_context = peek_tac_context();
 
 			TACContext* loop_context = context_loop_lookup(retrieved_context);
 			if (loop_context) {
 				emit_goto(ctx, loop_context->update_label);
 			}
-			printf("\033[32mLeaving NODE_CONTINUE\033[0m\n");
 			break;
 		}
 
 		case NODE_BLOCK: {
-			printf("\033[32mIn NODE_BLOCK\033[0m\n");
 			Node* stmt = node->right;
 			while (stmt) {
 				Node* next_stmt = stmt->next;
 				build_tac_from_statement_dag(ctx, stmt);
 				stmt = next_stmt;
 			}
-			printf("\033[32mLeaving NODE_BLOCK\033[0m\n");
 			break;
 		}
 	}
@@ -1357,28 +1281,21 @@ void reset_tac_indices() {
 void build_tac_from_global_dag(CompilerContext* ctx, Node* node) {
 	if (!node) return;
 
-	printf("we have node\n");
 	switch (node->type) {
 		case NODE_NAME: {
-			printf("in node name\n");
 			Symbol* sym = node->symbol;
 			if (sym) {
-				printf("sym\n");
 				if (sym->type) {
-					printf("type\n");
 					Type* t = sym->type;
 					if (t->kind == TYPE_FUNCTION) {
-						printf("func\n");
 						reset_tac_indices();
 						reset_context_stack();
-						printf("\033[31mBUILDING TACS FOR FUNCTION '%s'\033[0m\n", node->value.name);
 						
 						Operand* func_op = NULL;
 						if (node->symbol) {
 							OperandValue func_val = {.sym = node->symbol};
 							func_op = create_operand(ctx, OP_SYMBOL, func_val, t->kind);
 						}
-						printf("got here\n");
 						if (func_op) {
 							TACInstruction* tac_function = create_tac(ctx, TAC_NAME, func_op, NULL, NULL);
 							add_tac_to_table(ctx, tac_function);
@@ -1386,8 +1303,6 @@ void build_tac_from_global_dag(CompilerContext* ctx, Node* node) {
 							build_tac_from_parameter_dag(ctx, node->params);
 							build_tac_from_statement_dag(ctx, node->right);
 						}
-						printf("and here\n");
-						printf("\033[31mFINISHED BUILDING TACS FOR FUNCTION '%s'\033[0m\n", node->value.name);
 					}
 				} 
 			} 
@@ -1397,10 +1312,8 @@ void build_tac_from_global_dag(CompilerContext* ctx, Node* node) {
 }
 
 TACTable* build_tacs(CompilerContext* ctx, Node* node) {
-	if (!node) {
-		printf("Root node is NULL\n");
-		return NULL;
-	}
+	if (!node) return NULL;
+
 	if (!init_tac_table(ctx)) return NULL;
 
 	if (!init_tac_context_stack(ctx)) return NULL;
@@ -1408,12 +1321,11 @@ TACTable* build_tacs(CompilerContext* ctx, Node* node) {
 	Node* current = node;
 	while (current) {
 		Node* next = current->next;
-		printf("here\n");
 		build_tac_from_global_dag(ctx, current);
 		current = next;
 	}
 
-	emit_tac_instructions();
+	// emit_tac_instructions();
 
 	return tac_table;
 }

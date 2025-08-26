@@ -954,9 +954,8 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 		}
 
 		case TOKEN_IF_KEYWORD: {
-			printf("\033[32mBefore advancing in TOKEN_IF_KEYWORD, current token type is %d\033[0m\n", peek_token_type(parser));
+			// printf("\033[32mBefore advancing in TOKEN_IF_KEYWORD, current token type is %d\033[0m\n", peek_token_type(parser));
 			advance_parser(parser);
-			printf("Now current token type %d\n\n", peek_token_type(parser));
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
@@ -969,8 +968,6 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				return NULL;
 			}
 
-			printf("After getting condition, current token type is %d\n", peek_token_type(parser));
-
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
 				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
@@ -981,7 +978,6 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 			Node* if_body = parse_block(ctx, parser);
 			stmt = create_node(ctx, NODE_IF, condition_node, if_body, NULL, NULL, NULL, NULL);
 			if (!stmt) return NULL;
-			printf("About to leave if statement current token type is %d\n", peek_token_type(parser));
 			break;
 		} 
 
@@ -1293,7 +1289,7 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				if (!stmt) return NULL;
 
 			} else if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
-				printf("\033[32mWe have function call\033[0m\n");
+				// printf("\033[32mWe have function call\033[0m\n");
 				advance_parser(parser);
 				
 				Node* args = parse_args(ctx, parser);
@@ -1302,8 +1298,7 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 					printf("\033[31mUnable to create NODE_CALL in parse_statement\033[0m\n");
 					return NULL;
 				}
-				printf("\033[32mAfter creating NODE_CALL in parse_statement, current token type is %d\033[0m\n",
-					peek_token_type(parser));
+				
 				advance_parser(parser);
 			
 			} else if (peek_token_type(parser) == TOKEN_ASSIGNMENT) {
@@ -1316,7 +1311,7 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 				stmt = create_node(ctx, NODE_ASSIGNMENT, def, expr, NULL, NULL, NULL, NULL);
 				if (!stmt) return NULL;
-				printf("\033[32mAfter creating assignment node, current token type is %d\033[0m\n", peek_token_type(parser));
+				// printf("\033[32mAfter creating assignment node, current token type is %d\033[0m\n", peek_token_type(parser));
 
 			} else if (peek_token_type(parser) == TOKEN_COLON) {
 				advance_parser(parser);

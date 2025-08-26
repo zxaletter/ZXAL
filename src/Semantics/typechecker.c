@@ -217,11 +217,6 @@ struct Type* typecheck_expression(CompilerContext* ctx, Node* node) {
 			Node* wrapped_arg = node->params;
 
 			Symbol* sym = node->left->symbol;
-			if (!sym) {
-				printf("\033[32mIn NODE_CALL, sym is NULL\033[0m\n");
-			} else {
-				printf("\033[32mWe have Symbol in NODE_CALL\033[0m\n");
-			}
 			Node* wrapped_param = sym->params;
 
 			while (wrapped_arg && wrapped_param) {

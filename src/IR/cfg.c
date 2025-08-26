@@ -1172,98 +1172,98 @@ void determine_next_use(CompilerContext* ctx, CFG* cfg) {
 }
 
 void compute_instruction_live_out(CompilerContext* ctx, CFG* cfg) {
-	printf("==================================\n");
-	printf("Displaying Out sets for each block\n\n");
+	// printf("==================================\n");
+	// printf("Displaying Out sets for each block\n\n");
 	for (int i = 0; i < cfg->num_blocks; i++) {
 		BasicBlock* block = cfg->all_blocks[i];
-		printf("Block \033[32m%d\033[0m\n", i);
-		printf("Out: {");
-		for (int k = 0; k < block->out_set->size; k++) {
-			Operand* out_op = block->out_set->elements[k];
-			bool last_op = (k == block->out_set->size - 1);
-			if (out_op) {
-				switch (out_op->kind) {
-					case OP_SYMBOL: {
-						if (last_op) {
-							printf("%s", out_op->value.sym->name);
-						} else {
-							printf("%s, ", out_op->value.sym->name);
-						}
-						break;
-					}
+		// printf("Block \033[32m%d\033[0m\n", i);
+		// printf("Out: {");
+		// for (int k = 0; k < block->out_set->size; k++) {
+		// 	Operand* out_op = block->out_set->elements[k];
+		// 	bool last_op = (k == block->out_set->size - 1);
+		// 	if (out_op) {
+		// 		switch (out_op->kind) {
+		// 			case OP_SYMBOL: {
+		// 				if (last_op) {
+		// 					printf("%s", out_op->value.sym->name);
+		// 				} else {
+		// 					printf("%s, ", out_op->value.sym->name);
+		// 				}
+		// 				break;
+		// 			}
 
-					case OP_ADD:
-					case OP_SUB:
-					case OP_MUL:
-					case OP_DIV:
-					case OP_MODULO:
-					case OP_LESS:
-					case OP_GREATER:
-					case OP_LESS_EQUAL:
-					case OP_GREATER_EQUAL:
-					case OP_EQUAL:
-					case OP_NOT_EQUAL:
-					case OP_NOT:
-					case OP_LOGICAL_AND:
-					case OP_LOGICAL_OR:
-					case OP_UNARY_ADD:
-					case OP_UNARY_SUB:
-					case OP_STORE: {
-						if (last_op) {
-							printf("%s", out_op->value.label_name);
-						} else {
-							printf("%s, ", out_op->value.label_name);
-						}
-						break;
-					}
-				}
-			}
-		}
-		printf("}\n");
+		// 			case OP_ADD:
+		// 			case OP_SUB:
+		// 			case OP_MUL:
+		// 			case OP_DIV:
+		// 			case OP_MODULO:
+		// 			case OP_LESS:
+		// 			case OP_GREATER:
+		// 			case OP_LESS_EQUAL:
+		// 			case OP_GREATER_EQUAL:
+		// 			case OP_EQUAL:
+		// 			case OP_NOT_EQUAL:
+		// 			case OP_NOT:
+		// 			case OP_LOGICAL_AND:
+		// 			case OP_LOGICAL_OR:
+		// 			case OP_UNARY_ADD:
+		// 			case OP_UNARY_SUB:
+		// 			case OP_STORE: {
+		// 				if (last_op) {
+		// 					printf("%s", out_op->value.label_name);
+		// 				} else {
+		// 					printf("%s, ", out_op->value.label_name);
+		// 				}
+		// 				break;
+		// 			}
+		// 		}
+		// 	}
+		// }
+		// printf("}\n");
 
-		printf("In: {");
-		for (int r = 0; r < block->in_set->size; r++) {
-			Operand* in_op = block->in_set->elements[r];
-			bool last_op = (r == block->in_set->size - 1);
-			if (in_op) {
-				switch (in_op->kind) {
-					case OP_SYMBOL: {
-						if (last_op) {
-							printf("%s", in_op->value.sym->name);
-						} else {
-							printf("%s, ", in_op->value.sym->name);
-						}
-						break;
-					}
+		// printf("In: {");
+		// for (int r = 0; r < block->in_set->size; r++) {
+		// 	Operand* in_op = block->in_set->elements[r];
+		// 	bool last_op = (r == block->in_set->size - 1);
+		// 	if (in_op) {
+		// 		switch (in_op->kind) {
+		// 			case OP_SYMBOL: {
+		// 				if (last_op) {
+		// 					printf("%s", in_op->value.sym->name);
+		// 				} else {
+		// 					printf("%s, ", in_op->value.sym->name);
+		// 				}
+		// 				break;
+		// 			}
 
-					case OP_ADD:
-					case OP_SUB:
-					case OP_MUL:
-					case OP_DIV:
-					case OP_MODULO:
-					case OP_LESS:
-					case OP_GREATER:
-					case OP_LESS_EQUAL:
-					case OP_GREATER_EQUAL:
-					case OP_EQUAL:
-					case OP_NOT_EQUAL:
-					case OP_NOT:
-					case OP_LOGICAL_AND:
-					case OP_LOGICAL_OR:
-					case OP_UNARY_ADD:
-					case OP_UNARY_SUB:
-					case OP_STORE: {
-						if (last_op) {
-							printf("%s", in_op->value.label_name);
-						} else {
-							printf("%s, ", in_op->value.label_name);
-						}
-						break;
-					}
-				}
-			}
-		}
-		printf("}\n\n");
+		// 			case OP_ADD:
+		// 			case OP_SUB:
+		// 			case OP_MUL:
+		// 			case OP_DIV:
+		// 			case OP_MODULO:
+		// 			case OP_LESS:
+		// 			case OP_GREATER:
+		// 			case OP_LESS_EQUAL:
+		// 			case OP_GREATER_EQUAL:
+		// 			case OP_EQUAL:
+		// 			case OP_NOT_EQUAL:
+		// 			case OP_NOT:
+		// 			case OP_LOGICAL_AND:
+		// 			case OP_LOGICAL_OR:
+		// 			case OP_UNARY_ADD:
+		// 			case OP_UNARY_SUB:
+		// 			case OP_STORE: {
+		// 				if (last_op) {
+		// 					printf("%s", in_op->value.label_name);
+		// 				} else {
+		// 					printf("%s, ", in_op->value.label_name);
+		// 				}
+		// 				break;
+		// 			}
+		// 		}
+		// 	}
+		// }
+		// printf("}\n\n");
 
 		OperandSet* current_live = copy_set(ctx, block->out_set);
 
@@ -1314,49 +1314,49 @@ void compute_instruction_live_out(CompilerContext* ctx, CFG* cfg) {
 				}
 				instruction->live_out = copy_set(ctx, current_live);
 
-				if (instruction->result) {
-					switch (instruction->result->kind) {
-						case OP_SYMBOL: {
-							printf("\033[32m%s\033[0m -> current live: {", instruction->result->value.sym->name);
-							break;
-						}
+				// if (instruction->result) {
+				// 	switch (instruction->result->kind) {
+				// 		case OP_SYMBOL: {
+				// 			printf("\033[32m%s\033[0m -> current live: {", instruction->result->value.sym->name);
+				// 			break;
+				// 		}
 
-						default: {
-							printf("\033[32m%s\033[0m -> current live: {", instruction->result->value.label_name ? instruction->result->value.label_name : NULL);
-							break;
-						}
-					}
+				// 		default: {
+				// 			printf("\033[32m%s\033[0m -> current live: {", instruction->result->value.label_name ? instruction->result->value.label_name : NULL);
+				// 			break;
+				// 		}
+				// 	}
 
-					for (int i = 0; i < current_live->size; i++) {
-						Operand* current_op = current_live->elements[i];
-						bool last_op = (i == current_live->size - 1);
-						switch (current_op->kind) {
-							case OP_SYMBOL: {
-								if (last_op) {
-									printf("%s", current_op->value.sym->name);
-								} else {
-									printf("%s, ", current_op->value.sym->name);
-								}
-								break;
-							}
+				// 	for (int i = 0; i < current_live->size; i++) {
+				// 		Operand* current_op = current_live->elements[i];
+				// 		bool last_op = (i == current_live->size - 1);
+				// 		switch (current_op->kind) {
+				// 			case OP_SYMBOL: {
+				// 				if (last_op) {
+				// 					printf("%s", current_op->value.sym->name);
+				// 				} else {
+				// 					printf("%s, ", current_op->value.sym->name);
+				// 				}
+				// 				break;
+				// 			}
 
-							default: {
-								char* name = current_op->value.label_name ? current_op->value.label_name : NULL;
-								if (last_op) {
-									printf("%s", name);
-								} else {
-									printf("%s, ", name);
-								}
-								break;
-							}
-						} 
-					}
-					printf("}\n");
-				}
+				// 			default: {
+				// 				char* name = current_op->value.label_name ? current_op->value.label_name : NULL;
+				// 				if (last_op) {
+				// 					printf("%s", name);
+				// 				} else {
+				// 					printf("%s, ", name);
+				// 				}
+				// 				break;
+				// 			}
+				// 		} 
+				// 	}
+				// 	printf("}\n");
+				// }
 			}	
 		}
 	}
-	printf("==================================\n");
+	// printf("==================================\n");
 }
 
 void live_analysis(CompilerContext* ctx) {
@@ -1368,64 +1368,64 @@ void live_analysis(CompilerContext* ctx) {
 			BasicBlock* block = cfg->all_blocks[j];
 			
 			bool has_block_sets = init_block_sets(ctx, block);
-			if (!has_block_sets) return;
+			assert(has_block_sets);
 
 			populate_use_and_def_sets(ctx, block);
-			printf("\nBlock \033[32m%d\033[0m\n", j);
-			printf("Def: {");
-			for (int k = 0; k < block->def_set->size; k++) {
-				Operand* def_op = block->def_set->elements[k];
-				bool last_op = (k == block->def_set->size - 1);
-				if (def_op) {
-					switch (def_op->kind) {
-						case OP_SYMBOL: {
-							if (last_op) {
-								printf("%s", def_op->value.sym->name);
-							} else {
-								printf("%s, ", def_op->value.sym->name);
-							}
-							break;
-						}
-						default: {
-							if (last_op) {
-								printf("%s", def_op->value.label_name);
-							} else {
-								printf("%s, ", def_op->value.label_name);
-							}
-							break;
-						}
-					}
-				}
-			}
-			printf("}\n");
+			// printf("\nBlock \033[32m%d\033[0m\n", j);
+			// printf("Def: {");
+			// for (int k = 0; k < block->def_set->size; k++) {
+			// 	Operand* def_op = block->def_set->elements[k];
+			// 	bool last_op = (k == block->def_set->size - 1);
+			// 	if (def_op) {
+			// 		switch (def_op->kind) {
+			// 			case OP_SYMBOL: {
+			// 				if (last_op) {
+			// 					printf("%s", def_op->value.sym->name);
+			// 				} else {
+			// 					printf("%s, ", def_op->value.sym->name);
+			// 				}
+			// 				break;
+			// 			}
+			// 			default: {
+			// 				if (last_op) {
+			// 					printf("%s", def_op->value.label_name);
+			// 				} else {
+			// 					printf("%s, ", def_op->value.label_name);
+			// 				}
+			// 				break;
+			// 			}
+			// 		}
+			// 	}
+			// }
+			// printf("}\n");
 
-			printf("Use: {");
-			for (int u = 0; u < block->use_set->size; u++) {
-				Operand* use_op = block->use_set->elements[u];
-				bool last_op = (u == block->use_set->size - 1);
-				if (use_op) {
-					switch (use_op->kind) {
-						case OP_SYMBOL: {
-							if (last_op) {
-								printf("%s", use_op->value.sym->name);
-							} else {
-								printf("%s, ", use_op->value.sym->name);
-							}
-							break;
-						}
+			// printf("Use: {");
+			// for (int u = 0; u < block->use_set->size; u++) {
+			// 	Operand* use_op = block->use_set->elements[u];
+			// 	bool last_op = (u == block->use_set->size - 1);
+			// 	if (use_op) {
+			// 		switch (use_op->kind) {
+			// 			case OP_SYMBOL: {
+			// 				if (last_op) {
+			// 					printf("%s", use_op->value.sym->name);
+			// 				} else {
+			// 					printf("%s, ", use_op->value.sym->name);
+			// 				}
+			// 				break;
+			// 			}
 
-						default: {
-							if (last_op) {
-								printf("%s", use_op->value.label_name);
-							} else {
-								printf("%s, ", use_op->value.label_name);
-							}
-							break;
-						}
-					}
-				}
-			}
-			printf("}\n\n");
+			// 			default: {
+			// 				if (last_op) {
+			// 					printf("%s", use_op->value.label_name);
+			// 				} else {
+			// 					printf("%s, ", use_op->value.label_name);
+			// 				}
+			// 				break;
+			// 			}
+			// 		}
+			// 	}
+			// }
+			// printf("}\n\n");
 		}
 
 		fixed_point_iteration(ctx, cfg);
@@ -1624,29 +1624,29 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 			if (instruction->kind == TAC_ASSIGNMENT && instruction->op2 != OP_RETURN) {
 				bool ops_equal = operands_equal(instruction->result, instruction->op2);
 				if (!ops_equal) {
-					switch (instruction->op2->kind) {
-						case OP_SYMBOL: {
-							printf("\033[31mWARNING\033[0m: '%s' interferes with assignment of ", instruction->op2->value.sym->name);
-							break;
-						}
+					// switch (instruction->op2->kind) {
+					// 	case OP_SYMBOL: {
+					// 		printf("\033[31mWARNING\033[0m: '%s' interferes with assignment of ", instruction->op2->value.sym->name);
+					// 		break;
+					// 	}
 
-						default: {
-							printf("\033[31mWARNING\033[0m: '%s' interferes with assignment of ", instruction->op2->value.label_name);
-							break;
-						}
-					}
+					// 	default: {
+					// 		printf("\033[31mWARNING\033[0m: '%s' interferes with assignment of ", instruction->op2->value.label_name);
+					// 		break;
+					// 	}
+					// }
 
-					switch (instruction->result->kind) {
-						case OP_SYMBOL: {
-							printf("'%s'\n", instruction->result->value.sym->name);
-							break;
-						}
+					// switch (instruction->result->kind) {
+					// 	case OP_SYMBOL: {
+					// 		printf("'%s'\n", instruction->result->value.sym->name);
+					// 		break;
+					// 	}
 
-						default: {
-							printf("'%s'\n", instruction->result->value.label_name);
-							break;
-						}
-					}
+					// 	default: {
+					// 		printf("'%s'\n", instruction->result->value.label_name);
+					// 		break;
+					// 	}
+					// }
 					add_to_operand_set(ctx, bundle->interferes_with, instruction->op2);
 					InterferenceBundle* prev_bundle = instruction->op2->interference_bundle;
 					if (prev_bundle) {
@@ -1757,7 +1757,6 @@ void emit_blocks() {
 				for (int k = 0; k < current_block->num_instructions; k++) {
 					printf("\t\tTAC type %d\n", current_block->instructions[k]->kind);
 				}
-
 			}			
 		}
 	}

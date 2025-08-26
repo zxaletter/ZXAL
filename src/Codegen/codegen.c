@@ -237,7 +237,6 @@ ReloadBundle* gather_matching_reloads(CompilerContext* ctx, ReloadSchedule* relo
 
 void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInfo* info) {
 	char buffer[100];
-	printf("Generating function body for function: '%s'\n", info->symbol->name);
 	CFG* cfg = info->cfg;
 	for (int i = 0; i < cfg->num_blocks; i++) {
 		BasicBlock* block = cfg->all_blocks[i]; 
@@ -925,7 +924,6 @@ void add_spill(CompilerContext* ctx, SpillSchedule* schedule, Spill s) {
 		assert(new_spills);
 		schedule->spills = new_spills;
 	}
-	printf("About to add new spill with register=%d\n", s.assigned_register);
 	schedule->spills[schedule->size++] = s;
 }
 

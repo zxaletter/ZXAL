@@ -17,32 +17,20 @@ void find_new_register(InterferenceBundle* bundle, int* remaining_registers, Ope
 		}
 
 		if (can_use) {
-			switch (op->kind) {
-				case OP_SYMBOL: {
-					printf("\033[32m%s found register %d\033[0m\n", op->value.sym->name, remaining_registers[i]);
-					break;
-				}
+			// switch (op->kind) {
+			// 	case OP_SYMBOL: {
+			// 		printf("\033[32m%s found register %d\033[0m\n", op->value.sym->name, remaining_registers[i]);
+			// 		break;
+			// 	}
 
-				default: {
-					printf("\033[32m%s found register %d\033[0m\n", op->value.label_name, remaining_registers[i]);
-					break;
-				}
-			}
+			// 	default: {
+			// 		printf("\033[32m%s found register %d\033[0m\n", op->value.label_name, remaining_registers[i]);
+			// 		break;
+			// 	}
+			// }
 			op->assigned_register = remaining_registers[i];
 			break;
-		} else {
-			switch (op->kind) {
-				case OP_SYMBOL: {
-					printf("\033[31m%s could not find register\033[0m\n", op->value.sym->name);
-					break;
-				}
-
-				default: {
-					printf("\033[31m%s could not find register\033[0m\n", op->value.label_name);
-					break;
-				}
-			}
-		}
+		} 
 	}
 }
 
@@ -73,16 +61,16 @@ void application_binary_interface(TACInstruction* instruction, int* arg_index, i
 
 			case TAC_PARAM: {
 				if (*param_index < 6) {
-					switch (instruction->op1->kind) {
-						case OP_SYMBOL: {
-							printf("Param '%s' with address: %p assigned register=%d\n", instruction->op1->value.sym->name, (void*)instruction->op1, ARG_OFFSET + *param_index);
-							break;
-						}
-						default: {
-							printf("Param '%s' with address: %p assigned address=%d\n", instruction->op1->value.label_name, (void*)instruction->op1, ARG_OFFSET + *param_index);
-							break;
-						}
-					}
+					// switch (instruction->op1->kind) {
+					// 	case OP_SYMBOL: {
+					// 		printf("Param '%s' with address: %p assigned register=%d\n", instruction->op1->value.sym->name, (void*)instruction->op1, ARG_OFFSET + *param_index);
+					// 		break;
+					// 	}
+					// 	default: {
+					// 		printf("Param '%s' with address: %p assigned address=%d\n", instruction->op1->value.label_name, (void*)instruction->op1, ARG_OFFSET + *param_index);
+					// 		break;
+					// 	}
+					// }
 					instruction->op1->assigned_register = ARG_OFFSET + *param_index;
 					(*param_index)++;
 				} else {
@@ -95,14 +83,6 @@ void application_binary_interface(TACInstruction* instruction, int* arg_index, i
 				*arg_index = 0;
 				break;
 			}
-
-			// case TAC_MODULO:
-			// case TAC_DIV: {
-			// 	if (instruction->op1) {
-			// 		instruction->op1->assigned_register = 0;
-			// 	}
-			// 	break;
-			// }
 
 			case TAC_RETURN: {
 				if (instruction->result && instruction->op1) {
@@ -152,7 +132,7 @@ int* get_remaining_registers(CompilerContext* ctx, int* restricted_regs, int res
 void color_interference_graphs(CompilerContext* ctx, FunctionList* function_list) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
-		printf("\nAbout to color interference graph for function \033[32m%s\033[0m\n", info->symbol->name);
+		// printf("\nAbout to color interference graph for function \033[32m%s\033[0m\n", info->symbol->name);
 		InterferenceGraph* graph = info->graph;
 
 		pre_color_nodes(info);
@@ -160,43 +140,10 @@ void color_interference_graphs(CompilerContext* ctx, FunctionList* function_list
 		for (int j = 0; j < graph->size; j++) {
 			InterferenceBundle* bundle = graph->bundles[j];
 			Operand* op = bundle->operand;
-			if (strcmp(info->symbol->name, "classify_numbers") == 0) {
-				switch (op->kind) {
-					case OP_SYMBOL: {
-						printf("Processing '%s' with address: %p\n", op->value.sym->name, (void*)op);
-						break;
-					}
-					default: {
-						printf("Processing '%s'\n", op->value.label_name);
-						break;
-					}
-				}
-			}
+			
 			// pre colored
-			if (op->assigned_register != -1 || op->permanent_frame_position) {
-				switch (op->kind) {
-					case OP_SYMBOL: {
-						printf("%s was precolored\n", op->value.sym->name);
-						if (op->permanent_frame_position) {
-							printf("%s has permanent_frame_position\n", op->value.sym->name);
-						} else if (op->assigned_register != -1) {
-							printf("%s has assigned register=%d\n", op->value.sym->name, op->assigned_register);
-						}
-						break;
-					}
-					default: {
-						printf("%s was precolored\n", op->value.label_name);
-						if (op->permanent_frame_position) {
-							printf("%s has permanent_frame_position\n", op->value.label_name);
-						} else if (op->assigned_register != -1) {
-							printf("%s has assigned register=%d\n",op->value.label_name, op->assigned_register);
-						}
-						break;
-					}
-				}
-
-				continue;
-			}
+			if (op->assigned_register != -1 || op->permanent_frame_position) continue;
+			
 			for (int reg = 0; reg < NUM_REGISTERS; reg++) {
 				bool can_use = true;
 
@@ -217,16 +164,16 @@ void color_interference_graphs(CompilerContext* ctx, FunctionList* function_list
 						find_new_register(bundle, remaining_registers, op);	
 					} else {
 						op->assigned_register = reg;
-						switch (op->kind) {
-							case OP_SYMBOL: {
-								printf("'%s' has been assigned register=%d\n", op->value.sym->name, reg);
-								break;
-							}
-							default: {
-								printf("'%s' has been assigned register=%d\n", op->value.label_name, reg);
-								break;
-							}
-						}
+						// switch (op->kind) {
+						// 	case OP_SYMBOL: {
+						// 		printf("'%s' has been assigned register=%d\n", op->value.sym->name, reg);
+						// 		break;
+						// 	}
+						// 	default: {
+						// 		printf("'%s' has been assigned register=%d\n", op->value.label_name, reg);
+						// 		break;
+						// 	}
+						// }
 					}
 					break;
 				}
@@ -243,7 +190,7 @@ void reg_alloc(CompilerContext* ctx, FunctionList* function_list) {
 	if (!function_list) return;
 
 	color_interference_graphs(ctx, function_list);
-	check_regs(function_list);
+	// check_regs(function_list);
 }
 
 void check_regs(FunctionList* function_list) {
