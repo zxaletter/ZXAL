@@ -127,18 +127,6 @@ ArgumentList* find_arg_list(BasicBlock* block, TACInstruction* tac) {
 	return NULL;
 }
 
-bool result_live(BasicBlock* block, Operand* target, int start_index) {
-	for (int i = start_index + 1; i < block->num_instructions; i++) {
-		TACInstruction* tac = block->instructions[i];
-		if (tac->kind == TAC_CALL) {
-			bool live = contains_operand(tac->live_out, target);
-			if (live)
-				return true;
-		}
-	}
-	return false;
-}
-
 void emit_reloads(ASMWriter* writer, ReloadBundle* bundle) {
 	if (bundle) {
 		char buffer[30];
@@ -2096,9 +2084,6 @@ char* get_filename(CompilerContext* ctx, char* file) {
 ASMWriter* create_asm_writer(CompilerContext* ctx, char* file) {
 	ASMWriter* writer = arena_allocate(ctx->codegen_arena, sizeof(ASMWriter));
 	if (!writer) return NULL;
-
-	writer->current_data_pos = 0;
-	writer->current_text_pos = 0;
 
 	writer->filename = get_filename(ctx, file);
 	if (!writer->filename) {

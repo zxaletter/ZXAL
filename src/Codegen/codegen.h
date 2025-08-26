@@ -31,8 +31,6 @@ typedef struct {
 typedef struct {
 	FILE* file;
 	char* filename;
-	size_t current_text_pos;
-	size_t current_data_pos;
 } ASMWriter;
 
 void emit_reloads(ASMWriter* writer, ReloadBundle* bundle);
