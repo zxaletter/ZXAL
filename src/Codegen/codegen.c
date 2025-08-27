@@ -80,10 +80,10 @@ char* get_op_code(tac_t type) {
 		case TAC_EQUAL: return "jne";
 		
 		case TAC_LESS:
-		case TAC_LESS_EQUAL: return "jg";
+		case TAC_LESS_EQUAL: return "jge";
 
  		case TAC_GREATER:
- 		case TAC_GREATER_EQUAL: return "jl";
+ 		case TAC_GREATER_EQUAL: return "jle";
 	}
 }
 
@@ -92,13 +92,13 @@ void generate_corresponding_jump(ASMWriter* writer, tac_t kind, char* jmp_label)
 	switch (kind) {
 		case TAC_LESS:
 		case TAC_LESS_EQUAL: {
-			snprintf(buffer, sizeof(buffer), "\tjg %s", jmp_label);
+			snprintf(buffer, sizeof(buffer), "\tjge %s", jmp_label);
 			break;
 		}
 
 		case TAC_GREATER:
 		case TAC_GREATER_EQUAL: {
-			snprintf(buffer, sizeof(buffer), "\tjl %s", jmp_label);
+			snprintf(buffer, sizeof(buffer), "\tjle %s", jmp_label);
 			break;
 		}
 
@@ -283,6 +283,42 @@ void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInf
 
 				case TAC_GOTO: {
 					snprintf(buffer, sizeof(buffer), "\tjmp %s", tac->result->value.label_name);
+					write_asm_to_file(writer, buffer);
+					break;
+				}
+
+				case TAC_UNARY_ADD:
+					break;
+
+				case TAC_UNARY_SUB: {
+					if (tac->op1->permanent_frame_position) {
+						snprintf(buffer, sizeof(buffer), "\tneg [rbp - %zu]", tac->op1->frame_byte_offset);
+					}else {
+						snprintf(buffer, sizeof(buffer), "\tneg %s", registers[tac->op1->assigned_register]);
+					}
+					write_asm_to_file(writer, buffer);
+
+					if (tac->result->permanent_frame_position) {
+						if (tac->op1->permanent_frame_position) {
+							snprintf(buffer, sizeof(buffer), "\tmov [rbp - %zu], %s",
+								tac->result->frame_byte_offset,
+								registers[tac->op1->temp_register]);
+						} else {
+							snprintf(buffer, sizeof(buffer), "\tmov [rbp - %zu], %s",
+								tac->result->frame_byte_offset,
+								registers[tac->op1->assigned_register]);
+						}
+					} else {
+						if (tac->op1->permanent_frame_position) {
+							snprintf(buffer, sizeof(buffer), "\tmov %s, [rbp - %zu]",
+								registers[tac->result->assigned_register],
+								tac->op1->frame_byte_offset);
+						} else {
+							snprintf(buffer, sizeof(buffer), "\tmov %s, %s", 
+								registers[tac->result->assigned_register],
+								registers[tac->op1->assigned_register]);
+						}
+					}
 					write_asm_to_file(writer, buffer);
 					break;
 				}
@@ -1993,6 +2029,48 @@ void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_lis
 						break;
 					}
 
+					case TAC_UNARY_SUB: {
+						if (tac->result->permanent_frame_position) {
+							get_bytes_from_operand(ctx, symbols_set, tac->result, &info->total_frame_bytes);
+						}
+
+						bool both_in_frame = tac->result->permanent_frame_position && tac->op1->permanent_frame_position;
+						if (both_in_frame) {
+							Operand* furthest_op = operand_with_furthest_use(tac->live_out);
+							if (furthest_op) {
+								Spill s1 = {
+									.assigned_register = furthest_op->assigned_register,
+									.frame_byte_offset = -1,
+									.push_index = k,
+									.block_index = j,
+									.direction = PUSH_TO_STACK
+								};
+								add_spill(ctx, block->spill_schedule, s1);
+
+								Spill s2 = {
+									.assigned_register = furthest_op->assigned_register,
+									.frame_byte_offset = tac->op1->frame_byte_offset,
+									.push_index = k,
+									.block_index = j,
+									.direction = FRAME_TO_REG
+								};
+								add_spill(ctx, block->spill_schedule, s2);
+
+								tac->op1->temp_register = furthest_op->assigned_register; 
+
+								Reload r1 = {
+									.assigned_register = furthest_op->assigned_register,
+									.frame_byte_offset = -1,
+									.pop_index = k + 1,
+									.block_index = j,
+									.direction = POP_FROM_STACK
+								};
+								add_reload(ctx, block->reload_schedule, r1);
+							}
+						}
+						break;
+					}
+
 					case TAC_LESS:
 					case TAC_GREATER:
 					case TAC_LESS_EQUAL:
@@ -2047,8 +2125,7 @@ void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_lis
 					case TAC_STORE:
 					case TAC_DEREFERENCE:
 					case TAC_DEREFERENCE_AND_ASSIGN:
-					case TAC_UNARY_ADD:
-					case TAC_UNARY_SUB: {
+					case TAC_UNARY_ADD: {
 						get_bytes_from_operand(ctx, symbols_set, tac->result, &info->total_frame_bytes);
 						break;
 					}

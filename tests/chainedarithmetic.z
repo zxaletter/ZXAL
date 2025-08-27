@@ -1,0 +1,12 @@
+function double_it(n: int) -> int {
+	return n * 2;
+}
+
+function add_five(x: int) -> int {
+	return x + 5;
+}
+
+function main() -> int {
+	let result: int = add_five(double_it(7));
+	return result;
+}
