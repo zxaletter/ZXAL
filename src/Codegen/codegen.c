@@ -78,39 +78,22 @@ char* get_op_code(tac_t type) {
 	switch (type) {
 		case TAC_NOT_EQUAL: return "je";
 		case TAC_EQUAL: return "jne";
-		
-		case TAC_LESS:
-		case TAC_LESS_EQUAL: return "jge";
-
- 		case TAC_GREATER:
- 		case TAC_GREATER_EQUAL: return "jle";
+		case TAC_LESS: return "jge"; 
+		case TAC_LESS_EQUAL: return "jg";
+ 		case TAC_GREATER: return "jle";
+ 		case TAC_GREATER_EQUAL: return "jl";
 	}
 }
 
 void generate_corresponding_jump(ASMWriter* writer, tac_t kind, char* jmp_label) {
 	char buffer[32];
 	switch (kind) {
-		case TAC_LESS:
-		case TAC_LESS_EQUAL: {
-			snprintf(buffer, sizeof(buffer), "\tjge %s", jmp_label);
-			break;
-		}
-
-		case TAC_GREATER:
-		case TAC_GREATER_EQUAL: {
-			snprintf(buffer, sizeof(buffer), "\tjle %s", jmp_label);
-			break;
-		}
-
-		case TAC_EQUAL: {
-			snprintf(buffer, sizeof(buffer), "\tjne %s", jmp_label);
-			break;
-		}
-
-		case TAC_NOT_EQUAL: {
-			snprintf(buffer, sizeof(buffer), "\tje %s", jmp_label);
-			break;
-		}
+		case TAC_LESS: snprintf(buffer, sizeof(buffer), "\tjge %s", jmp_label); break;
+		case TAC_LESS_EQUAL: snprintf(buffer, sizeof(buffer), "\tjge %s", jmp_label); break;
+		case TAC_GREATER: snprintf(buffer, sizeof(buffer), "\tjle %s", jmp_label); break;
+		case TAC_GREATER_EQUAL: snprintf(buffer, sizeof(buffer), "\tjle %s", jmp_label); break;
+		case TAC_EQUAL: snprintf(buffer, sizeof(buffer), "\tjne %s", jmp_label); break;
+		case TAC_NOT_EQUAL: snprintf(buffer, sizeof(buffer), "\tje %s", jmp_label); break;
 	}
 	write_asm_to_file(writer, buffer);
 }
@@ -290,6 +273,72 @@ void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInf
 				case TAC_UNARY_ADD:
 					break;
 
+				case TAC_NOT: {
+					if (tac->op1->permanent_frame_position) {
+						snprintf(buffer, sizeof(buffer), "\txor %s, 1", registers[tac->op1->temp_register]);
+					} else {
+						snprintf(buffer, sizeof(buffer), "\txor %s, 1", registers[tac->op1->assigned_register]);
+					}
+					write_asm_to_file(writer, buffer);
+
+					if (tac->op1->permanent_frame_position) {
+						snprintf(buffer, sizeof(buffer), "\ttest %s, %s", registers[tac->op1->temp_register], registers[tac->op1->temp_register]);
+					} else {
+						snprintf(buffer, sizeof(buffer), "\ttest %s, %s", registers[tac->op1->assigned_register], registers[tac->op1->assigned_register]);
+					}
+					write_asm_to_file(writer, buffer);
+
+					if (j + 1 < block->num_instructions) {
+						Operand* jmp_op = NULL;
+						TACInstruction* next_tac = block->instructions[j + 1];
+						
+						switch (next_tac->kind) {
+							case TAC_IF_FALSE: {
+								jmp_op = next_tac->op2;
+								next_tac->handled = true;
+								break;
+							}
+						}
+
+						if (jmp_op) {
+							snprintf(buffer, sizeof(buffer), "\tjz %s", jmp_op->value.label_name);
+							write_asm_to_file(writer, buffer);
+						} else {
+							char* label_true = generate_jmp_label(ctx, TRUE);
+							char* label_false = generate_jmp_label(ctx, FALSE);
+							char* label_end = generate_jmp_label(ctx, END);
+							assert(label_true && label_false && label_end);
+
+							snprintf(buffer, sizeof(buffer), "\tjz %s", label_false);
+							write_asm_to_file(writer, buffer);
+
+							if (tac->result->permanent_frame_position) {
+								snprintf(buffer, sizeof(buffer), "\tmov [rbp - %zu], 1", tac->result->frame_byte_offset);
+							} else {
+								snprintf(buffer, sizeof(buffer), "\tmov %s, 1", registers[tac->result->assigned_register]);
+							}
+							write_asm_to_file(writer, buffer);
+
+							snprintf(buffer, sizeof(buffer), "\tjmp %s", label_end);
+							write_asm_to_file(writer, buffer);
+
+							snprintf(buffer, sizeof(buffer), "%s:", label_false);
+							write_asm_to_file(writer, buffer);
+
+							if (tac->result->permanent_frame_position) {
+								snprintf(buffer, sizeof(buffer), "\tmov [rbp - %zu], 0", tac->result->frame_byte_offset);
+							} else {
+								snprintf(buffer, sizeof(buffer), "\tmov %s, 0", registers[tac->result->assigned_register]);
+							}
+							write_asm_to_file(writer, buffer);
+
+							snprintf(buffer, sizeof(buffer), "%s:", label_end);
+							write_asm_to_file(writer, buffer);
+						}
+					}
+					break;
+				}
+
 				case TAC_UNARY_SUB: {
 					if (tac->op1->permanent_frame_position) {
 						snprintf(buffer, sizeof(buffer), "\tneg [rbp - %zu]", tac->op1->frame_byte_offset);
@@ -439,7 +488,6 @@ void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInf
 							}
 						}
 
-						
 						if (jmp_op) {
 							generate_corresponding_jump(writer, tac->kind, jmp_op->value.label_name);							
 						} else {
@@ -1179,7 +1227,7 @@ SpillSchedule* create_spill_schedule(CompilerContext* ctx) {
 	if (!s) return NULL;
 
 	s->size = 0;
-	s->capacity = INIT_SPILL_QUEUE_CAPACITY;
+	s->capacity = INIT_SPILL_SCHEDULE_CAPACITY;
 	s->spills = arena_allocate(ctx->codegen_arena, sizeof(Spill) * s->capacity);
 	if (!s->spills) return NULL;
 	return s;
@@ -1721,6 +1769,68 @@ void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_lis
 						break;
 					}
 
+					case TAC_NOT: {
+						if (tac->result->permanent_frame_position) {
+							get_bytes_from_operand(ctx, symbols_set, tac->result, &info->total_frame_bytes);
+						}
+
+						if (tac->op1->permanent_frame_position) {
+							Operand* furthest_op = operand_with_furthest_use(tac->live_out);
+							if (furthest_op) {
+								Spill s1 = {
+									.assigned_register = furthest_op->assigned_register,
+									.frame_byte_offset = -1,
+									.push_index = k,
+									.block_index = j,
+									.direction = PUSH_TO_STACK
+								};
+								add_spill(ctx, block->spill_schedule, s1);
+
+								Spill s2 = {
+									.assigned_register = furthest_op->assigned_register,
+									.frame_byte_offset = tac->op2->frame_byte_offset,
+									.push_index = k,
+									.block_index = j,
+									.direction = FRAME_TO_REG
+								};
+								add_spill(ctx, block->spill_schedule, s2);
+
+								tac->op1->temp_register = furthest_op->assigned_register; 
+
+								Reload r1 = {
+									.assigned_register = furthest_op->assigned_register,
+									.frame_byte_offset = -1,
+									.pop_index = k + 1,
+									.block_index = j,
+									.direction = POP_FROM_STACK
+								};
+								add_reload(ctx, block->reload_schedule, r1);
+							}
+						} else {
+							int next_use_index = determine_operand_use(block, tac->op1, k + 1); 
+							if (next_use_index != -1) {
+								Spill s = {
+									.assigned_register = tac->op1->assigned_register,
+									.frame_byte_offset = -1,
+									.push_index = k,
+									.block_index = j,
+									.direction = PUSH_TO_STACK
+								};
+								add_spill(ctx, block->spill_schedule, s);
+
+								Reload r = {
+									.assigned_register = tac->op1->assigned_register,
+									.frame_byte_offset = -1,
+									.pop_index = next_use_index,
+									.block_index = j,
+									.direction = POP_FROM_STACK
+								};
+								add_reload(ctx, block->reload_schedule, r);
+							}
+						}
+						break;
+					}
+
 					case TAC_ADD:
 					case TAC_SUB:
 					case TAC_MUL: {
@@ -2119,7 +2229,6 @@ void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_lis
 					case TAC_CHAR:
 					case TAC_BOOL:
 					case TAC_INTEGER:
-					case TAC_NOT:
 					case TAC_LOGICAL_AND:
 					case TAC_LOGICAL_OR:
 					case TAC_STORE:

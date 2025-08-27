@@ -1615,7 +1615,9 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 
 				default: {
 					bundle = create_inteference_bundle(ctx, instruction->result, block);
+					printf("Current instruction type: %d\n", instruction->kind);
 					instruction->result->interference_bundle = bundle;
+					
 					break;	
 				}
 			}

@@ -909,7 +909,16 @@ void build_tac_from_statement_dag(CompilerContext* ctx, Node* node) {
 				
 			} else {
 				TACInstruction* left = build_tac_from_expression_dag(ctx, node->left);
+				if (!left) {
+					printf("\033[31mIn NODE_ASSIGNMENT Case -> left instruction is NULL\033[0m\n");
+					return;
+				}
+
 				TACInstruction* right = build_tac_from_expression_dag(ctx, node->right);
+				if (!right) {
+					printf("\033[31mIn NODE_ASSIGNMENT Case -> right instruction is NULL\033[0m\n");
+					return;
+				}
 
 				TACInstruction* tac_assignment = create_tac(
 					ctx, 
@@ -1325,7 +1334,7 @@ TACTable* build_tacs(CompilerContext* ctx, Node* node) {
 		current = next;
 	}
 
-	// emit_tac_instructions();
+	emit_tac_instructions();
 
 	return tac_table;
 }
@@ -1390,6 +1399,7 @@ void emit_tac_instructions() {
 					printf("\n%s:\n", current->result->value.sym->name);
 					break;
 				}
+
 				case TAC_CHAR:
 				case TAC_BOOL:
 				case TAC_INTEGER: {
@@ -1616,10 +1626,6 @@ void emit_tac_instructions() {
 							case OP_LESS_EQUAL:
 							case OP_GREATER_EQUAL:
 							case OP_MODULO: {
-								// printf("processing op kind %d\n", current->op2->kind);
-								// if (!current->op2->value.label_name) {
-								// 	printf("dont have label name\n");
-								// }
 								printf("%s\n", current->op2->value.label_name);
 								break;
 							}
