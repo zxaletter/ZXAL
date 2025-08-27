@@ -1,0 +1,50 @@
+function factorial_iterative(n: int) -> int {
+    if (n <= 0) {
+        return 1;
+    } else if (n == 1) {
+        return 1;
+    } else {
+        let result: int = 1;
+        let counter: int = n;
+
+        if (counter > 1) {
+            result = result * counter + 1;
+        }
+        return result;
+    }
+}
+
+function triple(a: int) -> int {
+    return a * 3;
+}
+
+function add_nums(a: int, b: int) -> int {
+    return a + b;
+}
+
+function classify_numbers(x: int) -> int {
+    if (x > 100) {
+        return x * 2;
+    } else if (x > 50) {
+        return x + 10;
+    } else if (x > 0) {
+        return x - 5;
+    } else {
+        return x / 2;
+    }
+}
+
+function fibonacci(n: int) -> int {
+    if (n <= 1) {
+        return n;
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+function main() -> int {
+    let num: int = 5;
+    let fact: int = factorial_iterative(num);
+    let a: int = triple(add_nums(2, 4));
+    let b: int = classify_numbers(20);
+    return fact + a + b;
+}
