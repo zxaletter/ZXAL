@@ -17,6 +17,8 @@ SOURCES = $(shell find $(DIRS) -name "*.c") src/main.c src/types.c src/symbols.c
 
 # clean:
 # 	rm -f $(OUTPUT)
+EXECUTABLES = $(shell find tests -type f -executable)
+ASM_FILES = $(shell find tests -name "*.asm")
 
 OBJECTS = $(SOURCES:.c=.o)
 all: zxal
@@ -28,6 +30,6 @@ zxal: $(OBJECTS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJECTS) prac.asm zxal prac
+	rm -f $(OBJECTS) $(EXECUTABLES) $(ASM_FILES) zxal 
 
 .PHONY: all clean
