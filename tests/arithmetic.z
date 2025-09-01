@@ -1,0 +1,16 @@
+function triple(a: int) -> int {
+	return a * 3;
+}
+
+function quad_or_triple(a: int) -> int {
+	if (a >= 4) {
+		return a * 4;
+	} 
+	return a * 2;
+}
+
+function main() -> int {
+	let x: int = triple(2);
+	let y: int = quad_or_triple(4);
+	return x + y;
+}

@@ -54,52 +54,52 @@ void init_error_table(CompilerContext* ctx) {
 	}
 }
 
-ErrorTable create_error_table(CompilerContext* ctx) {
-	Error** errors = arena_allocate(ctx->error_arena, sizeof(Error*) * ERROR_CAPACITY);
-	if (!errors) {
-		ErrorTable failed_error_table = {
-			.size = 0,
-			.capacity = 0,
-			.error_index = 0,
-			.errors = NULL
-		};
-		return failed_error_table;
-	}
+// ErrorTable create_error_table(CompilerContext* ctx) {
+// 	Error** errors = arena_allocate(ctx->error_arena, sizeof(Error*) * ERROR_CAPACITY);
+// 	if (!errors) {
+// 		ErrorTable failed_error_table = {
+// 			.size = 0,
+// 			.capacity = 0,
+// 			.error_index = 0,
+// 			.errors = NULL
+// 		};
+// 		return failed_error_table;
+// 	}
 
-	ErrorTable new_error_table = {
-		.size = 0,
-		.capacity = ERROR_CAPACITY,
-		.error_index = 0,
-		.errors = errors
-	};
-	return new_error_table;
-}
+// 	ErrorTable new_error_table = {
+// 		.size = 0,
+// 		.capacity = ERROR_CAPACITY,
+// 		.error_index = 0,
+// 		.errors = errors
+// 	};
+// 	return new_error_table;
+// }
 
-void add_error_to_error_table(CompilerContext* ctx, Error* err) {
-	if (!err) return;
+// void add_error_to_error_table(CompilerContext* ctx, Error* err) {
+// 	if (!err) return;
 
-	if (error_table.size >= error_table.capacity) {
-		size_t prev_capacity = error_table.capacity;
-		error_table.capacity *= 2;
-		size_t new_capacity = error_table.capacity;
-		// error_table.errors = realloc(error_table.errors, error_table.capacity);
-		void* new_errors = arena_reallocate(
-			ctx->error_arena, 
-			error_table.errors, 
-			prev_capacity * sizeof(Error*), 
-			new_capacity *  sizeof(Error*)
-		);
+// 	if (error_table.size >= error_table.capacity) {
+// 		size_t prev_capacity = error_table.capacity;
+// 		error_table.capacity *= 2;
+// 		size_t new_capacity = error_table.capacity;
+// 		// error_table.errors = realloc(error_table.errors, error_table.capacity);
+// 		void* new_errors = arena_reallocate(
+// 			ctx->error_arena, 
+// 			error_table.errors, 
+// 			prev_capacity * sizeof(Error*), 
+// 			new_capacity *  sizeof(Error*)
+// 		);
 		
-		if (!new_errors) {
-			emit_errors(ctx);
-			// exit(EXIT_FAILURE);
+// 		if (!new_errors) {
+// 			emit_errors(ctx);
+// 			// exit(EXIT_FAILURE);
 
-		}
-		error_table.errors = new_errors;
-	}
-	error_table.errors[error_table.error_index++] = err;
-	error_table.size++;
-}
+// 		}
+// 		error_table.errors = new_errors;
+// 	}
+// 	error_table.errors[error_table.error_index++] = err;
+// 	error_table.size++;
+// }
 
 Token* copy_token(CompilerContext* ctx, Token* original_token) {
 	if (!original_token) return NULL;
@@ -164,33 +164,33 @@ Token* copy_token(CompilerContext* ctx, Token* original_token) {
 	return copy_token;
 }
 
-void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info) {
-	Error* error = arena_allocate(ctx->error_arena, sizeof(Error));
-	if (!error) {
-		perror("Unable to allocate space for error\n");
-		return;
-	}
+// void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info) {
+// 	Error* error = arena_allocate(ctx->error_arena, sizeof(Error));
+// 	if (!error) {
+// 		perror("Unable to allocate space for error\n");
+// 		return;
+// 	}
 
-	error->type = type;
-	error->token = copy_token(ctx, token);
-	if (!error->token) {
-		perror("In 'create_error', unable to copy token\n");
-		// free(error);
-		return;
-	}
-	error->info = info;
-	// error->message = strdup(message);
-	error->message = arena_allocate(ctx->error_arena, sizeof(message) + 1);
-	if (!error->message) {
-		perror("Unable to duplicate error message\n");
-		// free_duplicate_token(error->token);
-		// free(error);
-		return;
-	} 
+// 	error->type = type;
+// 	error->token = copy_token(ctx, token);
+// 	if (!error->token) {
+// 		perror("In 'create_error', unable to copy token\n");
+// 		// free(error);
+// 		return;
+// 	}
+// 	error->info = info;
+// 	// error->message = strdup(message);
+// 	error->message = arena_allocate(ctx->error_arena, sizeof(message) + 1);
+// 	if (!error->message) {
+// 		perror("Unable to duplicate error message\n");
+// 		// free_duplicate_token(error->token);
+// 		// free(error);
+// 		return;
+// 	} 
 
-	has_errors = true;
-	add_error_to_error_table(ctx, error);
-}
+// 	has_errors = true;
+// 	add_error_to_error_table(ctx, error);
+// }
 
 char* get_token_string(token_t type) {
 	switch (type) {

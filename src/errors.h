@@ -33,6 +33,7 @@ typedef enum error_t {
 	EXPECTED_DATATYPE,
 } error_t;
 
+
 typedef struct Error {
 	error_t type;
 	char* message;
@@ -40,11 +41,11 @@ typedef struct Error {
 	FileInfo* info;
 } Error;
 
-typedef struct {
-	Error** errors;
+typedef struct ErrorTable {
+	phase_t phase;
+	Error* errors;
 	int size;
 	int capacity;
-	int error_index;
 } ErrorTable;
 
 void log_error(CompilerContext* ctx, Token* tok, FileInfo* info, error_t error);
@@ -54,7 +55,6 @@ void create_error(CompilerContext* ctx, error_t type, char* message, Token* toke
 void display_error(CompilerContext* ctx, Error* error);
 void emit_errors(CompilerContext* ctx);
 
-ErrorTable create_error_table(CompilerContext* ctx);
-void free_error(Error* error);
+ErrorTable* create_error_tables(CompilerContext* ctx);
 
 #endif

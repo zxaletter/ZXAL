@@ -4,8 +4,21 @@
 #include "bumpallocator.h"
 typedef struct SymbolTable SymbolTable;
 typedef struct SymbolStack SymbolStack;
+typedef struct ErrorTableCollection ErrorTableCollection;
 
 #define KEYWORDS 20
+#define NUM_PHASES 7
+
+typedef enum {
+	PHASE_LEXER,
+	PHASE_PARSER,
+	PHASE_SYMBOL_RESOLUTION,
+	PHASE_TYPECHECKER,
+	PHASE_IR,
+	PHASE_REGALLOC,
+	PHASE_CODEGEN
+} phase_t;
+
 typedef struct CompilerContext {
 	Arena* lexer_arena;
 	Arena* ast_arena;
@@ -19,6 +32,10 @@ typedef struct CompilerContext {
 	SymbolStack* symbol_stack; // for scopes
 
 	char** keywords;
+
+	phase_t phase;
+	ErrorTables** error_tables;
+	ErrorTableCollection collection; 
 } CompilerContext;
 
 CompilerContext* create_compiler_context();

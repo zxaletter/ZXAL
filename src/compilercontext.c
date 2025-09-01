@@ -1,5 +1,6 @@
 #include "compilercontext.h"
 #include "symbols.h"
+#include "errors.h"
 
 char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 							"void", "struct", "enum", "if",
@@ -16,6 +17,7 @@ CompilerContext* create_compiler_context() {
 	}
 
 	ctx->keywords = keywords;
+
 	ctx->lexer_arena = create_arena(LEXER_ARENA);
 	if (!ctx->lexer_arena) {
 		printf("could not create lexer arena\n");
@@ -86,6 +88,18 @@ CompilerContext* create_compiler_context() {
 
 	ctx->error_arena = create_arena(ERROR_ARENA);
 	if (!ctx->error_arena) {
+		free_arena(ctx->ir_arena);
+		free_arena(ctx->symbol_arena);
+		free_arena(ctx->type_arena);
+		free_arena(ctx->ast_arena);
+		free_arena(ctx->lexer_arena);
+		free(ctx);
+		return NULL;
+	}
+
+	ctx->error_tables = create_error_tables(ctx);
+	if (!ctx->error_tables) {
+		free_arena(ctx->error_arena);
 		free_arena(ctx->ir_arena);
 		free_arena(ctx->symbol_arena);
 		free_arena(ctx->type_arena);
