@@ -1,0 +1,28 @@
+This is my compiler which generates x86-64 assembly and uses fasm to create executables  
+for programs written in my toy programming language, ZXAL.
+ZXAL is a statically typed programming language with a MINIMAL feature set.
+
+Feature Set:
+- Types:
+  - int
+  - char
+  - bool
+
+- Arithmetic Ops:
+  - add
+  - subtract
+  - muliply
+  - divide 
+  - modulo
+  
+- Logical Ops:
+  - &&
+  - ||
+  - !
+
+- define functions
+- define variables
+- call functions
+- pass invoked functions as arguments to other functions 
+- control flow(if, else if, and else statements)  
+ 
