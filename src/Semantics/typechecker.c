@@ -3,6 +3,7 @@
 #include "Parser/node.h"
 #include "symbols.h"
 #include "types.h"
+#include "errors.h"
 
 TypeCheckerSymbolStack typechecker_symbol_stack;
 
@@ -353,13 +354,14 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 			if (func_symbol->type) {
 				func_return_type = func_symbol->type->subtype;
 			} 
-			
-			rt = typecheck_expression(ctx, node->right);
 
-			if (!type_equals(rt, func_return_type)) {
-				result = type_create(ctx, TYPE_UNKNOWN, NULL);
-			} else {
-				result = type_create(ctx, func_return_type->kind, NULL);
+			if (node->right) {
+				rt = typecheck_expression(ctx, node->right);
+				if (!type_equals(rt, func_return_type)) {
+					result = type_create(ctx, TYPE_UNKNOWN, NULL);
+				} else {
+					result = type_create(ctx, func_return_type->kind, NULL);
+				}
 			}
 
 			break;

@@ -3,27 +3,6 @@
 #include "Lexer/token.h"
 #include "assert.h"
 
-// void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info) {
-// 	Error* error = arena_allocate(ctx->error_arena, sizeof(Error));
-// 	if (!error) {
-// 		perror("Unable to allocate space for error\n");
-// 		return;
-// 	}
-
-// 	error->type = type;
-// 	error->token = copy_token(ctx, token);
-// 	if (!error->token) {
-// 		perror("In 'create_error', unable to copy token\n");
-// 		return;
-// 	}
-// 	error->info = info;
-// 	error->message = arena_allocate(ctx->error_arena, sizeof(message) + 1);
-// 	if (!error->message) {
-// 		perror("Unable to duplicate error message\n");
-// 		return;
-// 	} 
-// }
-
 char* get_token_string(token_t type) {
 	switch (type) {
 		case TOKEN_LET_KEYWORD: return "let";
@@ -54,12 +33,28 @@ char* get_token_string(token_t type) {
 	}
 }
 
-void display_error(CompilerContext* ctx, Error* e) {
+void display_lexer_error(CompilerContext* ctx, Error* e) {
+	printf("%s", e->message);
+	
+	switch (e->type) {
+		case EXPECTED_SINGLE_QUOTE: {
+			printf("Syntax error: expected '\'\n");
+			break;
+		}
+
+		case EXPECTED_DOUBLE_QUOTE: {
+			printf("Syntax error: expected '\"'\n");
+			break;
+		}
+	}
+}
+
+void display_parser_error(CompilerContext* ctx, Error* e) {
 	printf("%s", e->message);
 
 	int token_length = 1;
 
-	switch (e->token->type) {
+	switch (e->unit.token.type) {
 		case TOKEN_FUNCTION_KEYWORD:
 		case TOKEN_LET_KEYWORD:
 		case TOKEN_INT_KEYWORD:
@@ -76,24 +71,22 @@ void display_error(CompilerContext* ctx, Error* e) {
 		case TOKEN_BREAK_KEYWORD:
 		case TOKEN_RETURN_KEYWORD:
 		case TOKEN_ID: {
-			if (e->token->value.str) {
-				token_length = strlen(e->token->value.str);
+			if (e->unit.token.value.str) {
+				token_length = strlen(e->unit.token.value.str);
 			} 
 			break;
 		}
 
 		case TOKEN_INTEGER: {
-			int length = snprintf(NULL, 0, "%d", e->token->value.val);
+			int length = snprintf(NULL, 0, "%d", e->unit.token.value.val);
 			token_length = length;
 			break;
 		}
-		default: {
-			token_length = 1; 
-			break;
-		}
+
+		default: break;
 	}
 
-	int gutter_width = snprintf(NULL, 0, "%d", e->token->line);
+	int gutter_width = snprintf(NULL, 0, "%d", e->unit.token.line);
 	char space[gutter_width + 1];
 	for (int i = 0; i < gutter_width; i++) {
 		space[i] = ' ';
@@ -125,6 +118,11 @@ void display_error(CompilerContext* ctx, Error* e) {
 			break;
 		}
 
+		case EXPECTED_DATATYPE: {
+			printf("missing datatype\n");
+			break;
+		}
+
 		case EXPECTED_ARROW: { 
 			printf("error: missing token \"%s\"\n", get_token_string(TOKEN_ARROW));
 			break;
@@ -146,16 +144,6 @@ void display_error(CompilerContext* ctx, Error* e) {
 
 		case EXPECTED_ASSIGNMENT: {
 			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_ASSIGNMENT));
-			break;
-		}
-
-		case EXPECTED_DOUBLE_QUOTE: {
-			printf("Syntax Error: Expected '"'\n');
-			break;
-		}
-
-		case EXPECTED_SINGLE_QUOTE: {
-			printf("Syntax Error: Expected '\''\n");
 			break;
 		}
 
@@ -193,9 +181,22 @@ void display_error(CompilerContext* ctx, Error* e) {
 void emit_errors(CompilerContext* ctx) {
 	for (int i = 0; i < NUM_PHASES; i++) {
 		ErrorTable* table = &ctx->error_tables[i];
-		if (table && (table->phase == ctx->phase)) {
-			for (int j = 0; j < table->size; j++) {
-				display_error(ctx, &table->errors[i]);
+		if (table->phase == ctx->phase) {
+			switch (table->phase) {
+				case PHASE_LEXER: {
+					for (int j = 0; j < table->size; j++) {
+						display_lexer_error(ctx, &table->errors[i]);
+					}
+					break;
+				}
+
+				case PHASE_PARSER: {
+					for (int j = 0; j < table->size; j++) {
+						display_parser_error(ctx, &table->errors[j]);
+					}
+					break;
+				}
+				default: break;
 			}
 		}
 	}

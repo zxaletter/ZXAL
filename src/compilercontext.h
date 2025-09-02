@@ -6,7 +6,7 @@
 typedef struct SymbolTable SymbolTable;
 typedef struct SymbolStack SymbolStack;
 typedef struct ErrorTable ErrorTable;
-
+typedef struct FileInfo FileInfo;
 
 #define KEYWORDS 20
 #define NUM_PHASES 7
@@ -27,6 +27,7 @@ typedef struct CompilerContext {
 
 	phase_t phase;
 	ErrorTable* error_tables;
+	FileInfo* info;
 } CompilerContext;
 
 CompilerContext* create_compiler_context();

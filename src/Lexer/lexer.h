@@ -12,7 +12,6 @@ typedef struct Token Token;
 typedef enum token_t token_t;
 
 #define INITIAL_TOKEN_CAPACITY 250
-// extern char* keywords[KEYWORDS];
 
 typedef struct FileInfo {
 	char* filename;

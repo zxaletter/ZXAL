@@ -36,17 +36,21 @@ typedef enum error_t {
 	EXPECTED_IDENTIFIER,
 	EXPECTED_ASSIGNMENT,
 	EXPECTED_DATATYPE,
+
+	MISMATCHING_TYPES
 } error_t;
+
+typedef union {
+	Token token;
+} error_unit;
 
 typedef struct Error {
 	error_t type;
-	union {
-		token_t type;
-		node_t 
-	} 
+	error_unit unit; 
 	char* message;
 	int line;
 	int column;
+	FileInfo* info;
 } Error;
 
 typedef struct ErrorTable {
@@ -59,8 +63,8 @@ typedef struct ErrorTable {
 char* get_token_string(token_t type);
 char* error_prelude(CompilerContext* ctx, char* filename, int line, int column);
 void log_error(CompilerContext* ctx, Error e);
-void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info);
-void display_error(CompilerContext* ctx, Error* e);
+void display_lexer_error(CompilerContext* ctx, Error* e);
+void display_parser_error(CompilerContext* ctx, Error* e);
 void emit_errors(CompilerContext* ctx);
 
 ErrorTable* create_error_tables(CompilerContext* ctx);

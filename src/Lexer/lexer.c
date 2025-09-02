@@ -217,11 +217,15 @@ void get_string_literal(CompilerContext* ctx, Lexer* lexer) {
 
 	if (peek_lexer(lexer) != '\"') {
 		char* message = error_prelude(ctx, lexer->info->filename, lexer->line, lexer->column);
+		
+		error_unit unit = {0};
 		Error e = {
 			.type = EXPECTED_DOUBLE_QUOTE,
+			.unit = unit,
 			.message = message,
 			.line = lexer->line,
-			.column = lexer->column
+			.column = lexer->column,
+			.info = ctx->info
 		};
 		log_error(ctx, e);
 		return;
@@ -255,11 +259,14 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 			advance_lexer(lexer);
 			if (peek_lexer(lexer) != '\'') {
 				char* message = error_prelude(ctx, lexer->info->filename, lexer->line, lexer->column);
+				error_unit unit = {0};
 				Error e = {
 					.type = EXPECTED_SINGLE_QUOTE,
+					.unit = unit,
 					.message = message,
 					.line = lexer->line,
-					.column = lexer->column
+					.column = lexer->column,
+					.info = ctx->info
 				};
 				log_error(ctx, e);
 			} else {
@@ -534,6 +541,7 @@ Lexer* lex(CompilerContext* ctx, char* filename) {
 	FileInfo* info = retrieve_file_contents(ctx, filename);
 	Lexer* lexer = initialize_lexer(ctx, info);
 	assert(info && lexer);
+	ctx->info = info;
 
 	while (!lexer_at_end(lexer)) {
 		skip_lexer_whitespace(lexer);
