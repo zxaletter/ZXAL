@@ -63,7 +63,6 @@ Node* parse_args(CompilerContext* ctx, Parser* parser);
 Node* parse_array_list(CompilerContext* ctx, Parser* parser, int* element_count);
 Node* parse_let(CompilerContext* ctx, Parser* parser);
 Node* parse(CompilerContext* ctx, Lexer* lexer);
-Parser initialize_parser(Lexer* lexer);
 
 void synchronize(Parser* parser, token_t* synchronizations, size_t length);
 Token* copy_token(CompilerContext* ctx, Token* original_token);

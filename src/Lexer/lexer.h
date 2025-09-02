@@ -81,7 +81,6 @@ void get_operator(CompilerContext* ctx, Lexer* lexer);
 void get_delimeters(CompilerContext* ctx, Lexer* lexer);
 bool match(Lexer* lexer, char expected);
 
-Token create_token(token_t type, int line, int column);
 Token create_char_token(token_t type, char c, int line, int column);
 Token create_int_token(token_t type, int val, int line, int column);
 Token create_string_token(CompilerContext* ctx, token_t type, char* str, int line, int column);

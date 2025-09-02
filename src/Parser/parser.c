@@ -1,22 +1,19 @@
 #include "parser.h"
 #include "compilercontext.h"
-
-static bool has_errors = false;
-ErrorTable error_table;
-
-Parser initialize_parser(Lexer* lexer) {
-	Parser parser = {
-		.tokens = lexer->tokens,
-		.info = lexer->info
-	};
-	return parser;
-}
+#include "errors.h"
 
 bool validate_token(CompilerContext* ctx, Parser* parser, token_t target_type) {
 	Token tok = peek_token(parser);
 	
 	if (tok.type != target_type) {
-		log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_SEMICOLON,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 		return false;
 	}
 	return true;
@@ -45,61 +42,6 @@ bool have_valid_statement(CompilerContext* ctx, Parser* parser, Node* stmt) {
 	} 
 	return true;
 }
-
-void init_error_table(CompilerContext* ctx) {
-	error_table = create_error_table(ctx);
-	if (error_table.errors == NULL) {
-		printf("In 'init_error_table', errors are NULL.\n");
-		exit(EXIT_FAILURE);
-	}
-}
-
-// ErrorTable create_error_table(CompilerContext* ctx) {
-// 	Error** errors = arena_allocate(ctx->error_arena, sizeof(Error*) * ERROR_CAPACITY);
-// 	if (!errors) {
-// 		ErrorTable failed_error_table = {
-// 			.size = 0,
-// 			.capacity = 0,
-// 			.error_index = 0,
-// 			.errors = NULL
-// 		};
-// 		return failed_error_table;
-// 	}
-
-// 	ErrorTable new_error_table = {
-// 		.size = 0,
-// 		.capacity = ERROR_CAPACITY,
-// 		.error_index = 0,
-// 		.errors = errors
-// 	};
-// 	return new_error_table;
-// }
-
-// void add_error_to_error_table(CompilerContext* ctx, Error* err) {
-// 	if (!err) return;
-
-// 	if (error_table.size >= error_table.capacity) {
-// 		size_t prev_capacity = error_table.capacity;
-// 		error_table.capacity *= 2;
-// 		size_t new_capacity = error_table.capacity;
-// 		// error_table.errors = realloc(error_table.errors, error_table.capacity);
-// 		void* new_errors = arena_reallocate(
-// 			ctx->error_arena, 
-// 			error_table.errors, 
-// 			prev_capacity * sizeof(Error*), 
-// 			new_capacity *  sizeof(Error*)
-// 		);
-		
-// 		if (!new_errors) {
-// 			emit_errors(ctx);
-// 			// exit(EXIT_FAILURE);
-
-// 		}
-// 		error_table.errors = new_errors;
-// 	}
-// 	error_table.errors[error_table.error_index++] = err;
-// 	error_table.size++;
-// }
 
 Token* copy_token(CompilerContext* ctx, Token* original_token) {
 	if (!original_token) return NULL;
@@ -162,204 +104,6 @@ Token* copy_token(CompilerContext* ctx, Token* original_token) {
 		}
 	}
 	return copy_token;
-}
-
-// void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info) {
-// 	Error* error = arena_allocate(ctx->error_arena, sizeof(Error));
-// 	if (!error) {
-// 		perror("Unable to allocate space for error\n");
-// 		return;
-// 	}
-
-// 	error->type = type;
-// 	error->token = copy_token(ctx, token);
-// 	if (!error->token) {
-// 		perror("In 'create_error', unable to copy token\n");
-// 		// free(error);
-// 		return;
-// 	}
-// 	error->info = info;
-// 	// error->message = strdup(message);
-// 	error->message = arena_allocate(ctx->error_arena, sizeof(message) + 1);
-// 	if (!error->message) {
-// 		perror("Unable to duplicate error message\n");
-// 		// free_duplicate_token(error->token);
-// 		// free(error);
-// 		return;
-// 	} 
-
-// 	has_errors = true;
-// 	add_error_to_error_table(ctx, error);
-// }
-
-char* get_token_string(token_t type) {
-	switch (type) {
-		case TOKEN_LET_KEYWORD: return "let";
-		case TOKEN_INT_KEYWORD: return "int";
-		case TOKEN_CHAR_KEYWORD: return "char";
-		case TOKEN_BOOL_KEYWORD: return "bool";
-		case TOKEN_VOID_KEYWORD: return "void";
-		case TOKEN_STRUCT_KEYWORD: return "struct";
-		case TOKEN_ENUM_KEYWORD: return "enum";
-		case TOKEN_IF_KEYWORD: return "if";
-		case TOKEN_ELSE_KEYWORD: return "else";
-		case TOKEN_FOR_KEYWORD: return "for";
-		case TOKEN_WHILE_KEYWORD: return "while";
-		case TOKEN_CONTINUE_KEYWORD: return "continue";
-		case TOKEN_BREAK_KEYWORD: return "break";
-		case TOKEN_RETURN_KEYWORD: return "return";
-		case TOKEN_LEFT_PARENTHESES: return "(";
-		case TOKEN_RIGHT_PARENTHESES: return ")";
-		case TOKEN_LEFT_BRACE: return "{";
-		case TOKEN_RIGHT_BRACE: return "}";
-		case TOKEN_LEFT_BRACKET: return "[";
-		case TOKEN_RIGHT_BRACKET: return "]";
-		case TOKEN_ARROW: return "->";
-		case TOKEN_COMMA: return ",";
-		case TOKEN_COLON: return ":";
-		case TOKEN_SEMICOLON: return ";";
-		case TOKEN_ID: return "identifier";
-	}
-}
-
-void display_error(CompilerContext* ctx, Error* error) {
-	if (!error) return;
-
-	printf("%s", error->message);
-
-	int token_length = 1;
-
-	switch (error->token->type) {
-		case TOKEN_FUNCTION_KEYWORD:
-		case TOKEN_LET_KEYWORD:
-		case TOKEN_INT_KEYWORD:
-		case TOKEN_CHAR_KEYWORD:
-		case TOKEN_BOOL_KEYWORD:
-		case TOKEN_VOID_KEYWORD:
-		case TOKEN_STRUCT_KEYWORD:
-		case TOKEN_ENUM_KEYWORD:
-		case TOKEN_IF_KEYWORD:
-		case TOKEN_ELSE_KEYWORD:
-		case TOKEN_FOR_KEYWORD:
-		case TOKEN_WHILE_KEYWORD:
-		case TOKEN_CONTINUE_KEYWORD:
-		case TOKEN_BREAK_KEYWORD:
-		case TOKEN_RETURN_KEYWORD:
-		case TOKEN_ID: {
-			if (error->token->value.str) {
-				token_length = strlen(error->token->value.str);
-			} 
-			break;
-		}
-
-		case TOKEN_INTEGER: {
-			int length = snprintf(NULL, 0, "%d", error->token->value.val);
-			token_length = length;
-			break;
-		}
-		default: token_length = 1; break;
-	}
-
-	int gutter_width = snprintf(NULL, 0, "%d", error->token->line);
-	char space[gutter_width + 1];
-	for (int i = 0; i < gutter_width; i++) {
-		space[i] = ' ';
-	}
-	space[gutter_width] = '\0';
-
-	switch (error->type) {
-		case EXPECTED_IDENTIFIER: {
-			printf("error: missing %s\n", get_token_string(TOKEN_ID));
-			
-			printf("%s%s-> %s:%d:%d\n", space, space, error->info->filename, error->token->line, error->token->column);
-			
-			printf("%s%s|\n", space, space);
-
-			printf("%d%s| %s\n", error->token->line, space, error->info->lines[error->token->line - 1]);
-			printf("%s%s|", space, space);
-			char buffer[2 * gutter_width + 1];
-			snprintf(buffer, sizeof(buffer), "%s%s|", space, space);
-
-			for (int i = 1; i <= error->token->column - 1; i++) {
-				printf(" ");
-			}
-
-			printf("\033[31m^\033[0m");
-			for (int i = 0; i < token_length - 1; i++) {
-				printf("\033[31m^\033[0m");
-			}
-			printf("\n");
-			break;
-		}
-
-		case EXPECTED_ARROW: { 
-			printf("error: missing token \"%s\"\n", get_token_string(TOKEN_ARROW));
-			break;
-		}
-
-		case EXPECTED_COMMA: {
-			printf("Syntax Error: Missing '%s'\n", get_token_string(TOKEN_COMMA));
-			break;
-		}
-		case EXPECTED_SEMICOLON: {
-			printf("Syntax Error: Missing '%s'\n", get_token_string(TOKEN_SEMICOLON));
-			break;
-		}
-
-		case EXPECTED_COLON: {
-			printf("Syntax Error: Missing '%s'\n", get_token_string(TOKEN_COLON));
-			break;
-		}
-
-		case EXPECTED_ASSIGNMENT: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_ASSIGNMENT));
-			break;
-		}
-
-		case EXPECTED_LEFT_BRACKET: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_LEFT_BRACKET));
-			break;
-		}
-		case EXPECTED_RIGHT_BRACKET: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_RIGHT_BRACKET));
-			break;
-		}
-
-		case EXPECTED_LEFT_BRACE: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_LEFT_BRACE));
-			break;
-		}
-
-		case EXPECTED_RIGHT_BRACE: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_RIGHT_BRACE));
-			break;
-		}
-
-		case EXPECTED_RIGHT_PARENTHESES: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_RIGHT_PARENTHESES));
-			break;
-		}
-
-		case EXPECTED_LEFT_PARENTHESES: {
-			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_LEFT_PARENTHESES));
-			break;
-		}
-	}
-}
-
-void emit_errors(CompilerContext* ctx) {
-	for (int i = 0; i < error_table.size; i++) {
-		display_error(ctx, error_table.errors[i]);
-	}
-}
-
-void log_error(CompilerContext* ctx, Token* tok, FileInfo* info, error_t type) {
-	
-	char* message = arena_allocate(ctx->error_arena, 1024);
-	if (!message) return;
-
-	snprintf(message, 1024, "\033[31mError\033[0m in file '%s' at line %d, column %d:\n", info->filename, tok->line, tok->column);
-	create_error(ctx, type, message, tok, info);
 }
 
 token_t peek_token_type(Parser* parser) {
@@ -516,7 +260,15 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 				
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_RIGHT_PARENTHESES,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
+					// log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
 				}
 
 				advance_parser(parser);
@@ -533,7 +285,14 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_BRACKET);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_RIGHT_BRACKET,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				Node* subscript_node = create_node(ctx, NODE_SUBSCRIPT, identifier_node, expr_node, NULL, NULL, NULL, NULL);
@@ -647,7 +406,14 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_RIGHT_PARENTHESES,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 			advance_parser(parser);
 			break;
@@ -663,7 +429,14 @@ Node* parse_factor(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_BRACKET);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_RIGHT_BRACKET,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 			advance_parser(parser);
 			break;
@@ -808,7 +581,15 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_ID) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_IDENTIFIER,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+				// log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
 				return NULL;
 			}
 
@@ -828,7 +609,15 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_COLON) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_COLON);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_COLON,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+				// log_error(ctx, &tok, parser->info, EXPECTED_COLON);
 				return NULL;
 			}
 
@@ -840,7 +629,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				peek_token_type(parser) != TOKEN_STRUCT_KEYWORD) {
 
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);	
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_DATATYPE,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+
+				// log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);	
 				return NULL;
 			}
 
@@ -864,7 +662,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 					Token token = peek_token(parser);
-					log_error(ctx, &token, parser->info, EXPECTED_RIGHT_BRACKET);					
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_RIGHT_BRACKET,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
+
+					// log_error(ctx, &token, parser->info, EXPECTED_RIGHT_BRACKET);					
 				}
 
 				advance_parser(parser);
@@ -888,7 +695,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 					stmt = create_node(ctx, NODE_ASSIGNMENT, def, array_list, NULL, NULL, NULL, NULL);  
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 						Token token = peek_token(parser);
-						log_error(ctx, &token, parser->info, EXPECTED_SEMICOLON);
+						char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+						Error e = {
+							.type = EXPECTED_SEMICOLON,
+							.message = message,
+							.line = tok.line,
+							.column = tok.column
+						};
+						log_error(ctx, e);
+
+						// log_error(ctx, &token, parser->info, EXPECTED_SEMICOLON);
 					}
 				}
 
@@ -933,7 +749,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_SEMICOLON,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+
+				// log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 			}
 
 			stmt = create_node(ctx, NODE_CONTINUE, NULL, NULL, NULL, NULL, NULL, NULL);
@@ -945,7 +770,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 			advance_parser(parser);
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_SEMICOLON,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+
+				// log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
 			}
 
 			stmt = create_node(ctx, NODE_BREAK, NULL, NULL, NULL, NULL, NULL, NULL);
@@ -959,7 +793,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_LEFT_PARENTHESES,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+
+				// log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
 			} 
 
 			Node* condition_node = parse_logical_or(ctx, parser);
@@ -970,7 +813,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_LEFT_BRACE,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+
+				// log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 			}
 
 			advance_parser(parser);
@@ -989,14 +841,32 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				
 				if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_LEFT_PARENTHESES,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
+
+					// log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
 				}			
 
 				Node* condition_node = parse_logical_or(ctx, parser);
 
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_LEFT_BRACE,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
+
+					// log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 				}		
 
 				advance_parser(parser);
@@ -1027,7 +897,16 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				// return stmt;
 			} else {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_LEFT_BRACE,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
+
+				// log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
 			}
 			break;
 		}
@@ -1037,7 +916,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_LEFT_PARENTHESES,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 
 			advance_parser(parser);
@@ -1059,7 +945,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_SEMICOLON,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				advance_parser(parser);
@@ -1072,14 +965,28 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 				if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_RIGHT_PARENTHESES,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				advance_parser(parser);
 
 				if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_LEFT_BRACE,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				advance_parser(parser);
@@ -1113,7 +1020,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 					{
 						if (peek_token_type(parser) != TOKEN_INT_KEYWORD) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, parser->info, EXPECTED_INT_KEYWORD);
+							char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+							Error e = {
+								.type = EXPECTED_INT_KEYWORD,
+								.message = message,
+								.line = tok.line,
+								.column = tok.column
+							};
+							log_error(ctx, e);
 						}
 
 						Token tok = peek_token(parser);
@@ -1129,7 +1043,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 						if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, parser->info, EXPECTED_ASSIGNMENT);
+							char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+							Error e = {
+								.type = EXPECTED_ASSIGNMENT,
+								.message = message,
+								.line = tok.line,
+								.column = tok.column
+							};
+							log_error(ctx, e);
 						}
 
 						advance_parser(parser);
@@ -1142,7 +1063,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 						if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+							char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+							Error e = {
+								.type = EXPECTED_SEMICOLON,
+								.message = message,
+								.line = tok.line,
+								.column = tok.column
+							};
+							log_error(ctx, e);
 						}
 
 						advance_parser(parser);
@@ -1161,13 +1089,27 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 						if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
+							char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+							Error e = {
+								.type = EXPECTED_RIGHT_PARENTHESES,
+								.message = message,
+								.line = tok.line,
+								.column = tok.column
+							};
+							log_error(ctx, e);
 						}
 
 						advance_parser(parser);
 						if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 							Token tok = peek_token(parser);
-							log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+							char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+							Error e = {
+								.type = EXPECTED_LEFT_BRACE,
+								.message = message,
+								.line = tok.line,
+								.column = tok.column
+							};
+							log_error(ctx, e);
 						}
 
 						advance_parser(parser);
@@ -1188,7 +1130,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 					if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 						Token tok = peek_token(parser);
-						log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+						char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+						Error e = {
+							.type = EXPECTED_SEMICOLON,
+							.message = message,
+							.line = tok.line,
+							.column = tok.column
+						};
+						log_error(ctx, e);
 						return NULL;
 					}
 
@@ -1201,14 +1150,28 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 					if (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 						Token tok = peek_token(parser);
-						log_error(ctx, &tok, parser->info, EXPECTED_RIGHT_PARENTHESES);
+						char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+						Error e = {
+							.type = EXPECTED_RIGHT_PARENTHESES,
+							.message = message,
+							.line = tok.line,
+							.column = tok.column
+						};
+						log_error(ctx, e);
 					}
 
 					advance_parser(parser);
 
 					if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 						Token tok = peek_token(parser);
-						log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+						char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+						Error e = {
+							.type = EXPECTED_LEFT_BRACE,
+							.message = message,
+							.line = tok.line,
+							.column = tok.column
+						};
+						log_error(ctx, e);
 					}
 
 					advance_parser(parser);
@@ -1225,7 +1188,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_LEFT_PARENTHESES,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 
 			Node* condition_node = parse_logical_or(ctx, parser);
@@ -1233,7 +1203,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 				Token tok = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_LEFT_BRACE,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 
 			advance_parser(parser);
@@ -1274,7 +1251,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 
 				if (peek_token_type(parser) != TOKEN_ASSIGNMENT) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_ASSIGNMENT);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_ASSIGNMENT,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				advance_parser(parser);
@@ -1319,7 +1303,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				if (peek_token_type(parser) != TOKEN_INT_KEYWORD && peek_token_type(parser) != TOKEN_BOOL_KEYWORD &&
 					peek_token_type(parser) != TOKEN_CHAR_KEYWORD) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_DATATYPE,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				Token token = peek_token(parser);
@@ -1330,7 +1321,14 @@ Node* parse_statement(CompilerContext* ctx, Parser* parser) {
 				advance_parser(parser);
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token tok = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_SEMICOLON,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 
 				Node* decl = create_string_node(ctx, NODE_NAME, id, NULL, NULL, NULL, NULL, NULL, t);
@@ -1424,7 +1422,14 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser) {
 	while (peek_token_type(parser) != TOKEN_RIGHT_PARENTHESES) {
 		if (peek_token_type(parser) != TOKEN_ID) {
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+			char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+			Error e = {
+				.type = EXPECTED_IDENTIFIER,
+				.message = message,
+				.line = tok.line,
+				.column = tok.column
+			};
+			log_error(ctx, e);
 		} 
 
 		char* id = NULL;
@@ -1444,7 +1449,14 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser) {
 
 		if (peek_token_type(parser) != TOKEN_COLON) {
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, parser->info, EXPECTED_COLON);
+			char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+			Error e = {
+				.type = EXPECTED_COLON,
+				.message = message,
+				.line = tok.line,
+				.column = tok.column
+			};
+			log_error(ctx, e);
 		}
 
 		advance_parser(parser);
@@ -1454,7 +1466,14 @@ Node* parse_parameters(CompilerContext* ctx, Parser* parser) {
 			peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
 
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
+			char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+			Error e = {
+				.type = EXPECTED_DATATYPE,
+				.message = message,
+				.line = tok.line,
+				.column = tok.column
+			};
+			log_error(ctx, e);
 		}
 
 		Token tok = peek_token(parser);
@@ -1520,7 +1539,14 @@ Node* parse_function(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_IDENTIFIER,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 
 		if (peek_token_type(parser) == TOKEN_LEFT_PARENTHESES) {
 			int parentheses_count = 1;
@@ -1576,8 +1602,15 @@ Node* parse_function(CompilerContext* ctx, Parser* parser) {
 	Node* params = NULL;
 	if (peek_token_type(parser) != TOKEN_LEFT_PARENTHESES) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_LEFT_PARENTHESES);	
-		
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_LEFT_PARENTHESES,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
+
 		token_t synchronizations[1] = {TOKEN_ID};
 		synchronize(parser, synchronizations, 1);
 		params = parse_parameters(ctx, parser);
@@ -1590,7 +1623,15 @@ Node* parse_function(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_ARROW) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_ARROW);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_ARROW,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
+
 		token_t synchronizations[5] = {TOKEN_INT_KEYWORD, TOKEN_CHAR_KEYWORD, TOKEN_BOOL_KEYWORD, TOKEN_STRUCT_KEYWORD, TOKEN_VOID_KEYWORD};
 		synchronize(parser, synchronizations, 5);
 	}
@@ -1603,7 +1644,15 @@ Node* parse_function(CompilerContext* ctx, Parser* parser) {
 
 	if (!valid_function_return_type(type)) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_DATATYPE,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
+
 		token_t synchronizations[1] = {TOKEN_LEFT_BRACE};
 		synchronize(parser, synchronizations, 1);
 	} else {
@@ -1620,7 +1669,15 @@ Node* parse_function(CompilerContext* ctx, Parser* parser) {
 	Node* function_body = NULL;
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token token = peek_token(parser);
-		log_error(ctx, &token, parser->info, EXPECTED_LEFT_BRACE);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_LEFT_BRACE,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
+
 		token_t synchronizations[7] = {TOKEN_LET_KEYWORD, TOKEN_ID, TOKEN_STRUCT_KEYWORD, TOKEN_ENUM_KEYWORD, TOKEN_FOR_KEYWORD, TOKEN_WHILE_KEYWORD, TOKEN_IF_KEYWORD};
 		synchronize(parser, synchronizations, 7);
 		
@@ -1728,10 +1785,12 @@ void synchronize(Parser* parser, token_t* synchronizations, size_t length) {
 }
 
 Node* parse(CompilerContext* ctx, Lexer* lexer) {
-	if (!lexer) return NULL;
-	init_error_table(ctx);
-	
-	Parser parser = initialize_parser(lexer);
+	ctx->phase = PHASE_PARSER;
+
+	Parser parser =  {
+		.tokens = lexer->tokens,
+		.info = lexer->info
+	};
 
 	Node* head = NULL;
 	Node* current = NULL;
@@ -1783,10 +1842,6 @@ Node* parse(CompilerContext* ctx, Lexer* lexer) {
 			synchronize(&parser, synchronizations, length);
 		}
 	}
-
-	if (has_errors) {
-		emit_errors(ctx);
-	}
 	return head;
 }
 
@@ -1796,7 +1851,14 @@ Node* parse_let(CompilerContext* ctx,Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_IDENTIFIER,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	char* id = NULL;
@@ -1816,7 +1878,14 @@ Node* parse_let(CompilerContext* ctx,Parser* parser) {
 	
 	if (peek_token_type(parser) != TOKEN_COLON) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_COLON);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_COLON,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	advance_parser(parser);
@@ -1825,7 +1894,14 @@ Node* parse_let(CompilerContext* ctx,Parser* parser) {
 		peek_token_type(parser) != TOKEN_CHAR_KEYWORD &&
 		peek_token_type(parser) != TOKEN_BOOL_KEYWORD) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_DATATYPE);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_DATATYPE,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	{
@@ -1846,7 +1922,14 @@ Node* parse_let(CompilerContext* ctx,Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_RIGHT_BRACKET) {
 				Token token = peek_token(parser);
-				log_error(ctx, &token, parser->info, EXPECTED_RIGHT_BRACKET);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_RIGHT_BRACKET,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 
 			advance_parser(parser);
@@ -1874,7 +1957,14 @@ Node* parse_let(CompilerContext* ctx,Parser* parser) {
 
 				if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 					Token token = peek_token(parser);
-					log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+					char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+					Error e = {
+						.type = EXPECTED_SEMICOLON,
+						.message = message,
+						.line = tok.line,
+						.column = tok.column
+					};
+					log_error(ctx, e);
 				}
 				advance_parser(parser);
 			} 
@@ -1897,7 +1987,14 @@ Node* parse_let(CompilerContext* ctx,Parser* parser) {
 
 			if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 				Token token = peek_token(parser);
-				log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+				char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+				Error e = {
+					.type = EXPECTED_SEMICOLON,
+					.message = message,
+					.line = tok.line,
+					.column = tok.column
+				};
+				log_error(ctx, e);
 			}
 			advance_parser(parser);
 		}
@@ -1914,7 +2011,14 @@ Node* parse_enum_body(CompilerContext* ctx, Parser* parser) {
 	while (peek_token_type(parser) != TOKEN_RIGHT_BRACE) {
 		if (peek_token_type(parser) != TOKEN_ID) {
 			Token tok = peek_token(parser);
-			log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+			char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+			Error e = {
+				.type = EXPECTED_IDENTIFIER,
+				.message = message,
+				.line = tok.line,
+				.column = tok.column
+			};
+			log_error(ctx, e);
 		}
 
 		char* id = NULL;
@@ -1961,7 +2065,14 @@ Node* parse_enum(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_IDENTIFIER,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	char* id = NULL;
@@ -1978,7 +2089,14 @@ Node* parse_enum(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_LEFT_BRACE,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	advance_parser(parser);
@@ -1988,7 +2106,14 @@ Node* parse_enum(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_SEMICOLON,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	advance_parser(parser);
@@ -2004,7 +2129,14 @@ Node* parse_struct(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_ID) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_IDENTIFIER);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_IDENTIFIER,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	char* id = NULL;
@@ -2021,7 +2153,14 @@ Node* parse_struct(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_LEFT_BRACE) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_LEFT_BRACE);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_LEFT_BRACE,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	advance_parser(parser);
@@ -2031,7 +2170,14 @@ Node* parse_struct(CompilerContext* ctx, Parser* parser) {
 
 	if (peek_token_type(parser) != TOKEN_SEMICOLON) {
 		Token tok = peek_token(parser);
-		log_error(ctx, &tok, parser->info, EXPECTED_SEMICOLON);
+		char* message = error_prelude(ctx, parser->info->filename, tok.line, tok.column);
+		Error e = {
+			.type = EXPECTED_SEMICOLON,
+			.message = message,
+			.line = tok.line,
+			.column = tok.column
+		};
+		log_error(ctx, e);
 	}
 
 	advance_parser(parser); 

@@ -1,0 +1,14 @@
+#ifndef PHASES_H
+#define PHASES_H
+
+typedef enum phase_t {
+	PHASE_LEXER,
+	PHASE_PARSER,
+	PHASE_SYMBOL_RESOLUTION,
+	PHASE_TYPECHECKER,
+	PHASE_IR,
+	PHASE_REGALLOC,
+	PHASE_CODEGEN
+} phase_t;
+
+#endif

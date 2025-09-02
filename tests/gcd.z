@@ -1,0 +1,11 @@
+function gcd(a: int, b: int) -> int {
+	if (b == 0) {
+		return a;
+	}
+	return gcd(b, a % b);
+}
+
+function main() -> int {
+	let x: int = gcd(24, 60);
+	return x;
+}

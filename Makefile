@@ -3,7 +3,7 @@ CFLAGS = -g -Isrc -Wall -Wextra
 
 DIRS = src/Lexer src/Parser src/Semantics src/IR src/RegAlloc src/Codegen
 # src/RegAlloc src/Codegen
-SOURCES = $(shell find $(DIRS) -name "*.c") src/main.c src/types.c src/symbols.c src/compilercontext.c src/bumpallocator.c
+SOURCES = $(shell find $(DIRS) -name "*.c") src/main.c src/types.c src/symbols.c src/compilercontext.c src/bumpallocator.c src/errors.c
 # src/RegAlloc/regalloc.c src/IR/cfg.c src/IR/tac.c src/Semantics/types.c
 # OUTPUT = program
 

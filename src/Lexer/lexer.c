@@ -2,6 +2,7 @@
 #include "compilercontext.h"
 #include "token.h"
 #include "assert.h"
+#include "errors.h"
 
 Lexer* initialize_lexer(CompilerContext* ctx, FileInfo* info) {
 	Lexer* lexer = arena_allocate(ctx->lexer_arena, sizeof(Lexer));
@@ -105,34 +106,36 @@ keyword_t get_keyword_t(CompilerContext* ctx, char* identifier) {
 	return KEYWORD_UNKNOWN;
 }
 
-Token create_token(token_t type, int line, int column) {
-	Token token = {
+Token create_char_token(token_t type, char c, int line, int column) {
+	Token t = {
+		.type = type,
+		.line = line,
+		.column = column
+	};
+	t.value.c = c;
+	return t;
+}
+
+Token create_int_token(token_t type, int val, int line, int column) {
+	Token t = {
+		.type = type,
+		.line = line,
+		.column = column
+	};
+	t.value.val = val;
+	return t;
+}
+
+Token create_string_token(CompilerContext* ctx, token_t type, char* str, int line, int column) {
+	Token t = {
 		.type = type,
 		.line = line,
 		.column = column
 	};
 
-	return token;
-}
-
-Token create_char_token(token_t type, char c, int line, int column) {
-	Token token = create_token(type, line, column);
-	token.value.c = c;
-	return token;
-}
-
-Token create_int_token(token_t type, int val, int line, int column) {
-	Token token = create_token(type, line, column);
-	token.value.val = val;
-	return token;
-}
-
-Token create_string_token(CompilerContext* ctx, token_t type, char* str, int line, int column) {
-	Token token = create_token(type, line, column);
-
 	int length = strlen(str);
-	token.value.str = arena_allocate(ctx->lexer_arena, length + 1);
-	if (!token.value.str) {
+	t.value.str = arena_allocate(ctx->lexer_arena, length + 1);
+	if (!t.value.str) {
 		TokenValue error_val = {
 			.str = NULL
 		};
@@ -145,10 +148,10 @@ Token create_string_token(CompilerContext* ctx, token_t type, char* str, int lin
 		};
 		return error_token;
 	}
-	strncpy(token.value.str, str, length);
-	token.value.str[length] = '\0';
+	strncpy(t.value.str, str, length);
+	t.value.str[length] = '\0';
 
-	return token;
+	return t;
 }
 
 void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
@@ -157,7 +160,6 @@ void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 
 		lexer->capacity *= 2;
 		size_t new_capacity = lexer->capacity;
-		
 		void* new_tokens = arena_reallocate(
 			ctx->lexer_arena, 
 			lexer->tokens, 
@@ -168,7 +170,6 @@ void add_token(CompilerContext* ctx, Lexer* lexer, Token token) {
 		assert(new_tokens);
 		lexer->tokens = new_tokens;
 	}
-	// printf("Adding token with type %d to lexer\n", token.type);
 	lexer->tokens[lexer->size++] = token;
 }
 
@@ -200,7 +201,7 @@ void get_number(CompilerContext* ctx, Lexer* lexer) {
 
 	int length = lexer->end - lexer->start;
 	char* text = arena_allocate(ctx->lexer_arena, length + 1);
-	if (!text) return;
+	assert(text);
 
 	strncpy(text, lexer->start, length);
 	text[length] = '\0';
@@ -214,8 +215,17 @@ void get_string_literal(CompilerContext* ctx, Lexer* lexer) {
 		advance_lexer(lexer);
 	}
 
-	if (peek_lexer(lexer) != '\"') return;
-
+	if (peek_lexer(lexer) != '\"') {
+		char* message = error_prelude(ctx, lexer->info->filename, lexer->line, lexer->column);
+		Error e = {
+			.type = EXPECTED_DOUBLE_QUOTE,
+			.message = message,
+			.line = lexer->line,
+			.column = lexer->column
+		};
+		log_error(ctx, e);
+		return;
+	}
 	int length = lexer->end - lexer->start;
 	char* identifier = arena_allocate(ctx->lexer_arena, length + 1);
 	if (!identifier) return;
@@ -244,7 +254,14 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 			add_token(ctx, lexer, create_char_token(TOKEN_CHAR_LITERAL, peek_lexer(lexer), lexer->line, lexer->column));
 			advance_lexer(lexer);
 			if (peek_lexer(lexer) != '\'') {
-				printf("Expected matching token '\''.\n");
+				char* message = error_prelude(ctx, lexer->info->filename, lexer->line, lexer->column);
+				Error e = {
+					.type = EXPECTED_SINGLE_QUOTE,
+					.message = message,
+					.line = lexer->line,
+					.column = lexer->column
+				};
+				log_error(ctx, e);
 			} else {
 				advance_lexer(lexer);
 			}
@@ -257,7 +274,6 @@ void get_delimeters(CompilerContext* ctx, Lexer* lexer) {
 			return;
 		}
 	}
-
 	add_token(ctx, lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
 }
 
@@ -400,9 +416,6 @@ void get_operator(CompilerContext* ctx, Lexer* lexer) {
 		char str_opr[3] = {c, *(lexer->end - 1), '\0'};
 		add_token(ctx, lexer, create_string_token(ctx, type, str_opr, lexer->line, lexer->column - 2));
 	} else {
-		// if (type == TOKEN_UNKNOWN) {
-			// printf("About to add char token with type \033[31m%d\033[0m at \033[33m%d:%d\033[0m\n", type, lexer->line, lexer->column - 1);
-		// }
 		add_token(ctx, lexer, create_char_token(type, c, lexer->line, lexer->column - 1));
 	}
 }
@@ -516,9 +529,11 @@ FileInfo* retrieve_file_contents(CompilerContext* ctx, char* filename) {
 }
 
 Lexer* lex(CompilerContext* ctx, char* filename) {
+	ctx->phase = PHASE_LEXER;
+
 	FileInfo* info = retrieve_file_contents(ctx, filename);
 	Lexer* lexer = initialize_lexer(ctx, info);
-	if (!lexer) return NULL;
+	assert(info && lexer);
 
 	while (!lexer_at_end(lexer)) {
 		skip_lexer_whitespace(lexer);
@@ -536,9 +551,13 @@ Lexer* lex(CompilerContext* ctx, char* filename) {
 		} else {
 			advance_lexer(lexer);
 		}
-
 	}
-	add_token(ctx, lexer, create_token(TOKEN_EOF, lexer->line, lexer->column));
+	Token eof_token = {
+		.type = TOKEN_EOF,
+		.line = lexer->line,
+		.column = lexer->column
+	};
+	add_token(ctx, lexer, eof_token);
 	return lexer;
 }
 

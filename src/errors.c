@@ -1,43 +1,65 @@
 #include "errors.h"
 #include "compilercontext.h"
+#include "Lexer/token.h"
+#include "assert.h"
 
+// void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info) {
+// 	Error* error = arena_allocate(ctx->error_arena, sizeof(Error));
+// 	if (!error) {
+// 		perror("Unable to allocate space for error\n");
+// 		return;
+// 	}
 
-void create_error(CompilerContext* ctx, error_t type, char* message, Token* token, FileInfo* info) {
-	Error* error = arena_allocate(ctx->error_arena, sizeof(Error));
-	if (!error) {
-		perror("Unable to allocate space for error\n");
-		return;
+// 	error->type = type;
+// 	error->token = copy_token(ctx, token);
+// 	if (!error->token) {
+// 		perror("In 'create_error', unable to copy token\n");
+// 		return;
+// 	}
+// 	error->info = info;
+// 	error->message = arena_allocate(ctx->error_arena, sizeof(message) + 1);
+// 	if (!error->message) {
+// 		perror("Unable to duplicate error message\n");
+// 		return;
+// 	} 
+// }
+
+char* get_token_string(token_t type) {
+	switch (type) {
+		case TOKEN_LET_KEYWORD: return "let";
+		case TOKEN_INT_KEYWORD: return "int";
+		case TOKEN_CHAR_KEYWORD: return "char";
+		case TOKEN_BOOL_KEYWORD: return "bool";
+		case TOKEN_VOID_KEYWORD: return "void";
+		case TOKEN_STRUCT_KEYWORD: return "struct";
+		case TOKEN_ENUM_KEYWORD: return "enum";
+		case TOKEN_IF_KEYWORD: return "if";
+		case TOKEN_ELSE_KEYWORD: return "else";
+		case TOKEN_FOR_KEYWORD: return "for";
+		case TOKEN_WHILE_KEYWORD: return "while";
+		case TOKEN_CONTINUE_KEYWORD: return "continue";
+		case TOKEN_BREAK_KEYWORD: return "break";
+		case TOKEN_RETURN_KEYWORD: return "return";
+		case TOKEN_LEFT_PARENTHESES: return "(";
+		case TOKEN_RIGHT_PARENTHESES: return ")";
+		case TOKEN_LEFT_BRACE: return "{";
+		case TOKEN_RIGHT_BRACE: return "}";
+		case TOKEN_LEFT_BRACKET: return "[";
+		case TOKEN_RIGHT_BRACKET: return "]";
+		case TOKEN_ARROW: return "->";
+		case TOKEN_COMMA: return ",";
+		case TOKEN_COLON: return ":";
+		case TOKEN_SEMICOLON: return ";";
+		case TOKEN_ID: return "identifier";
 	}
-
-	error->type = type;
-	error->token = copy_token(ctx, token);
-	if (!error->token) {
-		perror("In 'create_error', unable to copy token\n");
-		// free(error);
-		return;
-	}
-	error->info = info;
-	// error->message = strdup(message);
-	error->message = arena_allocate(ctx->error_arena, sizeof(message) + 1);
-	if (!error->message) {
-		perror("Unable to duplicate error message\n");
-		// free_duplicate_token(error->token);
-		// free(error);
-		return;
-	} 
-
-	has_errors = true;
-	add_error_to_error_table(ctx, error);
 }
 
-void display_error(CompilerContext* ctx, Error* error) {
-	if (!error) return;
-
-	printf("%s", error->message);
+void display_error(CompilerContext* ctx, Error* e) {
+	printf("%s", e->message);
 
 	int token_length = 1;
 
-	switch (error->token->type) {
+	switch (e->token->type) {
 		case TOKEN_FUNCTION_KEYWORD:
 		case TOKEN_LET_KEYWORD:
 		case TOKEN_INT_KEYWORD:
@@ -54,41 +76,44 @@ void display_error(CompilerContext* ctx, Error* error) {
 		case TOKEN_BREAK_KEYWORD:
 		case TOKEN_RETURN_KEYWORD:
 		case TOKEN_ID: {
-			if (error->token->value.str) {
-				token_length = strlen(error->token->value.str);
+			if (e->token->value.str) {
+				token_length = strlen(e->token->value.str);
 			} 
 			break;
 		}
 
 		case TOKEN_INTEGER: {
-			int length = snprintf(NULL, 0, "%d", error->token->value.val);
+			int length = snprintf(NULL, 0, "%d", e->token->value.val);
 			token_length = length;
 			break;
 		}
-		default: token_length = 1; break;
+		default: {
+			token_length = 1; 
+			break;
+		}
 	}
 
-	int gutter_width = snprintf(NULL, 0, "%d", error->token->line);
+	int gutter_width = snprintf(NULL, 0, "%d", e->token->line);
 	char space[gutter_width + 1];
 	for (int i = 0; i < gutter_width; i++) {
 		space[i] = ' ';
 	}
 	space[gutter_width] = '\0';
 
-	switch (error->type) {
+	switch (e->type) {
 		case EXPECTED_IDENTIFIER: {
 			printf("error: missing %s\n", get_token_string(TOKEN_ID));
 			
-			printf("%s%s-> %s:%d:%d\n", space, space, error->info->filename, error->token->line, error->token->column);
+			printf("%s%s-> %s:%d:%d\n", space, space, e->info->filename, e->line, e->column);
 			
 			printf("%s%s|\n", space, space);
 
-			printf("%d%s| %s\n", error->token->line, space, error->info->lines[error->token->line - 1]);
+			printf("%d%s| %s\n", e->line, space, e->info->lines[e->line - 1]);
 			printf("%s%s|", space, space);
 			char buffer[2 * gutter_width + 1];
 			snprintf(buffer, sizeof(buffer), "%s%s|", space, space);
 
-			for (int i = 1; i <= error->token->column - 1; i++) {
+			for (int i = 1; i <= e->column - 1; i++) {
 				printf(" ");
 			}
 
@@ -124,6 +149,16 @@ void display_error(CompilerContext* ctx, Error* error) {
 			break;
 		}
 
+		case EXPECTED_DOUBLE_QUOTE: {
+			printf("Syntax Error: Expected '"'\n');
+			break;
+		}
+
+		case EXPECTED_SINGLE_QUOTE: {
+			printf("Syntax Error: Expected '\''\n");
+			break;
+		}
+
 		case EXPECTED_LEFT_BRACKET: {
 			printf("Syntax Error: Expected '%s'\n", get_token_string(TOKEN_LEFT_BRACKET));
 			break;
@@ -156,77 +191,70 @@ void display_error(CompilerContext* ctx, Error* error) {
 }
 
 void emit_errors(CompilerContext* ctx) {
-	for (int i = 0; i < error_table.size; i++) {
-		display_error(ctx, error_table.errors[i]);
-	}
-}
-
-void log_error(CompilerContext* ctx, Token* tok, FileInfo* info, error_t type) {
-	
-	char* message = arena_allocate(ctx->error_arena, 1024);
-	if (!message) return;
-
-	snprintf(message, 1024, "\033[31mError\033[0m in file '%s' at line %d, column %d:\n", info->filename, tok->line, tok->column);
-	create_error(ctx, type, message, tok, info);
-}
-
-void add_error_to_error_table(CompilerContext* ctx, Error* err) {
-	if (!err) return;
-
-	if (error_table.size >= error_table.capacity) {
-		size_t prev_capacity = error_table.capacity;
-		error_table.capacity *= 2;
-		size_t new_capacity = error_table.capacity;
-		// error_table.errors = realloc(error_table.errors, error_table.capacity);
-		void* new_errors = arena_reallocate(
-			ctx->error_arena, 
-			error_table.errors, 
-			prev_capacity * sizeof(Error*), 
-			new_capacity *  sizeof(Error*)
-		);
-		
-		if (!new_errors) {
-			emit_errors(ctx);
-			// exit(EXIT_FAILURE);
-
-		}
-		error_table.errors = new_errors;
-	}
-	error_table.errors[error_table.error_index++] = err;
-	error_table.size++;
-}
-
-ErrorTable create_error_table(CompilerContext* ctx) {
-	Error** errors = arena_allocate(ctx->error_arena, sizeof(Error*) * ERROR_CAPACITY);
-	if (!errors) {
-		ErrorTable failed_error_table = {
-			.size = 0,
-			.capacity = 0,
-			.error_index = 0,
-			.errors = NULL
-		};
-		return failed_error_table;
-	}
-
-	ErrorTable new_error_table = {
-		.size = 0,
-		.capacity = ERROR_CAPACITY,
-		.error_index = 0,
-		.errors = errors
-	};
-	return new_error_table;
-}
-
-ErrorTables** create_error_tables(CompilerContext* ctx) {
-	ErrorTable** tables = arena_allocate(ctx->error_arena, NUM_PHASES * sizeof(ErrorTable*));
-	if (!tables) return NULL;
-
 	for (int i = 0; i < NUM_PHASES; i++) {
-		tables[i]->size = 0;
-		tables[i]->capacity = 20;
-		tables[i]->phase = (phase_t)i;
-		tables[i]->errors = arena_allocate(ctx->error_arena, 20 * sizeof(Error));
-		if (tables[i]->errors) return NULL;
+		ErrorTable* table = &ctx->error_tables[i];
+		if (table && (table->phase == ctx->phase)) {
+			for (int j = 0; j < table->size; j++) {
+				display_error(ctx, &table->errors[i]);
+			}
+		}
+	}
+}
+
+char* error_prelude(CompilerContext* ctx, char* filename, int line, int column) {
+	char* message = arena_allocate(ctx->error_arena, 100);
+	assert(message);
+
+	snprintf(message, 1024, "\033[31mError\033[0m in file '%s' at line %d, column %d:\n", filename, line, column);
+	return message;
+}
+
+void log_error(CompilerContext* ctx, Error e) {
+	for (int i = 0; i < NUM_PHASES; i++) {
+		ErrorTable* table = &ctx->error_tables[i];
+		if (table->phase == ctx->phase) {
+			if (table->size >= table->capacity) {
+				size_t prev_capacity = table->capacity;
+
+				table->capacity *= 2;
+				size_t new_capacity = table->capacity;
+				void* new_errors = arena_reallocate(
+					ctx->error_arena,
+					table->errors,
+					prev_capacity * sizeof(Error),
+					new_capacity * sizeof(Error)
+				);
+				
+				assert(new_errors);
+				table->errors = new_errors;
+			}
+			table->errors[table->size++] = e;
+		}
+	}
+}
+
+ErrorTable* create_error_tables(CompilerContext* ctx) {
+	ErrorTable* tables = arena_allocate(ctx->error_arena, NUM_PHASES * sizeof(ErrorTable));
+	if (!tables) {
+		perror("couldn't allocate space for tables\n");
+		return NULL;
+	}
+	for (int i = 0; i < NUM_PHASES; i++) {
+		tables[i].size = 0;
+		tables[i].capacity = ERROR_CAPACITY;
+		tables[i].phase = (phase_t)i;
+		tables[i].errors = arena_allocate(ctx->error_arena, tables[i].capacity * sizeof(Error));
+		if (!tables[i].errors) {
+			return NULL;
+		}
 	}
 	return tables;
+}
+
+bool phase_accumulated_errors(CompilerContext* ctx) {
+	for (int i = 0; i < NUM_PHASES; i++) {
+		ErrorTable* table = &ctx->error_tables[i];
+		if (table && (table->phase == ctx->phase && table->size > 0)) return true;
+	}
+	return false;
 }

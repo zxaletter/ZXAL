@@ -12,7 +12,7 @@ char* keywords[KEYWORDS] = {"function", "let", "int", "char", "bool",
 CompilerContext* create_compiler_context() {
 	CompilerContext* ctx = malloc(sizeof(CompilerContext));
 	if (!ctx) {
-		perror("\033[31mError\033[0m: unable to allocate space for compiler context\n");
+		perror("\033[31mError\033[0m: unable to allocate space for compiler context\033[0m\n");
 		return NULL;
 	}
 
@@ -22,6 +22,7 @@ CompilerContext* create_compiler_context() {
 	if (!ctx->lexer_arena) {
 		printf("could not create lexer arena\n");
 		free(ctx);
+		printf("lexer arena failed\n");
 		return NULL;
 	}
 
@@ -30,6 +31,7 @@ CompilerContext* create_compiler_context() {
 		printf("could not create lexer arena\n");
  		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("ast arena failed\n");
 		return NULL;
 	}
 
@@ -39,6 +41,7 @@ CompilerContext* create_compiler_context() {
 		free_arena(ctx->ast_arena);
 		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("type arena failed\n");
 		return NULL;
 	}
 
@@ -49,6 +52,7 @@ CompilerContext* create_compiler_context() {
 		free_arena(ctx->ast_arena);
 		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("Symbol arena failed\n");
 		return NULL;
 	}
 
@@ -61,6 +65,7 @@ CompilerContext* create_compiler_context() {
 			free_arena(ctx->ast_arena);
 			free_arena(ctx->lexer_arena);
 			free(ctx);
+			printf("global symbol table failed\n");
 			return NULL;
 		}
 
@@ -83,6 +88,7 @@ CompilerContext* create_compiler_context() {
 		free_arena(ctx->ast_arena);
 		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("ir arena failed\n");
 		return NULL;
 	}
 
@@ -94,6 +100,7 @@ CompilerContext* create_compiler_context() {
 		free_arena(ctx->ast_arena);
 		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("error arena failed\n");
 		return NULL;
 	}
 
@@ -106,6 +113,7 @@ CompilerContext* create_compiler_context() {
 		free_arena(ctx->ast_arena);
 		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("error tables NULL\n");
 		return NULL;
 	}
 
@@ -118,21 +126,21 @@ CompilerContext* create_compiler_context() {
 		free_arena(ctx->ast_arena);
 		free_arena(ctx->lexer_arena);
 		free(ctx);
+		printf("codegen arena failed\n");
 		return NULL;
 	}
-
 	return ctx;
 }
 
 void free_compiler_context(CompilerContext* ctx) {
-	if (!ctx) return;
-
-	free_arena(ctx->lexer_arena);
-	free_arena(ctx->ast_arena);
-	free_arena(ctx->type_arena);
-	free_arena(ctx->symbol_arena);
-	free_arena(ctx->ir_arena);
-	free_arena(ctx->error_arena);
-	free_arena(ctx->codegen_arena);
-	free(ctx);
+	if (ctx) {
+		free_arena(ctx->lexer_arena);
+		free_arena(ctx->ast_arena);
+		free_arena(ctx->type_arena);
+		free_arena(ctx->symbol_arena);
+		free_arena(ctx->ir_arena);
+		free_arena(ctx->error_arena);
+		free_arena(ctx->codegen_arena);
+		free(ctx);		
+	}
 }

@@ -66,7 +66,6 @@ void* arena_allocate(Arena* A, size_t req_size) {
 
 	A->current_block->offset += req_size;
 	memset(new_ptr, 0, req_size);
-    
 	return new_ptr;
 }
 
