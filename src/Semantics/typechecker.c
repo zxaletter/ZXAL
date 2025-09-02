@@ -4,6 +4,7 @@
 #include "symbols.h"
 #include "types.h"
 #include "errors.h"
+#include "assert.h"
 
 TypeCheckerSymbolStack typechecker_symbol_stack;
 
@@ -215,6 +216,7 @@ struct Type* typecheck_expression(CompilerContext* ctx, Node* node) {
 		}
 
 		case NODE_CALL: {
+			printf("Am i in call\n");
 			Node* wrapped_arg = node->params;
 
 			Symbol* sym = node->left->symbol;
@@ -224,7 +226,12 @@ struct Type* typecheck_expression(CompilerContext* ctx, Node* node) {
 				Node* next_arg = wrapped_arg->next;
 				Node* next_param = wrapped_param->next;
 
-				if (!type_equals(wrapped_arg->right, wrapped_param->right)) {
+				Type* wrapped_arg_type = ((Symbol*)wrapped_arg->right->symbol)->type;
+				Type* wrapped_param_type = ((Symbol*)wrapped_param->right->symbol)->type;
+				if (!type_equals(wrapped_arg_type, wrapped_param_type)) {
+					printf("arg and param not equal?\n");
+					// printf("arg type = %d\n", wrapped_arg->right->type);
+					// printf("param type = %d\n", wrapped_param->right->type);
 					return type_create(ctx, TYPE_UNKNOWN, NULL);
 				}
 
@@ -233,14 +240,17 @@ struct Type* typecheck_expression(CompilerContext* ctx, Node* node) {
 			}
 
 			if (wrapped_arg || wrapped_param) {
+				printf("mismatched number of args -> params\n");
 				return type_create(ctx, TYPE_UNKNOWN, NULL);
 			}
 
 			Type* func_return_type = NULL;
 			if (sym->type && sym->type->subtype) {
 				func_return_type = sym->type->subtype;
+				printf("Or am i here\n");
 				result = type_create(ctx, func_return_type->kind, NULL);
 			} else {
+				printf("did i get here\n");
 				result = type_create(ctx, TYPE_UNKNOWN, NULL);
 			}
 
@@ -347,16 +357,19 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 		} 
 
 		case NODE_RETURN: {
-			Symbol* func_symbol = peek_typechecker_symbol_stack();
-			if (!func_symbol) return;
-
-			Type* func_return_type = NULL;
-			if (func_symbol->type) {
-				func_return_type = func_symbol->type->subtype;
-			} 
-
 			if (node->right) {
+				printf("\nReturn node right kind=%d\n", node->right->type);
+				Symbol* func_symbol = peek_typechecker_symbol_stack();
+				assert(func_symbol);
+
+				Type* func_return_type = NULL;
+				if (func_symbol->type) {
+					func_return_type = func_symbol->type->subtype;
+				}
+
 				rt = typecheck_expression(ctx, node->right);
+				printf("rt kind is %d\n", rt->kind);
+				printf("func return kind is %d\n", func_return_type->kind);
 				if (!type_equals(rt, func_return_type)) {
 					result = type_create(ctx, TYPE_UNKNOWN, NULL);
 				} else {
