@@ -1334,7 +1334,7 @@ TACTable* build_tacs(CompilerContext* ctx, Node* node) {
 		current = next;
 	}
 
-	emit_tac_instructions();
+	// emit_tac_instructions();
 
 	return tac_table;
 }

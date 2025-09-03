@@ -178,6 +178,10 @@ void display_parser_error(CompilerContext* ctx, Error* e) {
 	}
 }
 
+void display_typechecker_error(CompilerContext* ctx, Error* e) {
+	
+}
+
 void emit_errors(CompilerContext* ctx) {
 	for (int i = 0; i < NUM_PHASES; i++) {
 		ErrorTable* table = &ctx->error_tables[i];
@@ -193,6 +197,13 @@ void emit_errors(CompilerContext* ctx) {
 				case PHASE_PARSER: {
 					for (int j = 0; j < table->size; j++) {
 						display_parser_error(ctx, &table->errors[j]);
+					}
+					break;
+				}
+
+				case PHASE_TYPECHECKER: {
+					for (int j = 0; j < table->size; j++) {
+						display_typechecker_error(ctx, &table->errors[j]);
 					}
 					break;
 				}

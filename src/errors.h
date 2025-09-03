@@ -3,6 +3,7 @@
 
 #include "Lexer/lexer.h"
 #include "Lexer/token.h"
+#include "Parser/node.h"
 #include <stdbool.h>
 #include "phases.h"
 
@@ -42,6 +43,7 @@ typedef enum error_t {
 
 typedef union {
 	Token token;
+	Node node;
 } error_unit;
 
 typedef struct Error {
@@ -65,6 +67,7 @@ char* error_prelude(CompilerContext* ctx, char* filename, int line, int column);
 void log_error(CompilerContext* ctx, Error e);
 void display_lexer_error(CompilerContext* ctx, Error* e);
 void display_parser_error(CompilerContext* ctx, Error* e);
+void display_typechecker_error(CompilerContext* ctx, Error* e);
 void emit_errors(CompilerContext* ctx);
 
 ErrorTable* create_error_tables(CompilerContext* ctx);
