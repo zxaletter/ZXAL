@@ -101,6 +101,7 @@ void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_lis
 
 char* get_filename(CompilerContext* ctx, char* file);
 ASMWriter* create_asm_writer(CompilerContext* ctx, char* file);
+void generate_executable(CompilerContext* ctx, char* asm_file);
 void codegen(CompilerContext* ctx, FunctionList* function_list, char* file);
 
 #endif

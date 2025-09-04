@@ -2,23 +2,9 @@ CC = gcc
 CFLAGS = -g -Isrc -Wall -Wextra
 
 DIRS = src/Lexer src/Parser src/Semantics src/IR src/RegAlloc src/Codegen
-# src/RegAlloc src/Codegen
 SOURCES = $(shell find $(DIRS) -name "*.c") src/main.c src/types.c src/symbols.c src/compilercontext.c src/bumpallocator.c src/errors.c
-# src/RegAlloc/regalloc.c src/IR/cfg.c src/IR/tac.c src/Semantics/types.c
-# OUTPUT = program
 
-# INCLUDES = -I src -I src/Lexer -I src/Parser -I src/Semantics 
-# # -I src/Semantics -I src/IR -I src/RegAlloc 
-
-# all: $(OUTPUT)
-
-# $(OUTPUT): $(SOURCES)
-# 	gcc -g  $(INCLUDES) -o $@ $^
-
-# clean:
-# 	rm -f $(OUTPUT)
-EXECUTABLES = $(shell find tests -type f -executable)
-ASM_FILES = $(shell find tests -name "*.asm")
+EXECUTABLES_AND_ASM_FILES = $(shell find tests -type f ! -name "*.z")
 
 OBJECTS = $(SOURCES:.c=.o)
 all: zxal
@@ -30,6 +16,6 @@ zxal: $(OBJECTS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJECTS) $(EXECUTABLES) $(ASM_FILES) zxal 
+	rm -f $(OBJECTS) $(EXECUTABLES_AND_ASM_FILES)  zxal 
 
 .PHONY: all clean

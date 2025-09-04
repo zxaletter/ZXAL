@@ -1,3 +1,4 @@
+#include "stdlib.h"
 #include "codegen.h"
 #include "assert.h"
 
@@ -930,15 +931,18 @@ void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInf
 							write_asm_to_file(writer, buffer);
 						}
 
+						snprintf(buffer, sizeof(buffer), "\tsub rsp, 8");
+						write_asm_to_file(writer, buffer);
 
 						snprintf(buffer, sizeof(buffer), "\tcall %s", tac->result->value.sym->name);
 						write_asm_to_file(writer, buffer);
 
+						snprintf(buffer, sizeof(buffer), "\tadd rsp, 8");
+						write_asm_to_file(writer, buffer);
+
 						write_asm_to_file(writer, "");
 
-					} else {
-						printf("\033[31mNo list\033[0m\n");
-					}
+					} 
 					break;
 				}
 			}		
@@ -1433,24 +1437,11 @@ char* get_full_text(CompilerContext* ctx, char* func_name) {
 
 void generate_globals(CompilerContext* ctx, ASMWriter* writer) {
 	write_asm_to_file(writer, "format ELF64 executable\n");
-	// write_asm_to_file(writer, "section '.text'\n");
-
-	// for (int i = 0; i < ctx->global_table->capacity; i++) {
-	// 	Symbol* func_symbol = ctx->global_table->symbols[i];
-	// 	if (func_symbol) {
-	// 		char* full_text = get_full_text(ctx, func_symbol->name);
-	// 		if (full_text) {
-				
-	// 			write_asm_to_file(writer, full_text);
-	// 		}			
-	// 	}
-	// }
-
 	write_asm_to_file(writer, "entry _start\n_start:");
 
-	char buffer[60];
+	char buffer[256];
 
-	snprintf(buffer, sizeof(buffer), "\tcall main\n\tmov rdi, rax\n\tmov rax, 60\n\tsyscall\n");
+	snprintf(buffer, sizeof(buffer), "\tsub rsp, 8\n\tcall main\n\tadd rsp, 8\n\tmov rdi, rax\n\tmov rax, 60\n\tsyscall\n");
 	write_asm_to_file(writer, buffer);
 }
 
@@ -2281,6 +2272,64 @@ ASMWriter* create_asm_writer(CompilerContext* ctx, char* file) {
 	return writer;
 } 
 
+void generate_executable(CompilerContext* ctx, char* asm_file) {
+	int nest_level = 0;
+	int length = strlen(asm_file);
+	for (int i = 0; i < length; i++) {
+		if (asm_file[i] == '/') {
+			nest_level++;
+		}
+	}
+
+	char* exe_path = NULL;
+
+	if (nest_level > 0) {
+		int new_nest_count = 0;
+		for (int i = 0; i < length; i++) {
+			if (asm_file[i] == '/') {
+				if (new_nest_count < nest_level) {
+					new_nest_count++;
+				}
+			}
+
+			if (new_nest_count == nest_level) {
+				for (int j = i; j < length; j++) {
+					if (asm_file[j] == '.') {
+						int distance = &asm_file[j] - asm_file;
+						exe_path = arena_allocate(ctx->codegen_arena, distance + 1);
+						assert(exe_path);
+					
+						strncpy(exe_path, asm_file, distance);
+						exe_path[distance] = '\0';
+					}
+				}
+				break;
+			}
+		}
+	} else {
+		for (int i = 0; i < length; i++) {
+			if (asm_file[i] == '.') {
+				int distance = &asm_file[i] - asm_file;
+				exe_path = arena_allocate(ctx->codegen_arena, distance + 1);
+				assert(exe_path);
+
+				strncpy(exe_path, asm_file, distance);
+				exe_path[distance] = '\0';
+				break;
+			}
+		}
+	}
+
+	char exe_cmd[256];
+	snprintf(exe_cmd, sizeof(exe_cmd), "fasm %s", asm_file);
+	int fasm_res = system(exe_cmd);
+	if (fasm_res != 0) {
+		printf("fasm failed, no executable created\n");
+	}
+	snprintf(exe_cmd, sizeof(exe_cmd), "chmod +x %s", exe_path);
+	system(exe_cmd);
+}
+
 void codegen(CompilerContext* ctx, FunctionList* function_list, char* file) {
 	ASMWriter* writer = create_asm_writer(ctx, file);
 	assert(writer);
@@ -2289,6 +2338,6 @@ void codegen(CompilerContext* ctx, FunctionList* function_list, char* file) {
 	get_bytes_for_stack_frames(ctx, function_list);
 	generate_globals(ctx, writer);
 	emit_asm_for_functions(ctx, writer, function_list);
-
 	fclose(writer->file);
+ 	generate_executable(ctx, writer->filename);
 }
