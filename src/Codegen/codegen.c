@@ -2350,6 +2350,7 @@ void ensure_main_function_exists(CompilerContext* ctx) {
 	}
 
 	if (!exists) {
+		assert(false && "No reference to 'main' function");
 		assert(false, "No reference to 'main' function\n");
 	}
 	return true;

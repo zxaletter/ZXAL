@@ -363,6 +363,7 @@ void typecheck_statement(CompilerContext* ctx, Node* node) {
 				rt = typecheck_expression(ctx, node->right);
 				if (!type_equals(rt, func_return_type)) {
 					result = type_create(ctx, TYPE_UNKNOWN, NULL);
+					assert(false);
 				} else {
 					result = type_create(ctx, func_return_type->kind, NULL);
 				}
