@@ -26,7 +26,7 @@ Feature Set:
 - pass invoked functions as arguments to other functions 
 - control flow(if, else if, and else statements)  
 
-build process in ZXAL directory:
+build process in ZXAL directory after cloning:
 - make
 - ./zxal tests/file.z
 - ./tests/file
