@@ -2330,10 +2330,36 @@ void generate_executable(CompilerContext* ctx, char* asm_file) {
 	system(exe_cmd);
 }
 
+void ensure_main_function_exists(CompilerContext* ctx) {
+	bool exists = false;
+
+	for (int i = 0; i < ctx->global_table->capacity; i++) {
+		Symbol* sym = ctx->global_table->symbols[i];
+		while (sym) {
+			Symbol* next_sym_in_link = sym->link;
+			if (sym && strcmp(sym->name, "main") == 0) {
+				exists = true;
+				break;
+			}
+			sym = next_sym_in_link;
+		}
+
+		if (exists) {
+			break;
+		}
+	}
+
+	if (!exists) {
+		assert(false, "No reference to 'main' function\n");
+	}
+	return true;
+}
+
 void codegen(CompilerContext* ctx, FunctionList* function_list, char* file) {
 	ASMWriter* writer = create_asm_writer(ctx, file);
 	assert(writer);
 
+	ensure_main_function_exists(ctx);
 	schedule_callee_register_spills(ctx, function_list);
 	get_bytes_for_stack_frames(ctx, function_list);
 	generate_globals(ctx, writer);
