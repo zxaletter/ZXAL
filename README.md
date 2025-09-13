@@ -32,6 +32,14 @@ build process in ZXAL directory:
 - ./tests/file
 - echo $?
 
+If you find yourself running the program more than once:
+- make clean
+- make
+- ./zxal tests/file.z
+- ./tests/file
+- echo $?
+
+
 So assembly file and executable are in the same directory as the .z file you're compiling.
 
 p.s., as you can see from iv), i dont have print function. Also, functions can have at most six arguments and error handling during typechecking sucks.
