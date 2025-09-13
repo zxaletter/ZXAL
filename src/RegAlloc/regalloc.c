@@ -17,17 +17,6 @@ void find_new_register(InterferenceBundle* bundle, int* remaining_registers, Ope
 		}
 
 		if (can_use) {
-			// switch (op->kind) {
-			// 	case OP_SYMBOL: {
-			// 		printf("\033[32m%s found register %d\033[0m\n", op->value.sym->name, remaining_registers[i]);
-			// 		break;
-			// 	}
-
-			// 	default: {
-			// 		printf("\033[32m%s found register %d\033[0m\n", op->value.label_name, remaining_registers[i]);
-			// 		break;
-			// 	}
-			// }
 			op->assigned_register = remaining_registers[i];
 			break;
 		} 
@@ -52,29 +41,31 @@ void application_binary_interface(TACInstruction* instruction, int* arg_index, i
 						instruction->result->assigned_register = ARG_OFFSET + *arg_index;
 						(*arg_index)++;
 					} else {
-						instruction->op1->permanent_frame_position = true;
-					}
+						// switch (instruction->op1->kind) {
+						// 	case OP_SYMBOL: {
+						// 		printf("Argument '%s' has permanent frame position and accessed via rsp\n", instruction->op1->value.sym->name);
+						// 		break;
+						// 	}
 
+						// 	default: {
+						// 		printf("Argument '%s' has permanent frame position and accessed via rsp\n", instruction->op1->value.label_name);
+						// 		break;
+						// 	}
+						// }
+						instruction->op1->permanent_frame_position = true;
+						instruction->op1->access_via_rsp = true;
+					}
 				}
 				break;
 			}
 
 			case TAC_PARAM: {
 				if (*param_index < 6) {
-					// switch (instruction->op1->kind) {
-					// 	case OP_SYMBOL: {
-					// 		printf("Param '%s' with address: %p assigned register=%d\n", instruction->op1->value.sym->name, (void*)instruction->op1, ARG_OFFSET + *param_index);
-					// 		break;
-					// 	}
-					// 	default: {
-					// 		printf("Param '%s' with address: %p assigned address=%d\n", instruction->op1->value.label_name, (void*)instruction->op1, ARG_OFFSET + *param_index);
-					// 		break;
-					// 	}
-					// }
 					instruction->op1->assigned_register = ARG_OFFSET + *param_index;
 					(*param_index)++;
 				} else {
 					instruction->op1->permanent_frame_position = true;
+					instruction->op1->access_via_rsp = true;
 				}
 				break;
 			}
@@ -197,7 +188,7 @@ void check_regs(FunctionList* function_list) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
 		CFG* cfg = info->cfg;
-		printf("\nFunction: \033[32m%s\033[0m\n", info->symbol->name);
+		// printf("\nFunction: \033[32m%s\033[0m\n", info->symbol->name);
 		for (int j = 0; j < cfg->num_blocks; j++) {
 			BasicBlock* block = cfg->all_blocks[j];
 			for (int k = 0; k < block->num_instructions; k++) {
@@ -219,17 +210,17 @@ void check_regs(FunctionList* function_list) {
 										}
 									}
 								} else {
-									switch (tac->result->kind) {
-										case OP_SYMBOL: {
-											printf("'%s' needs spill\n", tac->result->value.sym->name);
-											break;
-										}
+									// switch (tac->result->kind) {
+									// 	case OP_SYMBOL: {
+									// 		printf("'%s' needs spill\n", tac->result->value.sym->name);
+									// 		break;
+									// 	}
 
-										case OP_STORE: {
-											printf("'%s' needs spill\n", tac->result->value.label_name);
-											break;
-										}
-									}
+									// 	case OP_STORE: {
+									// 		printf("'%s' needs spill\n", tac->result->value.label_name);
+									// 		break;
+									// 	}
+									// }
 								}
 							}
 							break;
@@ -238,17 +229,17 @@ void check_regs(FunctionList* function_list) {
 						case TAC_RETURN: {
 							if (tac->op1) {
 								if (tac->op1->assigned_register != -1) {
-									switch (tac->op1->kind) {
-										case OP_SYMBOL: {
-											printf("'%s' has register \033[32m%d\033[0m\n", tac->op1->value.sym->name, tac->op1->assigned_register);
-											break;
-										}
+									// switch (tac->op1->kind) {
+									// 	case OP_SYMBOL: {
+									// 		printf("'%s' has register \033[32m%d\033[0m\n", tac->op1->value.sym->name, tac->op1->assigned_register);
+									// 		break;
+									// 	}
 
-										default: {
-											printf("'%s' has register \033[32m%d\033[0m\n", tac->op1->value.label_name, tac->op1->assigned_register);
-											break;
-										}
-									}
+									// 	default: {
+									// 		printf("'%s' has register \033[32m%d\033[0m\n", tac->op1->value.label_name, tac->op1->assigned_register);
+									// 		break;
+									// 	}
+									// }
 								}
 							}
 							break;

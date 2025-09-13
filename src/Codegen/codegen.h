@@ -89,6 +89,7 @@ char* get_full_text(CompilerContext* ctx, char* func_name);
 void generate_globals(CompilerContext* ctx, ASMWriter* writer);
 void ensure_main_function_exists(CompilerContext* ctx);
 
+Operand* find_non_restricted_operand(OperandSet* op_set, Operand* arg_op);
 Operand* operand_with_furthest_use(OperandSet* op_set);
 Operand* find_matching_register(OperandSet* op_set, int reg);
 void ensure_alignment(int* op_size, int alignment);

@@ -1522,8 +1522,11 @@ void populate_interference_graph(CompilerContext* ctx, CFG* cfg, InterferenceGra
 
 						int arg_index = atoi(arg_num);
 						if (arg_index < 6) {
+							printf("In interference graph construction for argument with address %p\n", (void*)instruction->op1);
+
 							for (int i = 0; i < 6; i++) {
 								// 2 is offset for first arg register
+								printf("\033[31mRestricted Register\033[0m: %d\n", 2 + i);
 								instruction->op1->restricted_regs[i] = 2 + i;
 							}
 							instruction->op1->restricted = true;

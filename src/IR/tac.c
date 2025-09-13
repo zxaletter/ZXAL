@@ -322,6 +322,7 @@ Operand* create_operand(CompilerContext* ctx, operand_t kind, OperandValue value
 	operand->assigned_register = -1;
 	operand->temp_register = -1;
 	operand->permanent_frame_position = false;
+	operand->access_via_rsp = false;
 	operand->precedes_conditional = false;
 	operand->interference_bundle = NULL;
 	operand->pre_colored = false;

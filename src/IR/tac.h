@@ -103,6 +103,7 @@ typedef struct Operand {
 	int assigned_register;
 	int temp_register;
 	bool permanent_frame_position;
+	bool access_via_rsp; // e.g., if operand needs to be accessed via [rsp + 8b], b >= 1 
 	size_t frame_byte_offset;
 
 	void* interference_bundle;

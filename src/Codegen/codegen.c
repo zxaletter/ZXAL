@@ -244,16 +244,22 @@ void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInf
 				case TAC_CHAR:
 				case TAC_INTEGER: {
 					if (tac->result->permanent_frame_position) {
-						snprintf(buffer, sizeof(buffer), "\tmov [rbp - %zu], %d",
-							tac->result->frame_byte_offset,
-							tac->op1->value.int_val
-						);
-
+						// if (tac->result->access_via_rsp) {
+						// 	snprintf(buffer, sizeof(buffer), "\tmov [rsp + %zu], %d",
+						// 		tac->result->frame_byte_offset,
+						// 		tac->op1->value.int_val);
+						// } else {
+						// 	snprintf(buffer, sizeof(buffer), "\tmov [rbp - %zu], %d",
+						// 		tac->result->frame_byte_offset,
+						// 		tac->op1->value.int_val);							
+						// }
+					snprintf(buffer, sizeof(buffer), "\tmov qword [rbp - %zu], %d",
+						tac->result->frame_byte_offset,
+						tac->op1->value.int_val);							
 					} else {
 						snprintf(buffer, sizeof(buffer), "\tmov %s, %d",
 							registers[tac->result->assigned_register],
-							tac->op1->value.int_val
-						);
+							tac->op1->value.int_val);
 					}
 					write_asm_to_file(writer, buffer);
 					break;
@@ -900,49 +906,55 @@ void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInf
 						corresponding_list = find_arg_list(block, tac);
 					}
 
-					if (corresponding_list) {
-						for (int i = 0; i < tac->live_out->size; i++) {
-							Operand* op = tac->live_out->elements[i];
-							bool caller = is_caller_saved(op->assigned_register);
-							if (caller) continue; 
-							
-						}
+					int arg_space = -1;
+					bool args_on_stack = false;
 
+					if (corresponding_list) {
 						for (int i = 0; i < corresponding_list->size; i++) {
 							ArgumentInfo* arg = corresponding_list->args[i];						
 							TACInstruction* arg_instr = arg->tac;	
-
 							if (arg->loc == REG) {
 								if (arg_instr->op1->assigned_register != -1) {
 									snprintf(buffer, sizeof(buffer), "\tmov %s, %s",
 										registers[arg_instr->result->assigned_register],
-										registers[arg_instr->op1->assigned_register]
-									);								
+										registers[arg_instr->op1->assigned_register]);								
 								} else {
 									snprintf(buffer, sizeof(buffer), "\tmov %s, [rbp - %zu]",
 										registers[arg_instr->result->assigned_register],
-										arg_instr->op1->frame_byte_offset
-									);
+										arg_instr->op1->frame_byte_offset);
 								}
+								write_asm_to_file(writer, buffer);
 							} else {
-								snprintf(buffer, sizeof(buffer), "\tpush [rbp - %zu]",arg_instr->op1->frame_byte_offset);
+								// args_on_stack = true;
+								// int stack_args_count = 0;
+								// for (int j = corresponding_list->size - 1; j >= i; j--) {
+								// 	stack_args_count++;
+								// }
+
+								// arg_space = 8 * stack_args_count;
+								// ensure_alignment(&arg_space, SIXTEEN_BYTE_ALIGNMENT);
+								// snprintf(buffer, sizeof(buffer), "\tsub rsp, %d", arg_space);
+								// write_asm_to_file(writer, buffer);
+
+								// int stack_arg_index = 1;
+								// for (int j = corresponding_list->size - 1; j >= i; j--, stack_arg_index++) {
+								// 	ArgumentInfo* arg = corresponding_list->args[j];
+								// 	snprintf(buffer, sizeof(buffer), "\tmov [rsp + %d], %s", 8 * stack_arg_index , registers[arg->tac->op1->temp_register]);
+								// 	write_asm_to_file(writer, buffer);
+								// }
+								// break;
 							}
-
-							write_asm_to_file(writer, buffer);
 						}
-
-						snprintf(buffer, sizeof(buffer), "\tsub rsp, 8");
-						write_asm_to_file(writer, buffer);
 
 						snprintf(buffer, sizeof(buffer), "\tcall %s", tac->result->value.sym->name);
 						write_asm_to_file(writer, buffer);
 
-						snprintf(buffer, sizeof(buffer), "\tadd rsp, 8");
-						write_asm_to_file(writer, buffer);
-
+						if (args_on_stack) {
+							snprintf(buffer, sizeof(buffer), "\tadd rsp, %d", arg_space);
+							write_asm_to_file(writer, buffer);
+						}
 						write_asm_to_file(writer, "");
-
-					} 
+					}
 					break;
 				}
 			}		
@@ -1168,8 +1180,7 @@ void emit_asm_for_functions(CompilerContext* ctx, ASMWriter* writer, FunctionLis
 			char* func_label = create_function_label(ctx, info->symbol->name);
 			write_asm_to_file(writer, func_label);
 		}
-
-		collect_args(ctx, function_list);
+		collect_args(ctx, info);
 		generate_function_prologue(ctx, writer, info);
 		generate_function_body(ctx, writer, info);
 	}
@@ -1316,43 +1327,27 @@ CallInstructionList* populate_call_instr_list(CompilerContext* ctx, BasicBlock* 
 		}
 	}
 
-	int* call_ids = NULL;
-	int* call_indices = NULL;
-	if (call_instr_count > 0) {
-		call_ids = arena_allocate(ctx->codegen_arena, sizeof(int) * call_instr_count);
-		call_indices = arena_allocate(ctx->codegen_arena, sizeof(int) * call_instr_count);
-		assert(call_ids && call_indices);
-	}
+	if (call_instr_count == 0) return NULL;
 
-	int call_index = 0;
-	CallInstructionList* call_instr_list = NULL;
-	if (call_ids) {
-		for (int i = 0; i < block->num_instructions; i++) {
-			if (block->instructions[i]->kind == TAC_CALL) {
-				call_ids[call_index] = block->instructions[i]->id;
-				call_indices[call_index] = i;
-				call_index++;
+	CallInstructionList* call_instr_list = create_call_instr_list(ctx, call_instr_count);
+	if (!call_instr_list) return NULL;
+	
+	int current_call = 0;
+	for (int i = 0; i < block->num_instructions; i++) {
+		if (block->instructions[i]->kind == TAC_CALL) {
+			
+			int arg_start = i;
+			while (arg_start > 0 && block->instructions[arg_start - 1]->kind == TAC_ARG) {
+				arg_start--;
 			}
-		}
-
-		call_instr_list = create_call_instr_list(ctx, call_instr_count);
-		if (!call_instr_list) return NULL;
-
-		int current_instr = 0; 
-		int start = 0;
-		int j = 0;
-		while (j < block->num_instructions) {
-			if (block->instructions[j]->kind == TAC_CALL) {
-				CallInstruction call_instr = {
-					.func_name = block->instructions[j]->result->value.sym->name,
-					.start = start,
-					.end = j,
-					.instr_id = block->instructions[j]->id
-				};
-				call_instr_list->c_instructions[current_instr++] = call_instr;
-				start = j + 1;
-			}
-			j++;
+			
+			CallInstruction call_instr = {
+				.func_name = block->instructions[i]->result->value.sym->name,
+				.start = arg_start,
+				.end = i,
+				.instr_id = block->instructions[i]->id
+			};
+			call_instr_list->c_instructions[current_call++] = call_instr;
 		}
 	}
 	return call_instr_list;
@@ -1367,55 +1362,40 @@ bool find_call_instr(BasicBlock* block) {
 	return false;
 }
 
-void collect_args(CompilerContext* ctx, FunctionList* function_list) {
-	for (int i = 0; i < function_list->size; i++) {
-		FunctionInfo* info = function_list->infos[i];
-		CFG* cfg = info->cfg;
-		for (int j = 0; j < cfg->num_blocks; j++) {
-			BasicBlock* block = cfg->all_blocks[j];
+void collect_args(CompilerContext* ctx, FunctionInfo* info) {
+	CFG* cfg = info->cfg;
+	for (int j = 0; j < cfg->num_blocks; j++) {
+		BasicBlock* block = cfg->all_blocks[j];
 
-			bool has_call_instr = find_call_instr(block);
-			if (!has_call_instr) {
-				continue;
-			} 
-			CallInstructionList* call_instr_list = populate_call_instr_list(ctx, block);
-			assert(call_instr_list);
+		bool has_call_instr = find_call_instr(block);
+		if (!has_call_instr) {
+			continue;
+		} 
+		CallInstructionList* call_instr_list = populate_call_instr_list(ctx, block);
+		assert(call_instr_list);
 
-			block->sargs = create_sargs(ctx, call_instr_list);
-			assert(block->sargs);
-			bool processed = false;
-			for (int k = 0; k < call_instr_list->call_instr_count; k++) {
-				CallInstruction* call_instr = &call_instr_list->c_instructions[k];
-				for (int c_start = call_instr->start; c_start < call_instr->end; c_start++) {
-					int arg_count = 0;
-					
-					TACInstruction* tac = block->instructions[c_start];
-					if (tac->kind == TAC_ARG) {
-						ArgumentInfo* info = NULL;
-						if (arg_count < 6) {
-							info = create_arg_info(ctx, REG, tac);
-							add_to_arg_list(ctx, block->sargs->lists[k], info);
-							arg_count++;
-						} else {
-							if (c_start + 1 < call_instr->end) {
-								for (int n = c_start; n < call_instr->end; n++) {
-									if (block->instructions[n]->kind == TAC_CALL) {
-										for (int start = n - 1; n >= c_start; n--) {
-											info = create_arg_info(ctx, STACK, block->instructions[start]);
-											add_to_arg_list(ctx, block->sargs->lists[k], info);
-										}
-										processed = true;
-										break;
-									}
-								}
-							}
-							break;
-						}
+		block->sargs = create_sargs(ctx, call_instr_list);
+		assert(block->sargs);
+
+		for (int k = 0; k < call_instr_list->call_instr_count; k++) {
+			CallInstruction* call_instr = &call_instr_list->c_instructions[k];
+			// printf("Function '%s', Block %d, Call %d: start index=%d\n", 
+			// 	info->symbol->name, j, k, call_instr->start);
+			// printf("Function '%s', Block %d, Call %d: start index=%d\n",
+			// 	info->symbol->name, j, k, call_instr->end);
+			for (int c_start = call_instr->start; c_start < call_instr->end; c_start++) {					
+				TACInstruction* tac = block->instructions[c_start];
+				if (tac->kind == TAC_ARG) {
+					ArgumentInfo* info = NULL;
+					if (tac->result->assigned_register != -1) {
+						info = create_arg_info(ctx, REG, tac);
+					} else {
+						info = create_arg_info(ctx, STACK, tac);	
 					}
-				}
 
-				if (processed) {
-					continue;
+					if (info) {
+						add_to_arg_list(ctx, block->sargs->lists[k], info);
+					}
 				}
 			}
 		}
@@ -1498,20 +1478,25 @@ void get_bytes_from_operand(CompilerContext* ctx, OperandSet* symbols_set, Opera
 					ensure_alignment(&op_size, EIGHT_BYTE_ALIGNMENT);
 
 					*total_frame_bytes += op_size;
-					op->value.sym->frame_byte_offset = total_frame_bytes;
+					op->frame_byte_offset = *total_frame_bytes;
+					op->value.sym->frame_byte_offset = *total_frame_bytes;
 				}	
 			}
 			break;
 		}
 
 		default: {		
+			// printf("Attempting to assign frame byte offset to '%s'\n", op->value.label_name);
 			if (op->permanent_frame_position) {
+				// printf("Current frame offset = %d\n", *total_frame_bytes);
 				size_t op_size = get_size(op);
 				ensure_alignment(&op_size, EIGHT_BYTE_ALIGNMENT);
 					
 				*total_frame_bytes += op_size;
-				op->frame_byte_offset = total_frame_bytes;				
-			}	
+				// printf("Now the current frame offset = %d\n", *total_frame_bytes);
+				op->frame_byte_offset = *total_frame_bytes;				
+				// printf("Assigned frame byte offset=%d to '%s'\n", op->frame_byte_offset ,op->value.label_name);
+			}
 			break;
 		}
 	}
@@ -1640,6 +1625,31 @@ Operand* operand_with_furthest_use(OperandSet* op_set) {
 	return furthest_op;
 }
 
+Operand* find_non_restricted_operand(OperandSet* op_set, Operand* arg_op) {
+	// printf("Address of arg op is %p\n", (void*)arg_op);	
+	// for (int k = 0; k < arg_op->restricted_regs_count; k++) {
+	// 	printf("\033[31mRestricted Reg\033[0m: %d\n", arg_op->restricted_regs[k]);
+	// }
+	for (int i = 0; i < op_set->size; i++) {
+		Operand* current_op = op_set->elements[i];
+		if (current_op->assigned_register != -1) {
+			bool restricted_match = false;
+
+			for (int j = 0; j < arg_op->restricted_regs_count; j++) {
+				if (current_op->assigned_register == arg_op->restricted_regs[j]) {
+					restricted_match = true;
+					break;
+				}					
+			}
+
+			if (!restricted_match) {
+				return current_op;
+			}	
+		}
+	}
+	return NULL;
+}
+
 void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_list) {
 	for (int i = 0; i < function_list->size; i++) {
 		FunctionInfo* info = function_list->infos[i];
@@ -1648,11 +1658,83 @@ void get_bytes_for_stack_frames(CompilerContext* ctx, FunctionList* function_lis
 		OperandSet* symbols_set = create_operand_set(ctx);
 		assert(symbols_set);
 
+		int num_param_tac = 0;
+		for (int u = 0; u < cfg->all_blocks[0]->num_instructions; u++) {
+			if (cfg->all_blocks[0]->instructions[u]->kind == TAC_PARAM) {
+				num_param_tac++;
+			}
+		}
+
+		if (num_param_tac > 6) {
+			int param_tac_index = 1;
+			for (int v = cfg->all_blocks[0]->num_instructions - 1; v >= 0; v--) {
+				if (cfg->all_blocks[0]->instructions[v]->kind == TAC_PARAM && 
+					cfg->all_blocks[0]->instructions[v]->op1->permanent_frame_position)
+				{
+					cfg->all_blocks[0]->instructions[v]->op1->frame_byte_offset = 8 * param_tac_index;  
+					param_tac_index++;
+				}
+			}
+		}
+
 		for (int j = 0; j < cfg->num_blocks; j++) {
 			BasicBlock* block = cfg->all_blocks[j];
 			for (int k = 0; k < block->num_instructions; k++) {
 				TACInstruction* tac = block->instructions[k];
 				switch (tac->kind) {
+					// case TAC_ARG: {
+					// 	if (tac->op1->permanent_frame_position) {
+					// 		// printf("op1 kind=%d\n", tac->op1->kind);
+					// 		// switch (tac->op1->kind) {
+					// 		// 	case OP_SYMBOL: {
+					// 		// 		printf("Processing '%s'\n", tac->op1->value.sym->name);
+					// 		// 		break;
+					// 		// 	}
+					// 		// 	default: {
+					// 		// 		printf("Processing '%s'\n", tac->op1->value.label_name);
+					// 		// 		break;
+					// 		// 	}
+					// 		// }
+					// 		Operand* non_restricted_op = find_non_restricted_operand(tac->live_out, tac->op1);
+					// 		if (non_restricted_op) {
+					// 			Spill s1 = {
+					// 				.assigned_register = non_restricted_op->assigned_register,
+					// 				.frame_byte_offset = -1,
+					// 				.push_index = k,
+					// 				.block_index = j,
+					// 				.direction = PUSH_TO_STACK
+					// 			};
+					// 			add_spill(ctx, block->spill_schedule, s1);
+
+					// 			Spill s2 = {
+					// 				.assigned_register = non_restricted_op->assigned_register,
+					// 				.frame_byte_offset = tac->op1->frame_byte_offset,
+					// 				.push_index = k,
+					// 				.block_index = j,
+					// 				.direction = FRAME_TO_REG
+					// 			};
+					// 			add_spill(ctx, block->spill_schedule, s2);
+
+					// 			tac->op1->temp_register = non_restricted_op->assigned_register;
+
+					// 			int call_index = find_call_instr_index(block, k + 1);
+					// 			if (call_index != -1) {
+					// 				int next_use = determine_operand_use(block, non_restricted_op, call_index + 1);
+					// 				if (next_use != -1) {
+					// 					Reload r1 = {
+					// 						.assigned_register = non_restricted_op->assigned_register,
+					// 						.frame_byte_offset = -1,
+					// 						.pop_index = next_use,
+					// 						.block_index = j,
+					// 						.direction = POP_FROM_STACK
+					// 					};
+					// 					add_reload(ctx, block->reload_schedule, r1);
+					// 				} 
+					// 			}
+					// 		}
+					// 	}
+					// 	break;
+					// }
 					case TAC_ASSIGNMENT: {
 						if (tac->result->permanent_frame_position) {
 							get_bytes_from_operand(ctx, symbols_set, tac->result, &info->total_frame_bytes);
