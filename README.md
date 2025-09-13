@@ -28,15 +28,15 @@ Feature Set:
 
 build process in ZXAL directory after cloning:
 - make
-- ./zxal tests/file.z
-- ./tests/file
+- ./zxal tests/example_file.z
+- ./tests/example_file
 - echo $?
 
 If you find yourself running the program more than once:
 - make clean
 - make
-- ./zxal tests/file.z
-- ./tests/file
+- ./zxal tests/example_file.z
+- ./tests/example_file
 - echo $?
 
 
