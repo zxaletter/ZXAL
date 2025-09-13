@@ -5,12 +5,7 @@ function gcd(a: int, b: int) -> int {
 	return gcd(b, a % b);
 }
 
-function add_six(a: int, b: int, c: int, d: int, e: int, f: int, g: int) -> int {
-	return a + b + c + d + e + f + g;
-}
-
 function main() -> int {
-	let x: int = gcd(23771, 19945);
-	let y: int = add_six(1, 1, 1, 1, 1, 1, 1);
+	let x: int = gcd(24, 60);
 	return x; 
 }
