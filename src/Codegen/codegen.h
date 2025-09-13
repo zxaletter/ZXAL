@@ -73,10 +73,11 @@ bool is_callee_saved(int reg);
 char* operator_to_string(tac_t type);
 char* get_op_code(tac_t type);
 
-void add_site(CompilerContext* ctx, CallGraph* call_graph, CallSite site);
-CallGraph* create_call_graph(CompilerContext* ctx);
-void form_call_sites(CompilerContext* ctx, FunctionList* function_list);
+// void add_site(CompilerContext* ctx, CallGraph* call_graph, CallSite site);
+// CallGraph* create_call_graph(CompilerContext* ctx);
+// void form_call_sites(CompilerContext* ctx, FunctionList* function_list);
 
+void collect_args(CompilerContext* ctx, FunctionInfo* info);
 void generate_corresponding_jump(ASMWriter* writer, tac_t kind, char* jmp_label);
 void generate_function_body(CompilerContext* ctx, ASMWriter* writer, FunctionInfo* info);
 void schedule_callee_register_spills(CompilerContext* ctx, FunctionList* function_list);
@@ -86,6 +87,7 @@ char* create_function_label(CompilerContext* ctx, char* func_name);
 void emit_asm_for_functions(CompilerContext* ctx, ASMWriter* writer,FunctionList* function_list);
 char* get_full_text(CompilerContext* ctx, char* func_name);
 void generate_globals(CompilerContext* ctx, ASMWriter* writer);
+void ensure_main_function_exists(CompilerContext* ctx);
 
 Operand* operand_with_furthest_use(OperandSet* op_set);
 Operand* find_matching_register(OperandSet* op_set, int reg);
