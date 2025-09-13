@@ -26,3 +26,5 @@ Feature Set:
 - pass invoked functions as arguments to other functions 
 - control flow(if, else if, and else statements)  
  
+p.s., functions can have at most six arguments and error handling during typechecking sucks.
+For example, if a function return type is not equivalent to the type of the operand of a return statement, assert is invoked.
